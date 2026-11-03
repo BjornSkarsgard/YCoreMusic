@@ -112,3 +112,76 @@ test('compact controls remain visible in a wide short window', async ({ page }) 
   expect(bounds!.y+bounds!.height).toBeLessThanOrEqual(420);
   await expect(page.locator('#mini')).toBeVisible();
 });
+
+async function mockAutomaticPlayer(page: import('@playwright/test').Page, failFirst = false) {
+  await page.route('https://www.youtube.com/iframe_api', route=>route.fulfill({contentType:'text/javascript',body:`
+    window.loaded=[];window.played=[];window.YT={Player:class{
+      constructor(id,options){this.el=document.getElementById(id);this.options=options;window.activePlayer=this;setTimeout(()=>options.events.onReady({target:this}),0);}
+      cueVideoById(id){this.id=id;window.loaded.push(id);if(${failFirst} && id==='Aaaaaaaaaaa'){queueMicrotask(()=>this.options.events.onError({data:101}));}else this.options.events.onStateChange({data:5,target:this});}
+      setVolume(){} getDuration(){return 120;} getCurrentTime(){return 5;}
+      playVideo(){window.played.push(this.id);this.options.events.onStateChange({data:1,target:this});}
+      pauseVideo(){this.options.events.onStateChange({data:2,target:this});}
+      destroy(){this.el.remove();}
+    }};window.onYouTubeIframeAPIReady();
+  `}));
+}
+test('slow B cannot be overtaken by ready C after A ends; paused Next stays paused',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch') return ['A','B','C'].map(id=>({id,title:id,artist:'Fixture'}));
+      if(cmd==='search_videos') {
+        if(args.title==='B') await new Promise(resolve=>(window as any).releaseB=resolve);
+        return [{id:args.title.repeat(1)+args.title.toLowerCase().repeat(10),title:args.title,artist:'Fixture',score:100,reason:'fixture'}];
+      }
+    }};
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');
+  await expect(page.locator('#play')).toBeEnabled();
+  expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+  await page.locator('#play').click();
+  await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));
+  await expect(page.locator('#track-title')).toHaveText('B');
+  expect(await page.evaluate(()=>(window as any).loaded)).toEqual(['Aaaaaaaaaaa']);
+  await page.evaluate(()=>(window as any).releaseB());
+  await expect.poll(()=>page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa','Bbbbbbbbbbb']);
+  await page.locator('#pause').click();await page.locator('#queue-next').click();
+  await expect(page.locator('#track-title')).toHaveText('C');
+  await expect.poll(()=>page.evaluate(()=>(window as any).loaded)).toEqual(['Aaaaaaaaaaa','Bbbbbbbbbbb','Ccccccccccc']);
+  expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa','Bbbbbbbbbbb']);
+});
+test('embed rejection tries another candidate for the same track without autoplay',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string)=>{
+      if(cmd==='source_fetch')return [{id:'1',title:'A',artist:'Fixture'}];
+      if(cmd==='search_videos')return ['Aaaaaaaaaaa','Bbbbbbbbbbb'].map(id=>({id,title:'A',artist:'Fixture',score:100,reason:'fixture'}));
+    }};
+  });
+  await mockAutomaticPlayer(page,true);await page.goto('/');
+  await expect.poll(()=>page.evaluate(()=>(window as any).loaded)).toEqual(['Aaaaaaaaaaa','Bbbbbbbbbbb']);
+  await expect(page.locator('#play')).toBeEnabled();
+  await expect(page.locator('#track-title')).toHaveText('A');
+  expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+});
+
+test('Pause while next track is being resolved cancels automatic continuation',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch')return ['A','B'].map(id=>({id,title:id,artist:'Fixture'}));
+      if(cmd==='search_videos'){
+        if(args.title==='B')await new Promise(resolve=>(window as any).releaseB=resolve);
+        return [{id:args.title+args.title.toLowerCase().repeat(10),title:args.title,artist:'Fixture',score:100,reason:'fixture'}];
+      }
+    }};
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');
+  await expect(page.locator('#play')).toBeEnabled();await page.locator('#play').click();
+  await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));
+  await expect(page.locator('#track-title')).toHaveText('B');
+  await expect(page.locator('#pause')).toBeEnabled();await page.locator('#pause').click();
+  await page.evaluate(()=>(window as any).releaseB());
+  await expect(page.locator('#play')).toBeEnabled();
+  expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa']);
+});

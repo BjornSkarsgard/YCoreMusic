@@ -27,14 +27,28 @@ try {
   const created=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:resolve(root,'apps/desktop/src-tauri/target/debug/encore.exe')}}}});
   session=created.sessionId;
   await until('return !!document.getElementById("play")');
-  assert.equal(await execute('return document.querySelectorAll("iframe").length'),0);
-  console.log('Native startup without iframe/autoplay: PASS');
+  assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
+  console.log('Native startup without autoplay: PASS');
   if(process.env.ENCORE_LIVE_YANDEX==='1') {
     await until('return document.querySelectorAll("#queue-list li").length>0');
     const count=await execute('return document.querySelectorAll("#queue-list li").length');
     await click('source-more');
     await until('return document.querySelectorAll("#queue-list li").length>'+count);
     console.log('Native source session + next batch via OS credential store: PASS (counts only)');
+  }
+  if(process.env.ENCORE_LIVE_MATCHING==='1') {
+    await until('return !document.getElementById("play").disabled || /Уверенного|недоступен|недоступны/.test(document.getElementById("status").textContent)',40000);
+    const matched=await execute('return !document.getElementById("play").disabled');
+    assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
+    console.log(matched?'Native Yandex metadata -> automatic match -> IFrame cue without autoplay: PASS':'Native matching: PARTIAL (current track requires manual selection)');
+  }
+  if(process.env.ENCORE_LIVE_MATCHING==='1') {
+    const candidates=await request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("search_videos",{title:"Wonderwall",artist:"Oasis"}).then(done).catch(()=>done(null));',args:[]});
+    assert(Array.isArray(candidates) && candidates.length>0,'Known search fixture has no candidate');
+    await execute('document.getElementById("url").value=arguments[0];document.getElementById("load").requestSubmit();',[candidates[0].id]);
+    await until('return !document.getElementById("play").disabled',30000);
+    assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
+    console.log('Native known search fixture -> matching candidate -> real IFrame cue: PASS');
   }
   if(process.env.ENCORE_LIVE_YOUTUBE==='1') {
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="M7lc1UVf-VE";document.getElementById("load").requestSubmit();');

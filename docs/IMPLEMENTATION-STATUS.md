@@ -99,3 +99,11 @@ S3 Windows = PARTIAL (native управление видео подтвержд�
 Финальная локальная проверка этого среза: cargo test (6 desktop + 5 probe PASS, OS store test opt-in отдельно ранее PASS), Clippy all-targets с -D warnings PASS, TS queue/URL unit PASS, 4 renderer smoke PASS. Native integration test после final rebuild PASS, включая single instance и maximized mini roundtrip.
 
 Дополнение: 5 renderer smoke PASS после адаптации mini layout к широкому низкому окну; controls остаются в пределах viewport. Windows desktop пересобран. CI native/keyring/single-instance для новых изменений запущен; результаты Linux/macOS runtime по-прежнему не подтверждены.
+
+### S10: автоподбор и автоматическое продолжение
+
+Добавлен native matcher, консервативный ranking и bounded in-memory cache. Подробности/ограничения: S10-MATCHING-SPIKE.md. Три трека подготавливаются вперёд, источник/ordinal защищены от поздних результатов. Первый cue без autoplay; после Play natural end продвигает очередь, при исчерпании буфера подгружается source. Embed error/timeout меняет только candidate текущего трека. Pause/Next и pending-search intent покрыты renderer тестами. Ручная ссылка и «Подобрать заново» доступны.
+
+Windows native integration PASS: источник → auto match → настоящий IFrame cue, отдельно известный search fixture → cue, sample video Play/Pause/seek на volume=0, mini/topmost/single-instance. В одном из более ранних запусков рекомендация не дала безопасного совпадения и потребовала ручной ссылки — покрытие неполное. Слышимость звука/все кандидаты не проверены.
+
+Локально PASS: 10 desktop Rust unit + 5 probe unit (дубли общих parser tests в двух бинарниках); opt-in live metadata spike PASS; Clippy all-targets PASS; 8 renderer smoke PASS (live browser test по умолчанию skipped). S10 остаётся PARTIAL. Новые возможности пока ожидают CI. Предыдущий коммит 182250f собрался на Windows, Ubuntu и macOS.

@@ -14,6 +14,7 @@ export class PlaybackQueue {
     if (generation !== this.epoch || !this.entries[ordinal]) return false;
     this.entries[ordinal].videoId = videoId; return true;
   }
+  clearVideo(ordinal:number) { if(this.entries[ordinal]) this.entries[ordinal].videoId=undefined; }
   next(): QueueEntry | undefined {
     if (this.cursor + 1 >= this.entries.length) return undefined;
     return this.entries[++this.cursor];

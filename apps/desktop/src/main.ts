@@ -6,17 +6,21 @@ import { PlaybackQueue, type Track } from './queue';
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 <header><a class="brand">encore<span>●</span></a><div class="window-actions"><button id="mini" aria-pressed="false">Миниплеер</button><button id="topmost" aria-pressed="false">Поверх окон</button><span class="badge">ЭТАП 0 · ЛАБОРАТОРИЯ</span></div></header>
 <main><section class="intro"><p class="eyebrow">МУЗЫКА ПОЛУЧАЕТ ЭКРАН</p><h1>Ещё одну.</h1><p>Первый шаг к вашему музыкальному телеканалу.<br>Проверяем воспроизведение, прежде чем строить эфир.</p></section>
-<section class="source-panel"><div class="source-actions"><button id="source-start">Моя волна · новая сессия</button><button id="source-more" disabled>Ещё рекомендации</button><button id="queue-next" disabled>Следующий трек</button></div><p id="source-status" role="status">Яндекс доступен в desktop-версии после локального подключения аккаунта.</p><h2 id="track-title">Ручная проверка видео</h2><p id="track-artist"></p><details><summary>Очередь</summary><ol id="queue-list"></ol></details></section><section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
+<section class="source-panel"><div class="source-actions"><button id="source-start">Моя волна · новая сессия</button><button id="source-more" disabled>Ещё рекомендации</button><button id="find-video" disabled>Подобрать заново</button><button id="queue-next" disabled>Следующий трек</button></div><p id="source-status" role="status">Яндекс доступен в desktop-версии после локального подключения аккаунта.</p><h2 id="track-title">Ручная проверка видео</h2><p id="track-artist"></p><details><summary>Очередь</summary><ol id="queue-list"></ol></details></section><section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
 <form id="load"><label for="url">YouTube-ссылка или ID</label><div class="input-row"><input id="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required><button>Подготовить</button></div></form>
 <div class="controls"><button id="play" disabled>▶ Play</button><button id="pause" disabled>Ⅱ Пауза</button><button id="back" disabled>−5 с</button><button id="forward" disabled>+5 с</button><label>Громкость <input id="volume" type="range" min="0" max="100" value="50"></label></div>
 <div class="timeline"><output id="elapsed">0:00</output><input id="seek" aria-label="Позиция видео" type="range" min="0" max="0" value="0" step="1" disabled><output id="duration">0:00</output></div><p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
-<aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Выбор устройства и аудиоанализ ещё не реализованы. Для трека из очереди пока нужна ссылка на клип вручную.</p><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
+<aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Выбор устройства и аудиоанализ ещё не реализованы. Автоподбор экспериментальный; при несовпадении замените ссылку вручную.</p><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const queue = new PlaybackQueue();
 let player: YT.Player | undefined;
 let generation = 0;
 let playerReady = false;
 let apiPromise: Promise<void> | undefined;
+let playIntent=false;
+interface Candidate {id:string;title:string;artist:string;score:number;reason:string}
+const choices=new Map<string,{items:Candidate[];index:number}>();
+const searching=new Set<string>();
 function report(message: string) {
   element('status').textContent = message;
   const log = element('log');
@@ -39,13 +43,19 @@ function api(): Promise<void> {
   });
   return apiPromise;
 }
-element<HTMLFormElement>('load').addEventListener('submit', async event => {
+element<HTMLFormElement>('load').addEventListener('submit', event=>{
   event.preventDefault();
-  const id = videoId(element<HTMLInputElement>('url').value);
-  if (!id) { report('Нужна HTTPS-ссылка YouTube или video ID из 11 символов.'); return; }
-  if (queue.current) queue.resolve(queue.current.ordinal, id, queue.generation);
+  const id=videoId(element<HTMLInputElement>('url').value);
+  if(!id){report('Нужна HTTPS-ссылка YouTube или video ID из 11 символов.');return;}
+  void loadVideo(id);
+});
+async function loadVideo(id:string,resume=false,automatic=false) {
+  const sourceGeneration=queue.generation, ordinal=queue.current?.ordinal;
+  if(ordinal!==undefined) queue.resolve(ordinal,id,sourceGeneration);
+  playIntent=resume;
   const current = ++generation;
   enabled(false);
+  if(resume) element<HTMLButtonElement>('pause').disabled=false;
   playerReady = false;
   player?.destroy(); player = undefined;
   element('empty').hidden = false;
@@ -55,7 +65,7 @@ element<HTMLFormElement>('load').addEventListener('submit', async event => {
     if (current !== generation) return;
     let ready = false;
     const timer = setTimeout(() => {
-      if (current === generation && !ready) { ++generation; enabled(false); playerReady = false; player?.destroy(); player = undefined; report('Видео не подготовилось за 20 секунд. Проверьте сеть и повторите загрузку.'); }
+      if (current === generation && !ready) { ++generation; enabled(false); playerReady = false; player?.destroy(); player = undefined; report('Видео не подготовилось за 20 секунд. Проверьте сеть и повторите загрузку.'); if(automatic) tryAlternative(sourceGeneration,ordinal); }
     }, 20000);
     if (!document.getElementById('player')) { const mount = document.createElement('div'); mount.id = 'player'; document.querySelector('.screen')!.prepend(mount); }
     player = new YT.Player('player', {
@@ -66,24 +76,27 @@ element<HTMLFormElement>('load').addEventListener('submit', async event => {
           if (current !== generation) return;
           playerReady = true;
           event.target.setVolume(Number(element<HTMLInputElement>('volume').value));
-          event.target.cueVideoById(id);
           element('empty').hidden = true;
           report('Подготовка видео…');
+          event.target.cueVideoById(id);
         },
         onStateChange: event => {
           if (current !== generation) return;
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
-          if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); }
           report(states[event.data] ?? `Состояние ${event.data}`);
+          if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); if(resume && playIntent) event.target.playVideo(); }
+          if(event.data===1) playIntent=true;
+          if(event.data===2) playIntent=false;
+          if(event.data===0 && queue.current) void advance(playIntent);
         },
-        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); } },
+        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(automatic) tryAlternative(sourceGeneration,ordinal); } },
         onAutoplayBlocked: () => { if (current === generation) report('Webview заблокировал Play. Попробуйте кнопку в самом видео.'); },
       },
     });
   } catch (error) { if (current === generation) report(error instanceof Error ? error.message : 'Ошибка загрузки'); }
-});
-element('play').onclick = () => player?.playVideo();
-element('pause').onclick = () => player?.pauseVideo();
+}
+element('play').onclick = () => {playIntent=true;player?.playVideo();};
+element('pause').onclick = () => {playIntent=false;player?.pauseVideo();};
 function seek(delta: number) { if (player) player.seekTo(Math.max(0, Math.min(player.getDuration(), player.getCurrentTime() + delta)), true); }
 element('back').onclick = () => seek(-5);
 element('forward').onclick = () => seek(5);
@@ -120,7 +133,8 @@ function renderQueue() {
     if (track.ordinal === queue.current?.ordinal) item.setAttribute('aria-current','true');
     return item;
   }));
-  element<HTMLButtonElement>('queue-next').disabled = !queue.current || queue.current.ordinal + 1 >= queue.snapshot.length;
+  element<HTMLButtonElement>('queue-next').disabled = !queue.current;
+  element<HTMLButtonElement>('find-video').disabled = !queue.current;
 }
 let fetching = false;
 async function sourceFetch(fresh: boolean) {
@@ -132,11 +146,13 @@ async function sourceFetch(fresh: boolean) {
   element('source-status').textContent='Получение рекомендаций…';
   try {
     const tracks=await invoke<Track[]>('source_fetch',{fresh});
-    if (fresh) { stopPlayer(); queue.reset(tracks); element<HTMLInputElement>('url').value=''; }
+    if (fresh) { stopPlayer(); queue.reset(tracks); choices.clear(); element<HTMLInputElement>('url').value=''; }
     else queue.append(tracks);
     renderQueue();
-    element('source-status').textContent='Получено ' + tracks.length + ' треков. Порядок сохранён. Выберите клип для текущего трека.';
-    if (fresh) report('Новая сессия · без autoplay');
+    element('source-status').textContent='Получено ' + tracks.length + ' треков. Порядок сохранён. Подготавливаем клипы…';
+    if (fresh) {playIntent=false;report('Новая сессия · без autoplay');}
+    prepareAhead();
+    return true;
   } catch (error) {
     const known: Record<string,string> = {
       'No saved token. Run yandex-probe --save-token locally first.':'Сначала подключите аккаунт: yandex-probe --save-token в локальном терминале.',
@@ -153,11 +169,74 @@ async function sourceFetch(fresh: boolean) {
 }
 element('source-start').onclick=()=>void sourceFetch(true);
 element('source-more').onclick=()=>void sourceFetch(false);
-element('queue-next').onclick=()=>{
-  if (!queue.next()) return;
-  stopPlayer(); renderQueue(); element<HTMLInputElement>('url').value='';
-  report('Следующий трек · вставьте ссылку на клип. Автоподбор ещё не подключён.');
+element('queue-next').onclick=()=>void advance(playIntent);
+element('find-video').onclick=()=>{
+  if(!queue.current)return;
+  choices.delete(queue.generation+':'+queue.current.ordinal);
+  queue.clearVideo(queue.current.ordinal);
+  stopPlayer();playIntent=false;prepareAhead();
 };
+
+function tryAlternative(epoch:number,ordinal:number|undefined) {
+  queueMicrotask(()=>{
+    if(epoch!==queue.generation || ordinal!==queue.current?.ordinal) return;
+    const entry=choices.get(epoch+':'+ordinal);
+    if(entry && ++entry.index<entry.items.length) {
+      const next=entry.items[entry.index];
+      report('Пробуем другой клип той же композиции…');
+      void loadVideo(next.id,playIntent,true);
+    } else {playIntent=false;report('Клипы недоступны. Задайте ссылку вручную; трек остаётся текущим.');}
+  });
+}
+function prepareAhead() {
+  if(!isTauri() || !queue.current) return;
+  const epoch=queue.generation;
+  for(const track of queue.snapshot.slice(queue.current.ordinal,queue.current.ordinal+3)) {
+    const key=epoch+':'+track.ordinal;
+    if(track.videoId) continue;
+    const cached=choices.get(key);
+    if(cached) {
+      if(track.ordinal===queue.current?.ordinal) {
+        const candidate=cached.items[cached.index];
+        if(candidate) void loadVideo(candidate.id,playIntent,true);
+        else {playIntent=false;report('Уверенного совпадения нет. Вставьте ссылку вручную; порядок очереди сохранён.');}
+      }
+      continue;
+    }
+    if(searching.has(key)) continue;
+    searching.add(key);
+    if(track.ordinal===queue.current.ordinal) report('Ищем клип для текущего трека…');
+    void invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist}).then(items=>{
+      if(epoch!==queue.generation) return;
+      if(!Array.isArray(items)) items=[];
+      choices.set(key,{items,index:0});
+      const current=queue.current;
+      if(current?.ordinal!==track.ordinal || current.videoId) return;
+      if(!items.length) {playIntent=false;report('Уверенного совпадения нет. Вставьте ссылку вручную; порядок очереди сохранён.');return;}
+      element('source-status').textContent=items[0].reason+' · '+items[0].title+' — '+items[0].artist;
+      void loadVideo(items[0].id,playIntent,true);
+    }).catch(()=>{
+      if(epoch===queue.generation && track.ordinal===queue.current?.ordinal && !queue.current.videoId) {playIntent=false;report('Поиск временно недоступен. Повторите или задайте ссылку вручную.');}
+    }).finally(()=>searching.delete(key));
+  }
+}
+let advancing=false;
+async function advance(resume:boolean) {
+  if(advancing || !queue.current) return;
+  advancing=true; playIntent=resume;
+  const epoch=queue.generation;
+  try {
+    if(queue.current.ordinal+1>=queue.snapshot.length) {
+      const received=await sourceFetch(false);
+      if(!received || epoch!==queue.generation) {playIntent=false;return;}
+    }
+    if(!queue.next()) {playIntent=false;return;}
+    stopPlayer(); renderQueue();
+    element<HTMLButtonElement>('pause').disabled=!playIntent; element<HTMLInputElement>('url').value='';
+    if(queue.current.videoId) void loadVideo(queue.current.videoId,playIntent);
+    else {report('Подготовка следующего трека…');prepareAhead();}
+  } finally {advancing=false;}
+}
 
 let compact=false, topmost=false, changingWindow=false;
 element('mini').onclick=async()=>{
