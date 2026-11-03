@@ -10,7 +10,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 <section class="source-panel"><div class="source-actions"><button id="source-start">Моя волна · новая сессия</button><button id="source-more" disabled>Ещё рекомендации</button><button id="find-video" disabled>Подобрать заново</button><button id="queue-next" disabled>Следующий трек</button></div><p id="source-status" role="status">Яндекс доступен в desktop-версии после локального подключения аккаунта.</p><h2 id="track-title">Ручная проверка видео</h2><p id="track-artist"></p><details><summary>Очередь</summary><ol id="queue-list"></ol></details></section><p id="storage-status" role="status"></p><section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
 <form id="load"><label for="url">YouTube-ссылка или ID</label><div class="input-row"><input id="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required><button>Подготовить</button></div></form>
 <div class="controls"><button id="play" disabled>▶ Play</button><button id="pause" disabled>Ⅱ Пауза</button><button id="back" disabled>−5 с</button><button id="forward" disabled>+5 с</button><label>Громкость <input id="volume" type="range" min="0" max="100" value="50"></label></div>
-<div class="timeline"><output id="elapsed">0:00</output><input id="seek" aria-label="Позиция видео" type="range" min="0" max="0" value="0" step="1" disabled><output id="duration">0:00</output></div><p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
+<div class="timeline"><output id="elapsed">0:00</output><input id="seek" aria-label="Позиция видео" type="range" min="0" max="0" value="0" step="1" disabled><output id="duration">0:00</output></div><div id="candidate-list" aria-label="Найденные клипы"></div><p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
 <aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Аудиовыходом управляет ОС. Анализ звука ещё не реализован. Автоподбор экспериментальный; при несовпадении замените ссылку вручную.</p><details id="history-panel"><summary>История прослушивания</summary><div class="history-actions"><input id="history-query" aria-label="Поиск в истории" placeholder="Название или исполнитель"><button id="history-refresh">Обновить</button><button id="history-clear">Очистить историю</button></div><p id="history-status" role="status"></p><ol id="history-list"></ol></details><dialog id="clear-dialog"><p>Удалить всю историю прослушивания? Ручные ссылки сохранятся.</p><button id="clear-cancel">Отмена</button><button id="clear-confirm">Удалить историю</button></dialog><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const queue = new PlaybackQueue();
@@ -20,7 +20,7 @@ let playerReady = false;
 let apiPromise: Promise<void> | undefined;
 let playIntent=false;
 let fromHistory=false;
-interface Candidate {id:string;title:string;artist:string;score:number;reason:string;saved?:boolean}
+interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number;reason:string;saved?:boolean;needsReview?:boolean}
 const choices=new Map<string,{items:Candidate[];index:number}>();
 const searching=new Set<string>();
 const bypassSaved=new Set<string>();
@@ -137,6 +137,7 @@ window.addEventListener('beforeunload', () => { clearInterval(positionTimer); pl
 
 function stopPlayer() {
   ++generation; playerReady = false; player?.destroy(); player = undefined; enabled(false);
+  element('candidate-list').replaceChildren();
   element('empty').hidden = false; seekInput.disabled = true; seekInput.value = '0';
   element('elapsed').textContent = '0:00'; element('duration').textContent = '0:00';
 }
@@ -205,6 +206,19 @@ function resetMatching(){
   stopPlayer();playIntent=false;prepareAhead();
 }
 
+function renderCandidates(items:Candidate[],epoch:number,ordinal:number){
+  element('candidate-list').replaceChildren(...items.map(candidate=>{
+    const button=document.createElement('button');button.type='button';
+    button.textContent=candidate.title+(candidate.byline?' · '+candidate.byline:'')+(candidate.views!==undefined?' · '+candidate.views.toLocaleString()+' просмотров':'')+(candidate.needsReview?' · проверить исполнителя':'');
+    button.onclick=()=>{
+      if(epoch!==queue.generation || queue.current?.ordinal!==ordinal)return;
+      element<HTMLInputElement>('url').value=candidate.id;
+      element<HTMLFormElement>('load').requestSubmit();
+    };
+    return button;
+  }));
+}
+
 function tryAlternative(epoch:number,ordinal:number|undefined) {
   queueMicrotask(()=>{
     if(epoch!==queue.generation || ordinal!==queue.current?.ordinal) return;
@@ -212,7 +226,8 @@ function tryAlternative(epoch:number,ordinal:number|undefined) {
     if(entry && ++entry.index<entry.items.length) {
       const next=entry.items[entry.index];
       report('Пробуем другой клип той же композиции…');
-      void loadVideo(next.id,playIntent,true);
+      if(next.needsReview){stopPlayer();playIntent=false;renderCandidates(entry.items,epoch,ordinal!);report('Исполнитель в видео не подтверждён. Выберите подходящий клип из списка.');}
+      else void loadVideo(next.id,playIntent,true);
     } else if(entry?.items[0]?.saved && ordinal!==undefined) {
       const key=epoch+':'+ordinal;bypassSaved.add(key);choices.delete(key);queue.clearVideo(ordinal);stopPlayer();prepareAhead();
     } else {playIntent=false;report('Клипы недоступны. Задайте ссылку вручную; трек остаётся текущим.');}
@@ -228,7 +243,7 @@ function prepareAhead() {
     if(cached) {
       if(track.ordinal===queue.current?.ordinal) {
         const candidate=cached.items[cached.index];
-        if(candidate) void loadVideo(candidate.id,playIntent,true);
+        if(candidate){renderCandidates(cached.items,epoch,track.ordinal);if(candidate.needsReview){playIntent=false;report('Выберите подходящий клип из списка.');}else void loadVideo(candidate.id,playIntent,true);}
         else {playIntent=false;report('Уверенного совпадения нет. Вставьте ссылку вручную; порядок очереди сохранён.');}
       }
       continue;
@@ -249,7 +264,9 @@ function prepareAhead() {
       const current=queue.current;
       if(current?.ordinal!==track.ordinal || current.videoId) return;
       if(!items.length) {playIntent=false;report('Уверенного совпадения нет. Вставьте ссылку вручную; порядок очереди сохранён.');return;}
-      element('source-status').textContent=items[0].reason+' · '+items[0].title+' — '+items[0].artist;
+      renderCandidates(items,epoch,track.ordinal);
+      element('source-status').textContent=items[0].reason+' · '+items[0].title;
+      if(items[0].needsReview){playIntent=false;report('Найдены клипы, но исполнитель не подтверждён. Выберите из списка или задайте ссылку.');return;}
       void loadVideo(items[0].id,playIntent,true);
     }).catch(()=>{
       if(epoch===queue.generation && track.ordinal===queue.current?.ordinal && !queue.current.videoId) {playIntent=false;report('Поиск временно недоступен. Повторите или задайте ссылку вручную.');}

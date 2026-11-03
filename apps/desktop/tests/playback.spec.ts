@@ -248,3 +248,18 @@ test('unavailable saved clip falls back to search without deleting the saved cho
   expect(await page.evaluate(()=>(window as any).removed)).toBe(0);
   expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
 });
+
+test('uncertain matches are offered for selection and never autoplay',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string)=>{
+      if(cmd==='source_fetch')return [{id:'123',title:'A',artist:'Fixture'}];
+      if(cmd==='search_videos')return [{id:'Bbbbbbbbbbb',title:'A',byline:'Any channel',views:12345,score:40,reason:'review',needsReview:true}];
+    }};
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');
+  await expect(page.locator('#candidate-list button')).toHaveCount(1);
+  await expect(page.locator('#play')).toBeDisabled();
+  await page.locator('#candidate-list button').click();await expect(page.locator('#play')).toBeEnabled();
+  expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+});

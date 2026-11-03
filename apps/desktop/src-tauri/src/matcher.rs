@@ -13,7 +13,10 @@ use unicode_normalization::{char::is_combining_mark, UnicodeNormalization};
 pub struct Candidate {
     pub id: String,
     pub title: String,
-    pub artist: String,
+    pub byline: String,
+    #[serde(rename = "needsReview")]
+    pub needs_review: bool,
+    pub views: Option<u64>,
     pub score: u32,
     pub reason: String,
 }
@@ -38,18 +41,21 @@ fn score(
     title: &str,
     artist: &str,
     candidate_title: &str,
-    candidate_artist: &str,
+    canonical_artist: &str,
     kind: &str,
-) -> Option<(u32, String)> {
+) -> Option<(u32, String, bool)> {
     if kind == "MUSIC_VIDEO_TYPE_ATV" {
         return None;
     }
     let target = words(title);
     let name = words(artist.split(',').next().unwrap_or(artist));
     let candidate = words(candidate_title);
-    let performer = words(candidate_artist);
+    if !contains_all(&target, &candidate) || name.is_empty() {
+        return None;
+    }
     let blocked = [
         "cover",
+        "covers",
         "karaoke",
         "reaction",
         "tutorial",
@@ -58,59 +64,101 @@ fn score(
         "mashup",
         "fanmade",
         "tribute",
+        "playthrough",
+        "backing",
+        "playalong",
+        "instrumental",
         "кавер",
         "караоке",
         "реакция",
         "обучение",
+        "минусовка",
     ];
     if candidate
         .iter()
         .any(|word| blocked.contains(&word.as_str()) && !target.contains(word))
-        || performer
-            .iter()
-            .any(|word| blocked.contains(&word.as_str()) && !name.contains(word))
     {
         return None;
     }
     if candidate
         .iter()
-        .any(|word| word == "remix" || word == "ремикс")
+        .any(|word| ["remix", "ремикс"].contains(&word.as_str()))
         && !target
             .iter()
-            .any(|word| word == "remix" || word == "ремикс")
+            .any(|word| ["remix", "ремикс"].contains(&word.as_str()))
     {
         return None;
     }
-    if !contains_all(&target, &candidate)
-        || !candidate_artist
+    let named_in_title = candidate.windows(name.len()).any(|phrase| phrase == name);
+    // Canonical performer metadata is used only for OMV music records, never as a channel-name gate.
+    let canonical_match = kind == "MUSIC_VIDEO_TYPE_OMV"
+        && canonical_artist
             .split(',')
-            .any(|credit| words(credit) == name && !name.is_empty())
+            .any(|credit| words(credit) == name);
+    if kind == "MUSIC_VIDEO_TYPE_OMV"
+        && !canonical_artist.is_empty()
+        && !canonical_match
+        && !named_in_title
     {
         return None;
     }
-    let mut score = 100;
-    let reason = if kind == "MUSIC_VIDEO_TYPE_OMV" {
+    let needs_review = !named_in_title && !canonical_match;
+    let mut score = if needs_review { 40 } else { 100 };
+    let reason = if canonical_match {
         score += 100;
-        "Совпали название и исполнитель; метка музыкального видео"
-    } else if candidate
-        .iter()
-        .any(|word| ["lyric", "lyrics", "visualizer"].contains(&word.as_str()))
+        "Музыкальное видео: совпали песня и исполнитель в метаданных"
+    } else if named_in_title
+        && candidate
+            .iter()
+            .any(|word| ["live", "concert", "концерт"].contains(&word.as_str()))
     {
         score += 30;
-        "Совпали название и исполнитель; lyric/visualizer"
-    } else if candidate
-        .iter()
-        .any(|word| ["live", "concert", "концерт"].contains(&word.as_str()))
+        "Группа и песня указаны в названии live-видео; канал не ограничивается"
+    } else if named_in_title
+        && candidate
+            .iter()
+            .any(|word| ["lyric", "lyrics", "visualizer"].contains(&word.as_str()))
     {
+        score += 40;
+        "Группа и песня указаны в названии lyric/visualizer"
+    } else if named_in_title {
         score += 10;
-        "Совпали название и исполнитель; live"
+        "Группа и песня указаны в названии; канал не ограничивается"
     } else {
-        "Совпали название и исполнитель"
+        "Совпала песня, исполнитель в видео не подтверждён — выберите вручную"
     };
     if target == candidate {
         score += 20;
     }
-    Some((score, reason.into()))
+    Some((score, reason.into(), needs_review))
+}
+
+fn view_count(value: &str) -> Option<u64> {
+    let raw = value
+        .trim()
+        .strip_suffix(" views")
+        .or_else(|| value.trim().strip_suffix(" view"))?
+        .trim();
+    let (number, multiplier) = match raw.chars().last()? {
+        'K' | 'k' => (&raw[..raw.len() - 1], 1_000.0),
+        'M' | 'm' => (&raw[..raw.len() - 1], 1_000_000.0),
+        'B' | 'b' => (&raw[..raw.len() - 1], 1_000_000_000.0),
+        _ => (raw, 1.0),
+    };
+    let count = number.replace(',', "").parse::<f64>().ok()? * multiplier;
+    if !count.is_finite() || count < 0.0 {
+        return None;
+    }
+    Some(count.round() as u64)
+}
+fn rank(results: &mut [Candidate]) {
+    results.sort_by_key(|candidate| {
+        (
+            candidate.needs_review,
+            std::cmp::Reverse(candidate.views.unwrap_or(0)),
+            std::cmp::Reverse(candidate.score),
+        )
+    });
 }
 fn text(runs: &Value) -> String {
     runs.as_array()
@@ -134,20 +182,34 @@ fn row(row: &Value, title: &str, artist: &str) -> Option<Candidate> {
         row.pointer("/flexColumns/0/musicResponsiveListItemFlexColumnRenderer/text/runs")?;
     let candidate_title = text(title_runs);
     let artist_runs = row
-        .pointer("/flexColumns/1/musicResponsiveListItemFlexColumnRenderer/text/runs")?
-        .as_array()?;
-    let candidate_artist = artist_runs
+        .pointer("/flexColumns/1/musicResponsiveListItemFlexColumnRenderer/text/runs")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    let views = artist_runs
+        .iter()
+        .filter_map(|run| run.get("text").and_then(Value::as_str))
+        .find_map(view_count);
+    let byline = artist_runs
         .iter()
         .filter(|run| run.pointer("/navigationEndpoint/browseEndpoint").is_some())
         .filter_map(|run| run.get("text").and_then(Value::as_str))
         .collect::<Vec<_>>()
         .join(", ");
     let kind=title_runs.pointer("/0/navigationEndpoint/watchEndpoint/watchEndpointMusicSupportedConfigs/watchEndpointMusicConfig/musicVideoType").and_then(Value::as_str).unwrap_or("");
-    let (score, reason) = score(title, artist, &candidate_title, &candidate_artist, kind)?;
+    let canonical_artist = if kind == "MUSIC_VIDEO_TYPE_OMV" {
+        artist_runs.iter().filter(|run|run.pointer("/navigationEndpoint/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType").and_then(Value::as_str)==Some("MUSIC_PAGE_TYPE_ARTIST")).filter_map(|run|run.get("text").and_then(Value::as_str)).collect::<Vec<_>>().join(", ")
+    } else {
+        String::new()
+    };
+    let (score, reason, needs_review) =
+        score(title, artist, &candidate_title, &canonical_artist, kind)?;
     Some(Candidate {
         id: id.into(),
         title: candidate_title,
-        artist: candidate_artist,
+        byline,
+        views,
+        needs_review,
         score,
         reason,
     })
@@ -178,7 +240,7 @@ fn parse(value: &Value, title: &str, artist: &str) -> Vec<Candidate> {
     }
     let mut results = Vec::new();
     walk(value, title, artist, 0, &mut results);
-    results.sort_by_key(|candidate| std::cmp::Reverse(candidate.score));
+    rank(&mut results);
     let mut seen = HashSet::new();
     results.retain(|candidate| seen.insert(candidate.id.clone()));
     results.truncate(5);
@@ -264,16 +326,65 @@ mod tests {
         assert!(score("Halo", "Beyoncé", "Halo", "Beyonce", "").is_some());
     }
     #[test]
-    fn rejects_artist_name_substrings_and_keeps_legitimate_cover_title() {
+    fn popularity_ranks_only_after_relevance_and_rejects_cover() {
+        assert_eq!(view_count("1.4M views"), Some(1_400_000));
+        assert_eq!(view_count("713M views"), Some(713_000_000));
+        assert_eq!(view_count("1,234 views"), Some(1234));
+        assert_eq!(view_count("unknown"), None);
+        let make = |id: &str, views, needs_review, score| Candidate {
+            id: id.into(),
+            title: "Fixture".into(),
+            byline: "Unrelated uploader".into(),
+            views: Some(views),
+            needs_review,
+            score,
+            reason: String::new(),
+        };
+        let mut items = vec![
+            make("official", 100, false, 200),
+            make("popular-live", 1000, false, 130),
+            make("uncertain", 10000, true, 40),
+        ];
+        rank(&mut items);
+        assert_eq!(
+            items
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["popular-live", "official", "uncertain"]
+        );
         assert!(score(
-            "Wonderwall",
-            "Oasis",
-            "Wonderwall",
-            "Oasis Tribute Band",
-            ""
+            "Living Dead Beat",
+            "Children Of Bodom",
+            "Children Of Bodom Living Dead Beat drum cover",
+            "",
+            "MUSIC_VIDEO_TYPE_UGC"
         )
         .is_none());
-        assert!(score("Wonderwall", "Oasis", "Wonderwall", "Not Oasis", "").is_none());
+    }
+    #[test]
+    fn channel_name_never_decides_acceptance() {
+        for byline in ["Oasis Tribute Band", "Not Oasis", ""] {
+            assert!(score(
+                "Wonderwall",
+                "Oasis",
+                "Oasis - Wonderwall live",
+                byline,
+                "MUSIC_VIDEO_TYPE_UGC"
+            )
+            .is_some());
+            assert!(
+                score(
+                    "Wonderwall",
+                    "Oasis",
+                    "Wonderwall",
+                    byline,
+                    "MUSIC_VIDEO_TYPE_UGC"
+                )
+                .unwrap()
+                .2
+            );
+        }
         assert!(score(
             "Cover Me",
             "Depeche Mode",
@@ -283,6 +394,25 @@ mod tests {
         )
         .is_some());
         assert!(score("Группа крови", "Кино", "Звезда по имени Солнце", "Кино", "").is_none());
+    }
+    #[test]
+    fn living_dead_beat_finds_original_band_live_on_unrelated_channel() {
+        let value: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/bodom-search.json")).unwrap();
+        let candidates = parse(&value, "Living Dead Beat", "Children Of Bodom");
+        assert!(!candidates.is_empty());
+        assert_eq!(candidates[0].id, "v-UX4hmUESg");
+        assert_eq!(candidates[0].byline, "Berar Emanuel");
+        assert!(!candidates[0].needs_review);
+        println!("Public regression top candidate: {} views={:?}",candidates[0].id,candidates[0].views);
+        for candidate in candidates {
+            let title = candidate.title.to_lowercase();
+            assert!(
+                !title.contains("cover")
+                    && !title.contains("backing")
+                    && !title.contains("playthrough")
+            );
+        }
     }
     #[test]
     fn no_match_for_missing_title_or_artist() {
@@ -296,6 +426,18 @@ mod tests {
         .is_none());
         assert!(score("Missing", "Oasis", "Wonderwall", "Oasis", "").is_none());
         assert!(score("Wonderwall", "", "Wonderwall", "Oasis", "").is_none());
+    }
+    #[test]
+    #[ignore = "Opt-in user-reported metadata regression"]
+    fn live_bodom_regression() {
+        let candidates =
+            search(&Matcher::default(), "Living Dead Beat", "Children Of Bodom").unwrap();
+        assert!(!candidates.is_empty());
+        assert!(!candidates[0].needs_review);
+        assert!(contains_all(
+            &words("Living Dead Beat"),
+            &words(&candidates[0].title)
+        ));
     }
     #[test]
     #[ignore = "Opt-in real metadata-only S10 probe"]
@@ -312,14 +454,7 @@ mod tests {
         // A valid search may return no safe candidate. Never relax matching to satisfy a test.
         for candidate in search(&matcher, "Группа крови", "Кино").expect("Cyrillic query failed")
         {
-            assert!(score(
-                "Группа крови",
-                "Кино",
-                &candidate.title,
-                &candidate.artist,
-                ""
-            )
-            .is_some());
+            assert!(score("Группа крови", "Кино", &candidate.title, "", "").is_some());
         }
     }
 }

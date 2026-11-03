@@ -17,3 +17,4 @@ apps/desktop/src-tauri/gen/
 .tools/
 *.sqlite
 *.sqlite-journal
+test-results/
