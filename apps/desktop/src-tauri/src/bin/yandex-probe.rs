@@ -1,4 +1,4 @@
-//! Read-only legacy rotor probe; not a production My Wave adapter.
+//! Isolated session probe; no playback feedback or persistent credentials.
 use reqwest::{blocking::Client, header::HeaderValue, redirect::Policy};
 use serde_json::Value;
 use std::{
@@ -16,9 +16,18 @@ fn authorization(token: &str) -> Result<HeaderValue, &'static str> {
     value.set_sensitive(true);
     Ok(value)
 }
-fn get(client: &Client, path: &str, auth: &HeaderValue) -> Result<Value, &'static str> {
-    let response = client
-        .get(format!("https://api.music.yandex.net/{path}"))
+fn request(
+    client: &Client,
+    path: &str,
+    auth: &HeaderValue,
+    body: Option<&Value>,
+) -> Result<Value, &'static str> {
+    let url = format!("https://api.music.yandex.net/{path}");
+    let builder = match body {
+        Some(body) => client.post(&url).json(body),
+        None => client.get(&url),
+    };
+    let response = builder
         .header("Authorization", auth.clone())
         .send()
         .map_err(|_| "Network/TLS error")?;
@@ -63,14 +72,93 @@ fn ordered_ids(json: &Value) -> Result<Vec<String>, &'static str> {
         })
         .collect()
 }
+fn session_id(json: &Value) -> Result<&str, &'static str> {
+    let id = json
+        .pointer("/result/radioSessionId")
+        .and_then(Value::as_str)
+        .ok_or("Missing session ID")?;
+    if id.is_empty()
+        || id.len() > 256
+        || !id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"-_".contains(&b))
+    {
+        return Err("Unexpected session ID format");
+    }
+    Ok(id)
+}
+fn session_batch(json: &Value) -> Result<Vec<String>, &'static str> {
+    if json
+        .pointer("/result/unknownSession")
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        return Err("Server no longer recognizes session");
+    }
+    if json.pointer("/result/terminated").and_then(Value::as_bool) == Some(true) {
+        return Err("Server terminated session");
+    }
+    let ids = ordered_ids(json)?;
+    if ids.is_empty() {
+        return Err("Empty session batch");
+    }
+    Ok(ids)
+}
+fn print_batch(batch: usize, ids: &[String], offset: usize) {
+    println!(
+        "Batch {batch}: {} tracks, server order (duplicates retained)",
+        ids.len()
+    );
+    for (index, id) in ids.iter().enumerate() {
+        println!("{}: {}", offset + index + 1, id);
+    }
+}
+fn session_probe(client: &Client, auth: &HeaderValue) -> Result<(), &'static str> {
+    let first = request(
+        client,
+        "rotor/session/new",
+        auth,
+        Some(&serde_json::json!({
+            "seeds": ["user:onyourwave"], "includeTracksInResponse": true
+        })),
+    )?;
+    let id = session_id(&first)?;
+    let mut batch = session_batch(&first)?;
+    println!("New session: PASS (ID withheld); no autoplay");
+    let mut received = batch.clone();
+    print_batch(1, &batch, 0);
+    for number in 2..=10 {
+        let next = request(
+            client,
+            &format!("rotor/session/{id}/tracks"),
+            auth,
+            Some(&serde_json::json!({"queue": received})),
+        )?;
+        let ids = session_batch(&next)?;
+        if ids == batch {
+            return Err("Identical batch repeated; stopped without simulating playback");
+        }
+        print_batch(number, &ids, received.len());
+        received.extend(ids.iter().cloned());
+        batch = ids;
+        if received.len() >= 20 {
+            println!("Session fetch: PASS ({} ordered entries across {number} batches). S1 remains PARTIAL pending playback/lifecycle integration.", received.len());
+            return Ok(());
+        }
+    }
+    Err("Request budget reached before 20 entries; stopped")
+}
+
 fn run() -> Result<(), &'static str> {
-    if std::env::args_os().len() != 1 {
-        return Err("No arguments accepted; token must be entered at the hidden prompt");
+    let arguments: Vec<_> = std::env::args().skip(1).collect();
+    let legacy = arguments == ["--legacy"];
+    if !arguments.is_empty() && !legacy {
+        return Err("Only --legacy accepted; never put a token in arguments");
     }
     if !io::stdin().is_terminal() {
         return Err("Interactive terminal required; do not pipe tokens");
     }
-    println!("Encore S1: read-only LEGACY rotor probe. No playback or feedback. No files written.");
+    println!("Encore S1: creates a recommendation session unless --legacy. No playback/feedback. No files written.");
     print!("Yandex OAuth token (hidden; enter locally, never in chat): ");
     io::stdout().flush().map_err(|_| "Terminal error")?;
     let token = Zeroizing::new(rpassword::read_password().map_err(|_| "Cannot read hidden input")?);
@@ -82,30 +170,25 @@ fn run() -> Result<(), &'static str> {
         .https_only(true)
         .build()
         .map_err(|_| "Cannot initialize HTTPS client")?;
-    let status = get(&client, "account/status", &auth)?;
+    let status = request(&client, "account/status", &auth, None)?;
     if status.pointer("/result/account/uid").is_none() {
         return Err("Account not confirmed by API");
     }
     println!("Account request: PASS (identity withheld)");
-    let batch = get(
-        &client,
-        "rotor/station/user:onyourwave/tracks?settings2=True",
-        &auth,
-    )?;
-    let ids = ordered_ids(&batch)?;
-    if ids.is_empty() {
-        return Err("Empty rotor batch");
+    if legacy {
+        let batch = request(
+            &client,
+            "rotor/station/user:onyourwave/tracks?settings2=True",
+            &auth,
+            None,
+        )?;
+        let ids = ordered_ids(&batch)?;
+        print_batch(1, &ids, 0);
+        println!("S1: PARTIAL (legacy only)");
+    } else {
+        session_probe(&client, &auth)?;
     }
-    println!(
-        "First batch: {} tracks. Server order preserved, including duplicates.",
-        ids.len()
-    );
-    for (ordinal, id) in ids.iter().enumerate() {
-        println!("{}: {}", ordinal + 1, id);
-    }
-    println!(
-        "S1: PARTIAL only. Session creation, 20+ recommendations and next batch remain unverified."
-    );
+
     Ok(())
 }
 fn main() {
@@ -139,5 +222,32 @@ mod tests {
         for token in ["", "abc\r\nX-Test: value", "with space"] {
             assert!(authorization(token).is_err());
         }
+    }
+
+    #[test]
+    fn session_ids_cannot_modify_request_path() {
+        assert_eq!(
+            session_id(&json!({"result":{"radioSessionId":"session-123_abc"}})).unwrap(),
+            "session-123_abc"
+        );
+        for id in ["", "../feedback", "abc?x=1", "abc/def", "abc%2Fdef"] {
+            assert!(session_id(&json!({"result":{"radioSessionId":id}})).is_err());
+        }
+        assert!(session_id(&json!({"result":{}})).is_err());
+    }
+    #[test]
+    fn unusable_session_is_not_treated_as_an_empty_valid_queue() {
+        for fixture in [
+            json!({"result":{"unknownSession":true,"sequence":[]}}),
+            json!({"result":{"terminated":true,"sequence":[]}}),
+            json!({"result":{"sequence":[]}}),
+            json!({"result":{}}),
+        ] {
+            assert!(session_batch(&fixture).is_err());
+        }
+        assert_eq!(
+            session_batch(&json!({"result":{"sequence":[{"track":{"id":"42"}}]}})).unwrap(),
+            ["42"]
+        );
     }
 }

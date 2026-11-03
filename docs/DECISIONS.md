@@ -13,3 +13,7 @@ WebView2 (Windows), WebKitGTK (Linux), WKWebView (macOS) проверяются 
 ## ADR-002 — Изолированный read-only probe Яндекса
 
 Для S1 используем отдельную opt-in Rust CLI-утилиту с токеном только в памяти. Это позволяет проверить внешний API до реализации Python sidecar и защищённого постоянного хранилища. Утилита не является production source adapter, не принимает HTTP-команды от UI и не имеет общей playback state. Токен не попадает в frontend. Наличие legacy rotor не доказывает полный My Wave. Решение о production backend остаётся открытым до результатов spike.
+
+### Уточнение ADR-002
+
+Probe расширен до session API. Создание server session — отдельное действие на стороне сервиса; утилита больше не называется строго read-only в режиме по умолчанию. Не отправляет playback feedback. --legacy сохраняет первоначальный GET-only сценарий. Production-архитектура не изменена.
