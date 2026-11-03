@@ -29,12 +29,18 @@ jobs:
       - run: npx playwright install chromium --with-deps
       - run: npm run test:ui
       - run: npm run build
+      - name: Yandex probe tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml --features yandex-probe --bin yandex-probe
+      - name: Yandex probe executable
+        run: cargo build --manifest-path src-tauri/Cargo.toml --features yandex-probe --bin yandex-probe
       - name: Native build (no installer)
         run: npx tauri build --debug --no-bundle
       - uses: actions/upload-artifact@v4
         with:
           name: encore-${{ matrix.os }}-debug
           path: |
+            apps/desktop/src-tauri/target/debug/yandex-probe.exe
+            apps/desktop/src-tauri/target/debug/yandex-probe
             apps/desktop/src-tauri/target/debug/encore.exe
             apps/desktop/src-tauri/target/debug/encore
           if-no-files-found: error

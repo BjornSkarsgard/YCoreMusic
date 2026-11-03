@@ -37,3 +37,22 @@ test('startup is inert; loading cues, explicit Play plays; replacement removes o
   expect(await page.evaluate(() => (window as any).calls)).toEqual(['cue:M7lc1UVf-VE', 'play', 'destroy', 'cue:dQw4w9WgXcQ']);
   await expect(page.locator('[data-test-player]')).toHaveCount(1);
 });
+
+test('cue timeout cannot be revived by a late callback', async ({ page }) => {
+  await page.clock.install();
+  await page.route('https://www.youtube.com/iframe_api', route => route.fulfill({contentType:'text/javascript', body:`
+    window.YT = { Player: class {
+      constructor(id, options) { this.el=document.getElementById(id); this.options=options; window.lateState=()=>options.events.onStateChange({data:5}); setTimeout(()=>options.events.onReady({target:this}),0); }
+      cueVideoById() {} setVolume() {} getDuration() {return 0;} getCurrentTime() {return 0;} destroy() {this.el.remove();}
+    }}; window.onYouTubeIframeAPIReady();
+  `}));
+  await page.goto('/');
+  await page.locator('#url').fill('M7lc1UVf-VE');
+  await page.getByRole('button', {name:'Подготовить'}).click();
+  await expect(page.locator('#status')).toHaveText('Подготовка видео…');
+  await page.clock.fastForward(21000);
+  await expect(page.locator('#status')).toContainText('Видео не подготовилось');
+  await page.evaluate(()=>(window as any).lateState());
+  await expect(page.locator('#play')).toBeDisabled();
+  await expect(page.locator('#status')).toContainText('Видео не подготовилось');
+});

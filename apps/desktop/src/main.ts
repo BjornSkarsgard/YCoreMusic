@@ -51,7 +51,7 @@ element<HTMLFormElement>('load').addEventListener('submit', async event => {
     if (current !== generation) return;
     let ready = false;
     const timer = setTimeout(() => {
-      if (current === generation && !ready) { enabled(false); report('Плеер не ответил за 20 секунд. Проверьте сеть и повторите загрузку.'); }
+      if (current === generation && !ready) { ++generation; enabled(false); playerReady = false; player?.destroy(); player = undefined; report('Видео не подготовилось за 20 секунд. Проверьте сеть и повторите загрузку.'); }
     }, 20000);
     if (!document.getElementById('player')) { const mount = document.createElement('div'); mount.id = 'player'; document.querySelector('.screen')!.prepend(mount); }
     player = new YT.Player('player', {
@@ -59,9 +59,7 @@ element<HTMLFormElement>('load').addEventListener('submit', async event => {
       playerVars: { autoplay: 0, playsinline: 1, origin: location.origin },
       events: {
         onReady: event => {
-          clearTimeout(timer);
           if (current !== generation) return;
-          ready = true;
           playerReady = true;
           event.target.setVolume(Number(element<HTMLInputElement>('volume').value));
           event.target.cueVideoById(id);
@@ -71,10 +69,10 @@ element<HTMLFormElement>('load').addEventListener('submit', async event => {
         onStateChange: event => {
           if (current !== generation) return;
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
-          if (event.data === 5) enabled(true);
+          if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); }
           report(states[event.data] ?? `Состояние ${event.data}`);
         },
-        onError: event => { clearTimeout(timer); if (current === generation) { enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); } },
+        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); } },
         onAutoplayBlocked: () => { if (current === generation) report('Webview заблокировал Play. Попробуйте кнопку в самом видео.'); },
       },
     });
