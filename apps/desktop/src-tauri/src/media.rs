@@ -143,17 +143,24 @@ pub fn media_update(window: tauri::WebviewWindow, update: Update) -> Result<(), 
     let app = window.app_handle().clone();
     window
         .run_on_main_thread(move || {
+            if let Ok(mut status) = app.state::<MediaState>().0.lock() {
+                if update.revision <= status.revision {
+                    return;
+                }
+                status.revision = update.revision;
+            } else {
+                return;
+            }
+            crate::power::request(matches!(update.playback, Playback::Playing));
             CONTROLS.with(|slot| {
                 let mut slot = slot.borrow_mut();
                 let Some((controls, revision)) = slot.as_mut() else {
-                    crate::power::request(matches!(update.playback, Playback::Playing));
                     return;
                 };
                 if update.revision <= *revision {
                     return;
                 }
                 *revision = update.revision;
-                crate::power::request(matches!(update.playback, Playback::Playing));
                 let progress = Some(MediaPosition(Duration::from_secs_f64(
                     update.position.clamp(0.0, 86400.0),
                 )));

@@ -1,20 +1,27 @@
 export interface Track { id: string; title: string; artist: string }
 export interface QueueEntry extends Track { ordinal: number; videoId?: string }
+export type QueueInput = Track & { videoId?: string };
 /** The sole queue cursor. Source adapter bookkeeping is not a playback queue. */
 export class PlaybackQueue {
   private entries: QueueEntry[] = [];
   private cursor = 0;
   private epoch = 0;
+  private nextOrdinal = 0;
   get generation() { return this.epoch; }
   get current() { return this.entries[this.cursor]; }
   get snapshot(): readonly QueueEntry[] { return this.entries.map(entry => ({...entry})); }
-  reset(tracks: Track[]) { this.epoch++; this.cursor = 0; this.entries = []; this.append(tracks); }
-  append(tracks: Track[]) { for (const track of tracks) this.entries.push({...track, ordinal:this.entries.length}); }
+  reset(tracks: QueueInput[]) { this.epoch++; this.cursor = 0; this.nextOrdinal=0; this.entries = []; this.append(tracks); }
+  append(tracks: QueueInput[]) { this.entries.push(...tracks.map(track=>({...track,ordinal:this.nextOrdinal++}))); }
+  insertNext(tracks:QueueInput[]) { this.entries.splice(this.cursor+1,0,...tracks.map(track=>({...track,ordinal:this.nextOrdinal++}))); }
+  get hasNext() { return this.cursor+1<this.entries.length; }
+  ahead(count=3):readonly QueueEntry[] { return this.entries.slice(this.cursor,this.cursor+count).map(entry=>({...entry})); }
   resolve(ordinal: number, videoId: string, generation: number): boolean {
-    if (generation !== this.epoch || !this.entries[ordinal]) return false;
-    this.entries[ordinal].videoId = videoId; return true;
+    if (generation !== this.epoch) return false;
+    const entry=this.entries.find(entry=>entry.ordinal===ordinal);
+    if(!entry)return false;
+    entry.videoId = videoId; return true;
   }
-  clearVideo(ordinal:number) { if(this.entries[ordinal]) this.entries[ordinal].videoId=undefined; }
+  clearVideo(ordinal:number) { const entry=this.entries.find(entry=>entry.ordinal===ordinal);if(entry)entry.videoId=undefined; }
   previous(): QueueEntry | undefined {if(this.cursor<=0)return undefined;return this.entries[--this.cursor];}
   next(): QueueEntry | undefined {
     if (this.cursor + 1 >= this.entries.length) return undefined;

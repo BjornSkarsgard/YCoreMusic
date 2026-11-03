@@ -16,3 +16,15 @@ test('late resolution from an old source cannot alter a new queue', () => {
   assert.equal(queue.current?.videoId,undefined);
   const snapshot=queue.snapshot; snapshot[0].title='mutated'; assert.equal(queue.current?.title,'B');
 });
+
+
+test('inserting next preserves the current cursor, stable async identities and repeated entries',()=>{
+  const queue=new PlaybackQueue();queue.reset(tracks);const epoch=queue.generation;
+  const pendingB=queue.snapshot[1].ordinal,pendingC=queue.snapshot[2].ordinal;
+  queue.insertNext([{...tracks[0],videoId:'saved-A'}]);queue.append([{...tracks[1],videoId:'saved-B'}]);
+  assert.equal(queue.current?.id,'A');assert.equal(queue.generation,epoch);
+  assert.equal(queue.resolve(pendingB,'matched-B',epoch),true);assert.equal(queue.resolve(pendingC,'matched-C',epoch),true);
+  assert.deepEqual(queue.ahead().map(entry=>entry.id),['A','A','B']);
+  assert.equal(queue.next()?.videoId,'saved-A');assert.equal(queue.next()?.videoId,'matched-B');assert.equal(queue.next()?.videoId,'matched-C');assert.equal(queue.next()?.videoId,'saved-B');
+  assert.equal(queue.hasNext,false);assert.equal(new Set(queue.snapshot.map(entry=>entry.ordinal)).size,5);
+});

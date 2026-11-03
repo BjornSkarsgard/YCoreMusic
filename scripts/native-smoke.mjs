@@ -130,6 +130,16 @@ try {
     }
     assert(recorded,'Actual Play did not persist a history entry');
     console.log('Native actual Play -> SQLite history: PASS');
+    const beforeHistoryQueue=await execute('return document.querySelectorAll("#queue-list li").length');
+    const currentHistoryTitle=await execute('return document.getElementById("track-title").textContent');
+    await execute('document.getElementById("history-panel").open=true;document.getElementById("history-refresh").click()');
+    await until('return document.querySelectorAll("#history-list li").length>0');
+    await execute('const row=document.querySelector("#history-list li");Array.from(row.querySelectorAll("button")).find(button=>button.textContent==="Следом").click();Array.from(row.querySelectorAll("button")).find(button=>button.textContent==="В конец").click();');
+    assert.equal(await execute('return document.querySelectorAll("#queue-list li").length'),beforeHistoryQueue+2);
+    assert.equal(await execute('return document.getElementById("track-title").textContent'),currentHistoryTitle);
+    await click('queue-next');await until('return !document.getElementById("play").disabled');
+    assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
+    console.log('Native history Next/Append preserve current paused clip and cue saved video without autoplay: PASS');
   }
   const rect=await request('/session/'+session+'/window/rect');
   await click('mini');

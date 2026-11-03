@@ -4056,8 +4056,6 @@ dependencies = [
 [[package]]
 name = "tauri-plugin-power-monitor"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a32d7afdcf1174326df095c5d3285bf7a116514d06b8cbe65a492fa621051d60"
 dependencies = [
  "async-io",
  "core-foundation 0.10.1",

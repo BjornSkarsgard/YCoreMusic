@@ -146,3 +146,10 @@ Sleep/wake events отменяют play intent и удерживают пауз�
 PASS локально: TS check + 5 unit, Rust 18 desktop + 5 probe unit, Clippy all-targets -D warnings; 18 renderer smoke (1 live browser opt-in skipped), в том числе system Play -> suspend/resume -> поздний PLAYING -> ручной Play без новой source-сессии. Windows native: кириллический каталог/коллекции, isolated SQLite, source session/batch, real YouTube при volume=0, скрытие на 4 с с продолжающимся таймлайном, восстановление того же трека, tray-handler Pause, SMTC state playing/paused, имитированные power events, seek/Previous/history, mini/topmost/maximized restore, повторный запуск возвращает minimize. Exit завершает тестовый экземпляр.
 
 Ограничения: shell-значок не кликался аппаратно; тест вызывает тот же production action handler. Физические медиаклавиши/звуковая слышимость/реальный сон/wake/Win+L не проверены. Native power events имитированы через Tauri event system, что не доказывает подписку OS listener. Linux/macOS runtime не проверен. Предыдущая CI afcdd1d: Windows/Ubuntu PASS; macOS job не получил arm64 hosted runner. Добавлен macos-15-intel параллельно с arm64; следующий CI проверит новый код.
+
+
+### История: следующие треки и конец очереди
+
+PASS: History Next/Append с сохранённым video ID не прерывают текущий Play/Pause, сохраняют Wave continuation, повторы и порядок. Manual video без source queue остаётся текущим при добавлении истории. Stable ordinal отделён от cursor, поздний resolve не переезжает после вставки. Локально 6 TS unit, 20 renderer smoke + 1 opt-in skipped. Native Windows PASS: две вставки из изолированной истории сохраняют current paused title, увеличивают очередь на 2; Next подготавливает сохранённое видео без autoplay. Остальной native tray/media/power/mini/catalogue smoke также PASS. Windows пересобран.
+
+CI eff15db выявил macOS link failure _IOPSRelease в power-monitor 0.1.0. Внесён минимальный лицензированный vendor patch с CFType create-rule RAII (CFRelease); Windows cargo check PASS. Подтверждение macOS-сборки ожидается от нового CI. Это реальная ошибка зависимости, в отличие от прежних отказов выделения runner.

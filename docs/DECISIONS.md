@@ -72,3 +72,14 @@ Sleep/wake наблюдает tauri-plugin-power-monitor 0.1.0 ([API](https://do
 На Windows во время фактического PLAYING применяется thread-local SetThreadExecutionState SYSTEM_REQUIRED + DISPLAY_REQUIRED; пауза, suspend/resume и полный Exit снимают запрос. Ручной сон/lock не блокируются. Linux/macOS idle inhibition ещё не реализован. Native smoke имитирует события suspend/resume, не усыпляет компьютер и не выдаёт этот результат за аппаратную проверку.
 
 Две macOS arm64 CI jobs не получили hosted runner из-за capacity constraints, без запуска шагов. Добавлен независимый macos-15-intel; arm64 job сохранён. [Доступные стандартные labels GitHub](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+
+
+## ADR-013 — Вставка истории без смены источника
+
+History Next/Append добавляют сохранённый video ID, не меняют текущий player/play intent и сохраняют исходный режим Wave/конечной коллекции. Без source queue активный manual video становится первым элементом конечной очереди; без активного видео история подготавливается paused. ordinal теперь стабильный ID элемента внутри generation, а позиция хранится cursor отдельно: вставка не переназначает поздний match на другой трек. Для ahead/end используются явные методы очереди, не арифметика ordinal.
+
+Дополнительно revision-фильтр media update вынесен перед power request, чтобы отсутствие media backend не позволяло старому PLAYING задержать снятие idle inhibition.
+
+## ADR-014 — Локальная macOS-поправка power-monitor 0.1.0
+
+CI выявил native link failure _IOPSRelease в зависимости. Минимальный vendor patch сохраняет upstream 0.1.0 и лицензии, удаляет отсутствующую FFI-функцию и использует CFType create-rule RAII для CFRelease snapshot. [Apple указывает CFRelease для результата IOPSCopyPowerSourcesInfo](https://developer.apple.com/documentation/iokit/1523839-iopscopypowersourcesinfo). Cargo patch лежит в src-tauri/Cargo.toml; происхождение и условие удаления описаны в vendor/tauri-plugin-power-monitor/ENCORE-PATCH.md. Это не отключение sleep/wake на macOS.

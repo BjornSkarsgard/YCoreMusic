@@ -2,7 +2,7 @@ import './style.css';
 import { videoId } from './video-id';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {listen} from '@tauri-apps/api/event';
-import { PlaybackQueue, type Track } from './queue';
+import { PlaybackQueue, type Track, type QueueInput } from './queue';
 import { storage, type HistoryEntry } from './storage';
 import {mountCatalogue,collectionPage,type CollectionContext} from './catalogue-ui';
 import {PreviousGesture,VolumeState} from './playback-controls';
@@ -20,6 +20,7 @@ const queue = new PlaybackQueue();
 let player: YT.Player | undefined;
 let generation = 0;
 let playerReady = false;
+let activeVideo:QueueInput|undefined;
 let apiPromise: Promise<void> | undefined;
 let playIntent=false;
 let powerPaused=false;
@@ -86,6 +87,7 @@ async function loadVideo(id:string,resume=false,automatic=false) {
   playIntent=resume;
   const trackAtLoad=queue.current;
   mediaTitle=trackAtLoad?.title??'YouTube · '+id;mediaArtist=trackAtLoad?.artist??'';
+  activeVideo={id:trackAtLoad?.id??'manual:'+id,title:mediaTitle,artist:mediaArtist,videoId:id};
   mediaPlayback='stopped';publishMedia();
   const playEvent={playbackId:Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join(''),trackId:trackAtLoad?.id ?? 'manual:'+id,title:trackAtLoad?.title ?? 'YouTube · '+id,artist:trackAtLoad?.artist ?? '',videoId:id};
   let recorded=false,recordPending=false;
@@ -174,6 +176,7 @@ const positionTimer = setInterval(() => {
 window.addEventListener('beforeunload', () => { clearInterval(positionTimer); player?.destroy(); });
 
 function stopPlayer() {
+  activeVideo=undefined;
   mediaPlayback='stopped';publishMedia();
   previousGesture.reset();
   ++generation; playerReady = false; player?.destroy(); player = undefined; enabled(false);
@@ -277,7 +280,7 @@ function tryAlternative(epoch:number,ordinal:number|undefined) {
 function prepareAhead() {
   if(!isTauri() || !queue.current) return;
   const epoch=queue.generation;
-  for(const track of queue.snapshot.slice(queue.current.ordinal,queue.current.ordinal+3)) {
+  for(const track of queue.ahead()) {
     const key=epoch+':'+track.ordinal;
     if(track.videoId) continue;
     const cached=choices.get(key);
@@ -320,7 +323,7 @@ async function advance(resume:boolean) {
   advancing=true; previousGesture.reset(); playIntent=resume;
   const epoch=queue.generation;
   try {
-    if(queue.current.ordinal+1>=queue.snapshot.length) {
+    if(!queue.hasNext) {
       if(finiteSource){
         if(!activeCollection?.hasMore){playIntent=false;report('Конец выбранного списка.');return;}
         try{
@@ -367,6 +370,21 @@ element('topmost').onclick=async()=>{
 
 if (isTauri()) void sourceFetch(true);
 
+function enqueueHistory(entry:HistoryEntry,next:boolean){
+  const detached=!queue.current;
+  if(detached){
+    ++sourceRevision;finiteSource=true;activeCollection=undefined;
+    queue.reset(activeVideo?[activeVideo]:[]);choices.clear();bypassSaved.clear();
+    if(!activeVideo)playIntent=false;
+  }
+  const track={id:entry.trackId,title:entry.title,artist:entry.artist,videoId:entry.videoId};
+  if(next)queue.insertNext([track]);else queue.append([track]);
+  renderQueue();
+  element<HTMLButtonElement>('source-more').disabled=finiteSource;
+  element('history-status').textContent=next?'Добавлено следующим треком.':'Добавлено в конец очереди.';
+  if(detached&&!activeVideo)void loadVideo(entry.videoId,false);
+  else prepareAhead();
+}
 let historyRevision=0;
 async function refreshHistory(){
  const revision=++historyRevision;
@@ -383,7 +401,10 @@ async function refreshHistory(){
        element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
        powerPaused=false;void loadVideo(entry.videoId,true);
      };
-     item.append(title,button);return item;
+     const next=document.createElement('button'),append=document.createElement('button');
+     next.textContent='Следом';next.onclick=()=>enqueueHistory(entry,true);
+     append.textContent='В конец';append.onclick=()=>enqueueHistory(entry,false);
+     item.append(title,button,next,append);return item;
    }));
    element('history-status').textContent=entries.length?'Последние '+entries.length+' записей':'История пока пуста.';
  }catch {element('history-status').textContent='Не удалось прочитать историю. Существующая база не удалялась.';}

@@ -220,7 +220,7 @@ test('history replay wins over late startup source and clearing requires confirm
     }};
   });
   await mockAutomaticPlayer(page);await page.goto('/');
-  await page.locator('#history-panel summary').click();await page.locator('#history-list button').click();
+  await page.locator('#history-panel summary').click();await page.locator('#history-list').getByRole('button',{name:'Воспроизвести',exact:true}).click();
   await expect(page.locator('#track-title')).toHaveText('From history');
   await page.evaluate(()=>(window as any).releaseSource());
   await expect(page.locator('#source-start')).toBeEnabled();
@@ -386,4 +386,44 @@ test('system controls share the player; wake cancels autoplay and rejects late P
   await page.locator('#play').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
   const updates=await page.evaluate(()=>(window as any).mediaUpdates);
   expect(updates.at(-1).playback).toBe('playing');expect(updates.some((u:any)=>u.playback==='paused')).toBe(true);
+});
+
+
+test('history next and append preserve playing clip and saved video IDs while keeping source continuation',async({page})=>{
+  await page.addInitScript(()=>{
+    const w=window as any;w.isTauri=true;w.more=0;
+    w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch'){if(!args.fresh){w.more++;return [{id:'3',title:'C',artist:'Fixture'}];}return ['A','B'].map(id=>({id,title:id,artist:'Fixture'}));}
+      if(cmd==='search_videos')return [{id:args.title+args.title.toLowerCase().repeat(10),title:args.title,score:100,reason:'fixture'}];
+      if(cmd==='storage_command'&&args.request.type==='history')return [{trackId:'9',title:'History H',artist:'Fixture',videoId:'Hhhhhhhhhhh',startedAt:1}];
+    }};
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await page.locator('#play').click();
+  await page.locator('#history-panel').evaluate((item:HTMLDetailsElement)=>item.open=true);
+  await page.locator('#history-list').getByRole('button',{name:'Следом',exact:true}).click();
+  await page.locator('#history-list').getByRole('button',{name:'В конец',exact:true}).click();
+  await expect(page.locator('#track-title')).toHaveText('A');
+  expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa']);
+  await expect(page.locator('#queue-list li')).toHaveText(['A · Fixture','History H · Fixture','B · Fixture','History H · Fixture']);
+  for(const title of ['History H','B','History H','C']){await page.locator('#queue-next').click();await expect(page.locator('#track-title')).toHaveText(title);await expect(page.locator('#play')).toBeEnabled();}
+  expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa','Hhhhhhhhhhh','Bbbbbbbbbbb','Hhhhhhhhhhh','Ccccccccccc']);
+  expect(await page.evaluate(()=>(window as any).more)).toBe(1);
+});
+
+test('history next retains a playing manual video when there is no source queue',async({page})=>{
+  await page.addInitScript(()=>{
+    const w=window as any;w.isTauri=true;
+    w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch')throw 'No saved token. Run yandex-probe --save-token locally first.';
+      if(cmd==='storage_command'&&args.request.type==='history')return [{trackId:'9',title:'History H',artist:'Fixture',videoId:'Hhhhhhhhhhh',startedAt:1}];
+    }};
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');await page.locator('#url').fill('M7lc1UVf-VE');await page.locator('#load').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+  await expect(page.locator('#play')).toBeEnabled();await page.locator('#play').click();
+  await page.locator('#history-panel').evaluate((item:HTMLDetailsElement)=>item.open=true);
+  await page.locator('#history-list').getByRole('button',{name:'Следом',exact:true}).click();
+  expect(await page.evaluate(()=>(window as any).played)).toEqual(['M7lc1UVf-VE']);
+  await expect(page.locator('#queue-list li')).toHaveCount(2);
+  await page.locator('#queue-next').click();await expect(page.locator('#track-title')).toHaveText('History H');await expect(page.locator('#play')).toBeEnabled();
+  expect(await page.evaluate(()=>(window as any).played)).toEqual(['M7lc1UVf-VE','Hhhhhhhhhhh']);
 });
