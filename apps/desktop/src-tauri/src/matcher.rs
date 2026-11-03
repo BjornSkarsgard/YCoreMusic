@@ -404,7 +404,10 @@ mod tests {
         assert_eq!(candidates[0].id, "v-UX4hmUESg");
         assert_eq!(candidates[0].byline, "Berar Emanuel");
         assert!(!candidates[0].needs_review);
-        println!("Public regression top candidate: {} views={:?}",candidates[0].id,candidates[0].views);
+        println!(
+            "Public regression top candidate: {} views={:?}",
+            candidates[0].id, candidates[0].views
+        );
         for candidate in candidates {
             let title = candidate.title.to_lowercase();
             assert!(

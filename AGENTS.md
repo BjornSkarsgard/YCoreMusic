@@ -1,6 +1,6 @@
 # Instructions for Codex — Музыкальный телевизор
 
-Ты работаешь над Windows 11 desktop-приложением «Музыкальный телевизор».
+Ты работаешь над desktop-приложением Encore для Windows, Linux и macOS.
 
 ## Перед началом
 1. Прочитай `docs/00-README.md`, `docs/01-PRODUCT-DECISIONS.md`, `docs/02-ARCHITECTURE.md`, `docs/10-RISKS-AND-SPIKES.md`, `docs/11-ROADMAP-AND-ACCEPTANCE.md`.
@@ -11,7 +11,7 @@
 ## Инварианты
 - Один источник звука, один authoritative playback coordinator, одна очередь.
 - My Wave: порядок не менять. Full launch: новая сессия, без autoplay.
-- Audio endpoint: конкретно выбранный, при отключении pause, после возврата только ручной Play.
+- Аудиовыходом управляет ОС; отдельный выбор/закрепление endpoint отменён пользователем. Не менять системный default из приложения.
 - Не использовать скрытый YouTube audio extraction, DRM bypass, встроенный adblock/proxy.
 - Важные внешние интеграции сначала проверяются spike.
 - Никаких глобальных обычных hotkeys; только SMTC media keys.

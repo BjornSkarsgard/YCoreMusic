@@ -115,10 +115,10 @@ test('compact controls remain visible in a wide short window', async ({ page }) 
 
 async function mockAutomaticPlayer(page: import('@playwright/test').Page, failFirst = false) {
   await page.route('https://www.youtube.com/iframe_api', route=>route.fulfill({contentType:'text/javascript',body:`
-    window.loaded=[];window.played=[];window.YT={Player:class{
+    window.loaded=[];window.played=[];window.seeks=[];window.YT={Player:class{
       constructor(id,options){this.el=document.getElementById(id);this.options=options;window.activePlayer=this;setTimeout(()=>options.events.onReady({target:this}),0);}
       cueVideoById(id){this.id=id;window.loaded.push(id);if(${failFirst} && id==='Aaaaaaaaaaa'){queueMicrotask(()=>this.options.events.onError({data:101}));}else this.options.events.onStateChange({data:5,target:this});}
-      setVolume(){} getDuration(){return 120;} getCurrentTime(){return 5;}
+      setVolume(){} seekTo(position){window.seeks.push(position);} getDuration(){return 120;} getCurrentTime(){return 5;}
       playVideo(){window.played.push(this.id);this.options.events.onStateChange({data:1,target:this});}
       pauseVideo(){this.options.events.onStateChange({data:2,target:this});}
       destroy(){this.el.remove();}
@@ -262,4 +262,100 @@ test('uncertain matches are offered for selection and never autoplay',async({pag
   await expect(page.locator('#play')).toBeDisabled();
   await page.locator('#candidate-list button').click();await expect(page.locator('#play')).toBeEnabled();
   expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+});
+
+test('Yandex catalogue renders sections, browsing leaves playback alone, starting list preserves order',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;(window as any).catalogueCalls=[];
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch')return [{id:'999',title:'Current wave',artist:'Fixture'}];
+      if(cmd==='search_videos')return [{id:'Bbbbbbbbbbb',title:args.title,byline:'Uploader',score:100,reason:'fixture'}];
+      if(cmd==='catalogue_search')return {artists:[{kind:'artist',id:'1',title:'Rammstein',subtitle:'Исполнитель'}],tracks:[{id:'2',title:'Du hast',artist:'Rammstein'}],albums:[{kind:'album',id:'3',title:'Sehnsucht',subtitle:'Rammstein'}],playlists:[{kind:'playlist',id:'4',owner:'5',title:'Rammstein playlist',subtitle:''}],page:0};
+      if(cmd==='catalogue_collection'){
+        (window as any).catalogueCalls.push(args);
+        return {title:'Playlist',tracks:[{id:'3',title:'Three',artist:'Rammstein'},{id:'1',title:'One',artist:'Rammstein'},{id:'3',title:'Three',artist:'Rammstein'}],page:0,hasMore:false};
+      }
+    }};
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
+  await page.locator('#catalogue-query').fill('рамштайн');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+  await expect(page.locator('#catalogue-results h3')).toHaveText(['Исполнители','Треки','Альбомы','Плейлисты']);
+  await page.locator('.catalogue-card').filter({hasText:'Rammstein playlist'}).click();
+  await expect(page.locator('#catalogue-collection .catalogue-track')).toHaveCount(3);
+  await expect(page.locator('#track-title')).toHaveText('Current wave');
+  expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+  await page.getByRole('button',{name:'▶ Воспроизвести список'}).click();
+  await expect(page.locator('#track-title')).toHaveText('Three');
+  await expect(page.locator('#queue-list li')).toHaveText(['Three · Rammstein','One · Rammstein','Three · Rammstein']);
+  expect(await page.evaluate(()=>(window as any).catalogueCalls[0])).toEqual({kind:'playlist',id:'4',owner:'5',page:0});
+});
+test('late Yandex search cannot replace a newer query',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch')return [];
+      if(cmd==='catalogue_search'){
+        if(args.query==='old')await new Promise(resolve=>(window as any).releaseOld=resolve);
+        return {artists:[{kind:'artist',id:'1',title:args.query,subtitle:'Исполнитель'}],tracks:[],albums:[],playlists:[],page:0};
+      }
+    }};
+  });
+  await page.goto('/');await page.locator('#catalogue-query').fill('old');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+  await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseOld)).toBe('function');
+  await page.locator('#catalogue-query').fill('new');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+  await expect(page.locator('.catalogue-card strong')).toHaveText('new');
+  await page.evaluate(()=>(window as any).releaseOld());
+  await expect(page.locator('.catalogue-card strong')).toHaveText('new');
+  await page.locator('#catalogue-query').fill('');await expect(page.locator('.catalogue-card')).toHaveCount(0);
+});
+
+test('Previous double press preserves paused state and repeat-one keeps the current track',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch')return ['A','B'].map(id=>({id,title:id,artist:'Fixture'}));
+      if(cmd==='search_videos')return [{id:args.title+args.title.toLowerCase().repeat(10),title:args.title,score:100,reason:'fixture'}];
+    }};
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await page.locator('#play').click();
+  await page.locator('#queue-next').click();await expect(page.locator('#track-title')).toHaveText('B');await expect(page.locator('#play')).toBeEnabled();
+  await page.locator('#pause').click();await page.locator('#previous').click();await expect(page.locator('#track-title')).toHaveText('B');
+  expect(await page.evaluate(()=>(window as any).seeks)).toEqual([0]);
+  await page.locator('#previous').click();await expect(page.locator('#track-title')).toHaveText('A');await expect(page.locator('#play')).toBeEnabled();
+  expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa','Bbbbbbbbbbb']);
+  await page.locator('#repeat').click();await page.locator('#play').click();
+  await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));
+  await expect.poll(()=>page.evaluate(()=>(window as any).loaded.length)).toBe(4);
+  await expect(page.locator('#track-title')).toHaveText('A');
+  await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBe(4);
+});
+test('volume and mute survive reload without starting playback',async({page})=>{
+  await page.goto('/');await page.locator('#volume').fill('37');await page.locator('#mute').click();
+  await page.reload();await expect(page.locator('#volume')).toHaveValue('37');await expect(page.locator('#mute')).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('#play')).toBeDisabled();
+  await page.locator('#mute').click();await expect(page.locator('#mute')).toHaveAttribute('aria-pressed','false');
+  expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('encore.volume.v1')!))).toEqual({level:37,muted:false});
+});
+
+test('finite catalogue pagination continues the selected playlist without returning to My Wave',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;(window as any).waveCalls=0;(window as any).collectionPages=[];
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch'){(window as any).waveCalls++;return [{id:'9',title:'Wave',artist:'Fixture'}];}
+      if(cmd==='search_videos')return [{id:args.title[0]+args.title[0].toLowerCase().repeat(10),title:args.title,score:100,reason:'fixture'}];
+      if(cmd==='catalogue_search')return {artists:[],tracks:[],albums:[],playlists:[{kind:'playlist',id:'10',owner:'20',title:'Finite list',subtitle:''}],page:0};
+      if(cmd==='catalogue_collection'){
+        (window as any).collectionPages.push(args.page);
+        return {title:'Finite list',tracks:[{id:String(args.page+1),title:args.page===0?'P':'Q',artist:'Fixture'}],page:args.page,hasMore:args.page===0};
+      }
+    }};
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
+  await page.locator('#catalogue-query').fill('fixture');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+  await page.locator('.catalogue-card').click();await page.getByRole('button',{name:'▶ Воспроизвести список'}).click();
+  await expect(page.locator('#track-title')).toHaveText('P');await expect.poll(()=>page.evaluate(()=>(window as any).played.includes('Ppppppppppp'))).toBe(true);
+  await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));
+  await expect(page.locator('#track-title')).toHaveText('Q');
+  expect(await page.evaluate(()=>(window as any).collectionPages)).toEqual([0,1]);
+  expect(await page.evaluate(()=>(window as any).waveCalls)).toBe(1);
 });

@@ -40,9 +40,9 @@ pub fn window_mini(
             window.unmaximize().map_err(|_| "Cannot unmaximize")?;
         }
         window
-            .set_min_size(Some(LogicalSize::new(360.0, 400.0)))
+            .set_min_size(Some(LogicalSize::new(360.0, 470.0)))
             .map_err(|_| "Cannot set minimum size")?;
-        if window.set_size(LogicalSize::new(480.0, 460.0)).is_err() {
+        if window.set_size(LogicalSize::new(480.0, 500.0)).is_err() {
             let _ = window.set_min_size(Some(LogicalSize::new(800.0, 650.0)));
             return Err("Cannot resize window".into());
         }

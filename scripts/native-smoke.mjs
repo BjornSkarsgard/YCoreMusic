@@ -7,6 +7,7 @@ const driver=spawn(process.env.ENCORE_TAURI_DRIVER ?? 'tauri-driver',[
   '--port','4444','--native-driver',process.env.ENCORE_EDGE_DRIVER ?? resolve(root,'.tools/edgedriver/msedgedriver.exe')
 ],{windowsHide:true,stdio:'ignore',env:{...process.env,ENCORE_TEST_DATA_DIR:resolve(root,'.tools/native-test-data')}});
 let session;
+let originalVolume=null,volumeCaptured=false;
 async function request(path,body,method=body===undefined?'GET':'POST') {
   const response=await fetch('http://127.0.0.1:4444'+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(45000)});
   const json=await response.json();
@@ -28,6 +29,7 @@ try {
   session=created.sessionId;
   await until('return !!document.getElementById("play")');
   assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
+  originalVolume=await execute('return localStorage.getItem("encore.volume.v1")');volumeCaptured=true;
   console.log('Native startup without autoplay: PASS');
   const store=async(requestBody)=>request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("storage_command",{request:arguments[0]}).then(done).catch(()=>done({testError:true}));',args:[requestBody]});
   const storageStatus=await store({type:'status'});
@@ -51,6 +53,25 @@ try {
     await click('source-more');
     await until('return document.querySelectorAll("#queue-list li").length>'+count);
     console.log('Native source session + next batch via OS credential store: PASS (counts only)');
+  }
+  if(process.env.ENCORE_LIVE_CATALOGUE==='1') {
+    const before=await execute('return document.getElementById("track-title").textContent');
+    await execute('document.getElementById("catalogue-query").value="рамштайн";document.getElementById("catalogue-search").requestSubmit();');
+    await until('return Array.from(document.querySelectorAll(".catalogue-card strong")).some(item=>item.textContent.toLowerCase()==="rammstein")');
+    const headings=await execute('return Array.from(document.querySelectorAll("#catalogue-results h3")).map(item=>item.textContent)');
+    for(const heading of ['Исполнители','Треки','Альбомы','Плейлисты']) assert(headings.includes(heading));
+    await execute('Array.from(document.querySelectorAll(".catalogue-card strong")).find(item=>item.textContent.toLowerCase()==="rammstein").closest("button").click()');
+    await until('return document.querySelectorAll("#catalogue-collection .catalogue-track").length>0');
+    for(const heading of ['Альбомы','Плейлисты']) {
+      await execute('Array.from(document.querySelectorAll("#catalogue-results section")).find(section=>section.querySelector("h3")?.textContent===arguments[0]).querySelector(".catalogue-card").click()',[heading]);
+      await until('return document.querySelectorAll("#catalogue-collection .catalogue-track").length>0');
+    }
+    assert.equal(await execute('return document.getElementById("track-title").textContent'),before);
+    await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));');
+    await execute('document.querySelector("#catalogue-collection > button").click()');
+    await until('return document.getElementById("source-status").textContent.startsWith("Яндекс Музыка")');
+    assert(await execute('return document.querySelectorAll("#queue-list li").length>0'));
+    console.log('Native catalogue: Cyrillic query, four sections, artist/album/playlist lists and selection: PASS');
   }
   if(process.env.ENCORE_LIVE_MATCHING==='1') {
     await until('return !document.getElementById("play").disabled || /Уверенного|недоступен|недоступны/.test(document.getElementById("status").textContent)',40000);
@@ -77,6 +98,10 @@ try {
     await click('forward');
     await until('return Number(document.getElementById("seek").value)>=4');
     console.log('Native real YouTube cue, muted Play, Pause, seek: PASS');
+    await click('previous');
+    await until('return Number(document.getElementById("seek").value)<1');
+    assert.equal(await execute('return document.getElementById("status").textContent'),'Пауза');
+    console.log('Native Previous restart preserves pause: PASS');
     let recorded=false;
     for(let attempt=0;attempt<15;attempt++){
       const rows=await store({type:'history',query:''});
@@ -115,6 +140,7 @@ try {
   await execute('return document.title');
   console.log('Native single instance guard: PASS');
 } finally {
+  if(session && volumeCaptured) await execute('if(arguments[0]===null)localStorage.removeItem("encore.volume.v1");else localStorage.setItem("encore.volume.v1",arguments[0]);',[originalVolume]).catch(()=>{});
   if(session) await request('/session/'+session,undefined,'DELETE').catch(()=>{});
   if(process.platform==='win32') { await new Promise(resolve=>{const cleanup=spawn('taskkill',['/PID',String(driver.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});cleanup.on('close',resolve);cleanup.on('error',resolve);}); } else driver.kill();
 }

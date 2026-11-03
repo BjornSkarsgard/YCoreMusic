@@ -15,6 +15,7 @@ export class PlaybackQueue {
     this.entries[ordinal].videoId = videoId; return true;
   }
   clearVideo(ordinal:number) { if(this.entries[ordinal]) this.entries[ordinal].videoId=undefined; }
+  previous(): QueueEntry | undefined {if(this.cursor<=0)return undefined;return this.entries[--this.cursor];}
   next(): QueueEntry | undefined {
     if (this.cursor + 1 >= this.entries.length) return undefined;
     return this.entries[++this.cursor];

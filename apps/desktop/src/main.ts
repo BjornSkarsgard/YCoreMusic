@@ -3,13 +3,15 @@ import { videoId } from './video-id';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { PlaybackQueue, type Track } from './queue';
 import { storage, type HistoryEntry } from './storage';
+import {mountCatalogue,collectionPage,type CollectionContext} from './catalogue-ui';
+import {PreviousGesture,VolumeState} from './playback-controls';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 <header><a class="brand">encore<span>●</span></a><div class="window-actions"><button id="mini" aria-pressed="false">Миниплеер</button><button id="topmost" aria-pressed="false">Поверх окон</button><span class="badge">ЭТАП 0 · ЛАБОРАТОРИЯ</span></div></header>
 <main><section class="intro"><p class="eyebrow">МУЗЫКА ПОЛУЧАЕТ ЭКРАН</p><h1>Ещё одну.</h1><p>Первый шаг к вашему музыкальному телеканалу.<br>Проверяем воспроизведение, прежде чем строить эфир.</p></section>
-<section class="source-panel"><div class="source-actions"><button id="source-start">Моя волна · новая сессия</button><button id="source-more" disabled>Ещё рекомендации</button><button id="find-video" disabled>Подобрать заново</button><button id="queue-next" disabled>Следующий трек</button></div><p id="source-status" role="status">Яндекс доступен в desktop-версии после локального подключения аккаунта.</p><h2 id="track-title">Ручная проверка видео</h2><p id="track-artist"></p><details><summary>Очередь</summary><ol id="queue-list"></ol></details></section><p id="storage-status" role="status"></p><section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
+<details class="catalogue-panel" open><summary>Поиск в Яндекс Музыке</summary><section id="catalogue"></section></details><section class="source-panel"><div class="source-actions"><button id="source-start">Моя волна · новая сессия</button><button id="source-more" disabled>Ещё рекомендации</button><button id="find-video" disabled>Подобрать заново</button></div><p id="source-status" role="status">Яндекс доступен в desktop-версии после локального подключения аккаунта.</p><h2 id="track-title">Ручная проверка видео</h2><p id="track-artist"></p><details><summary>Очередь</summary><ol id="queue-list"></ol></details></section><p id="storage-status" role="status"></p><section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
 <form id="load"><label for="url">YouTube-ссылка или ID</label><div class="input-row"><input id="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required><button>Подготовить</button></div></form>
-<div class="controls"><button id="play" disabled>▶ Play</button><button id="pause" disabled>Ⅱ Пауза</button><button id="back" disabled>−5 с</button><button id="forward" disabled>+5 с</button><label>Громкость <input id="volume" type="range" min="0" max="100" value="50"></label></div>
+<div class="controls"><button id="previous" aria-label="Предыдущий трек" title="В начало; повторно за 3 секунды — предыдущий трек" disabled>⏮</button><button id="play" disabled>▶ Play</button><button id="pause" disabled>Ⅱ Пауза</button><button id="queue-next" aria-label="Следующий трек" disabled>⏭</button><button id="repeat" aria-pressed="false">Повтор: выкл.</button><button id="mute" aria-pressed="false">Звук</button><button id="back" disabled>−5 с</button><button id="forward" disabled>+5 с</button><label>Громкость <input id="volume" type="range" min="0" max="100" value="50"></label></div>
 <div class="timeline"><output id="elapsed">0:00</output><input id="seek" aria-label="Позиция видео" type="range" min="0" max="0" value="0" step="1" disabled><output id="duration">0:00</output></div><div id="candidate-list" aria-label="Найденные клипы"></div><p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
 <aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Аудиовыходом управляет ОС. Анализ звука ещё не реализован. Автоподбор экспериментальный; при несовпадении замените ссылку вручную.</p><details id="history-panel"><summary>История прослушивания</summary><div class="history-actions"><input id="history-query" aria-label="Поиск в истории" placeholder="Название или исполнитель"><button id="history-refresh">Обновить</button><button id="history-clear">Очистить историю</button></div><p id="history-status" role="status"></p><ol id="history-list"></ol></details><dialog id="clear-dialog"><p>Удалить всю историю прослушивания? Ручные ссылки сохранятся.</p><button id="clear-cancel">Отмена</button><button id="clear-confirm">Удалить историю</button></dialog><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -19,12 +21,21 @@ let generation = 0;
 let playerReady = false;
 let apiPromise: Promise<void> | undefined;
 let playIntent=false;
-let fromHistory=false;
+let finiteSource=false;
+let activeCollection:CollectionContext|undefined;
 interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number;reason:string;saved?:boolean;needsReview?:boolean}
 const choices=new Map<string,{items:Candidate[];index:number}>();
 const searching=new Set<string>();
 const bypassSaved=new Set<string>();
 let sourceRevision=0;
+const previousGesture=new PreviousGesture();
+const volumeKey='encore.volume.v1';
+let volume:VolumeState;
+try{volume=VolumeState.restore(localStorage.getItem(volumeKey));}catch{volume=new VolumeState();}
+element<HTMLInputElement>('volume').value=String(volume.level);
+element('mute').setAttribute('aria-pressed',String(volume.muted));
+element('mute').textContent=volume.muted?'Без звука':'Звук';
+let repeatOne=false;
 function report(message: string) {
   element('status').textContent = message;
   const log = element('log');
@@ -56,6 +67,8 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
   void loadVideo(id);
 });
 async function loadVideo(id:string,resume=false,automatic=false) {
+  previousGesture.reset();
+  element<HTMLButtonElement>('previous').disabled=false;
   const sourceGeneration=queue.generation, ordinal=queue.current?.ordinal;
   if(ordinal!==undefined) queue.resolve(ordinal,id,sourceGeneration);
   playIntent=resume;
@@ -84,7 +97,7 @@ async function loadVideo(id:string,resume=false,automatic=false) {
         onReady: event => {
           if (current !== generation) return;
           playerReady = true;
-          event.target.setVolume(Number(element<HTMLInputElement>('volume').value));
+          event.target.setVolume(volume.output);
           element('empty').hidden = true;
           report('Подготовка видео…');
           event.target.cueVideoById(id);
@@ -102,7 +115,7 @@ async function loadVideo(id:string,resume=false,automatic=false) {
             }
           }
           if(event.data===2) playIntent=false;
-          if(event.data===0 && queue.current) void advance(playIntent);
+          if(event.data===0){if(repeatOne)void loadVideo(id,playIntent,automatic);else if(queue.current)void advance(playIntent);}
         },
         onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(automatic) tryAlternative(sourceGeneration,ordinal); } },
         onAutoplayBlocked: () => { if (current === generation) report('Webview заблокировал Play. Попробуйте кнопку в самом видео.'); },
@@ -112,10 +125,17 @@ async function loadVideo(id:string,resume=false,automatic=false) {
 }
 element('play').onclick = () => {playIntent=true;player?.playVideo();};
 element('pause').onclick = () => {playIntent=false;player?.pauseVideo();};
-function seek(delta: number) { if (player) player.seekTo(Math.max(0, Math.min(player.getDuration(), player.getCurrentTime() + delta)), true); }
+function seek(delta: number) { previousGesture.reset(); if (player) player.seekTo(Math.max(0, Math.min(player.getDuration(), player.getCurrentTime() + delta)), true); }
 element('back').onclick = () => seek(-5);
 element('forward').onclick = () => seek(5);
-element('volume').oninput = () => player?.setVolume(Number(element<HTMLInputElement>('volume').value));
+function updateVolume(){
+  element<HTMLInputElement>('volume').value=String(volume.level);element('mute').setAttribute('aria-pressed',String(volume.muted));element('mute').textContent=volume.muted?'Без звука':'Звук';
+  if(playerReady)player?.setVolume(volume.output);
+  try{localStorage.setItem(volumeKey,volume.serialize());}catch{element('storage-status').textContent='Громкость действует, но сохранить настройку не удалось.';}
+}
+element('volume').oninput=()=>{volume.set(Number(element<HTMLInputElement>('volume').value));updateVolume();};
+element('mute').onclick=()=>{volume.toggleMute();updateVolume();};
+element('repeat').onclick=()=>{repeatOne=!repeatOne;element('repeat').setAttribute('aria-pressed',String(repeatOne));element('repeat').textContent=repeatOne?'Повтор: трек':'Повтор: выкл.';};
 function clock(seconds: number): string {
   const value = Math.max(0, Math.floor(seconds || 0));
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
@@ -123,7 +143,7 @@ function clock(seconds: number): string {
 const seekInput = element<HTMLInputElement>('seek');
 let dragging = false;
 seekInput.oninput = () => { dragging = true; element('elapsed').textContent = clock(Number(seekInput.value)); seekInput.title = clock(Number(seekInput.value)); };
-seekInput.onchange = () => { if (playerReady) player?.seekTo(Number(seekInput.value), true); dragging = false; };
+seekInput.onchange = () => { previousGesture.reset(); if (playerReady) player?.seekTo(Number(seekInput.value), true); dragging = false; };
 const positionTimer = setInterval(() => {
   if (!playerReady || !player) { seekInput.disabled = true; return; }
   const duration = player.getDuration();
@@ -136,6 +156,7 @@ const positionTimer = setInterval(() => {
 window.addEventListener('beforeunload', () => { clearInterval(positionTimer); player?.destroy(); });
 
 function stopPlayer() {
+  previousGesture.reset();
   ++generation; playerReady = false; player?.destroy(); player = undefined; enabled(false);
   element('candidate-list').replaceChildren();
   element('empty').hidden = false; seekInput.disabled = true; seekInput.value = '0';
@@ -150,6 +171,7 @@ function renderQueue() {
     return item;
   }));
   element<HTMLButtonElement>('queue-next').disabled = !queue.current;
+  element<HTMLButtonElement>('previous').disabled = !queue.current && !playerReady;
   element<HTMLButtonElement>('find-video').disabled = !queue.current;
 }
 let fetching = false;
@@ -164,7 +186,7 @@ async function sourceFetch(fresh: boolean) {
   try {
     const tracks=await invoke<Track[]>('source_fetch',{fresh});
     if(requestRevision!==sourceRevision)return false;
-    if (fresh) { stopPlayer(); queue.reset(tracks); fromHistory=false; choices.clear(); bypassSaved.clear(); element<HTMLInputElement>('url').value=''; }
+    if (fresh) { stopPlayer(); queue.reset(tracks); finiteSource=false; activeCollection=undefined; choices.clear(); bypassSaved.clear(); element<HTMLInputElement>('url').value=''; }
     else queue.append(tracks);
     renderQueue();
     element('source-status').textContent='Получено ' + tracks.length + ' треков. Порядок сохранён. Подготавливаем клипы…';
@@ -183,7 +205,7 @@ async function sourceFetch(fresh: boolean) {
     element('source-status').textContent=known[String(error)] ?? 'Не удалось получить рекомендации. Очередь сохранена.';
   } finally {
     fetching=false; element<HTMLButtonElement>('source-start').disabled=false;
-    element<HTMLButtonElement>('source-more').disabled=!queue.current || fromHistory;
+    element<HTMLButtonElement>('source-more').disabled=!queue.current || finiteSource;
   }
 }
 element('source-start').onclick=()=>void sourceFetch(true);
@@ -276,13 +298,24 @@ function prepareAhead() {
 let advancing=false;
 async function advance(resume:boolean) {
   if(advancing || !queue.current) return;
-  advancing=true; playIntent=resume;
+  advancing=true; previousGesture.reset(); playIntent=resume;
   const epoch=queue.generation;
   try {
     if(queue.current.ordinal+1>=queue.snapshot.length) {
-      if(fromHistory){playIntent=false;report('Конец очереди истории. Выберите запись или вернитесь к Моей волне.');return;}
+      if(finiteSource){
+        if(!activeCollection?.hasMore){playIntent=false;report('Конец выбранного списка.');return;}
+        try{
+          const context=activeCollection;
+          const page=await collectionPage(context.entity,context.page+1);
+          if(epoch!==queue.generation)return;
+          queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};
+          if(!page.tracks.length){playIntent=false;report('Больше треков в списке нет.');return;}
+        }catch{if(epoch!==queue.generation)return;playIntent=false;report('Не удалось загрузить следующую часть списка. Очередь сохранена.');return;}
+      }else {
       const received=await sourceFetch(false);
-      if(!received || epoch!==queue.generation) {playIntent=false;return;}
+      if(epoch!==queue.generation)return;
+      if(!received){playIntent=false;return;}
+      }
     }
     if(!queue.next()) {playIntent=false;return;}
     stopPlayer(); renderQueue();
@@ -327,7 +360,7 @@ async function refreshHistory(){
      const item=document.createElement('li'),title=document.createElement('span'),button=document.createElement('button');
      title.textContent=entry.title+' · '+entry.artist+' · '+new Date(entry.startedAt).toLocaleString();
      button.textContent='Воспроизвести';button.onclick=()=>{
-       stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist}]);fromHistory=true;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
+       stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist}]);finiteSource=true;activeCollection=undefined;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
        element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
        void loadVideo(entry.videoId,true);
      };
@@ -345,4 +378,24 @@ element('clear-cancel').onclick=()=>element<HTMLDialogElement>('clear-dialog').c
 element('clear-confirm').onclick=async()=>{
  try {await storage({type:'clear_history'});element<HTMLDialogElement>('clear-dialog').close();await refreshHistory();}
  catch {element('history-status').textContent='Не удалось очистить историю.';}
+};
+
+mountCatalogue(selection=>{
+  if(!selection.tracks.length)return;
+  stopPlayer();++sourceRevision;queue.reset(selection.tracks);choices.clear();bypassSaved.clear();
+  finiteSource=true;activeCollection=selection.collection;playIntent=true;renderQueue();
+  element<HTMLButtonElement>('source-more').disabled=true;
+  element('source-status').textContent='Яндекс Музыка · '+selection.title;
+  element<HTMLInputElement>('url').value='';prepareAhead();
+});
+
+element('previous').onclick=()=>{
+  if(previousGesture.press(performance.now())==='restart'){
+    if(playerReady)player?.seekTo(0,true);
+    return;
+  }
+  if(!queue.previous())return;
+  stopPlayer();renderQueue();element<HTMLInputElement>('url').value='';
+  if(queue.current?.videoId)void loadVideo(queue.current.videoId,playIntent);
+  else prepareAhead();
 };

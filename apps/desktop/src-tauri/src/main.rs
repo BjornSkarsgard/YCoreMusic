@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod catalogue;
 #[allow(dead_code)]
 mod credentials;
 mod matcher;
@@ -39,6 +40,38 @@ async fn search_videos(
         .map_err(|_| "Search worker failed".to_string())?
         .map_err(str::to_string)
 }
+#[tauri::command]
+async fn catalogue_search(
+    window: tauri::WebviewWindow,
+    query: String,
+    page: u32,
+) -> Result<catalogue::Results, String> {
+    if window.label() != "main" {
+        return Err("Untrusted window".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || catalogue::search(&query, page))
+        .await
+        .map_err(|_| "Catalogue worker failed".to_string())?
+        .map_err(str::to_string)
+}
+#[tauri::command]
+async fn catalogue_collection(
+    window: tauri::WebviewWindow,
+    kind: catalogue::Kind,
+    id: String,
+    owner: Option<String>,
+    page: u32,
+) -> Result<catalogue::Collection, String> {
+    if window.label() != "main" {
+        return Err("Untrusted window".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        catalogue::collection(kind, &id, owner.as_deref(), page)
+    })
+    .await
+    .map_err(|_| "Collection worker failed".to_string())?
+    .map_err(str::to_string)
+}
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
@@ -69,6 +102,8 @@ fn main() {
         .manage(window_mode::WindowMode::default())
         .invoke_handler(tauri::generate_handler![
             source_fetch,
+            catalogue_search,
+            catalogue_collection,
             storage::storage_command,
             search_videos,
             window_mode::window_mini,

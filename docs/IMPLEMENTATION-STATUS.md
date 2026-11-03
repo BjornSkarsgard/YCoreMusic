@@ -125,3 +125,13 @@ Native Windows PASS: отдельная .tools/native-test-data SQLite, чтен
 ### User-reported matching correction
 
 Living Dead Beat / Children Of Bodom воспроизведён в metadata search: канал Berar Emanuel с оригинальной группой в названии раньше отсеивался. Канал больше не hard gate. Добавлены title-based band/song matching, фильтрация playthrough/backing, просмотры как первый критерий среди подходящих кандидатов и ручной список неоднозначных результатов. Rust regression fixture + реальный metadata probe PASS. Непосредственная embed-проверка v-UX4hmUESg пока не прошла подготовку за 25 секунд; это не считается доказанным воспроизведением данного ролика. Подбор и фактическая доступность embed — отдельные проверки. Previous/repeat/volume persistence остаются следующим запланированным срезом; новая задача пользователя — каталоговый поиск Яндекса.
+
+### Каталог Яндекса, Previous, repeat-one, volume
+
+Сделано: search «исполнители/треки/альбомы/плейлисты», открытие коллекций, явный запуск списка/трека, дополнительные страницы поиска и коллекций. Просмотр не прерывает текущую музыку. Конечная playlist/album/artist queue сохраняет порядок, подгружает страницы, не уходит сама в Wave. Реальный запрос «рамштайн» вернул Rammstein, 4 исполнителя, 20 треков, 10 альбомов, 4 плейлиста; чтение первой коллекции каждого типа PASS через OS-store credentials без вывода токена.
+
+Добавлены Previous (seek 0 / повтор за 3 с назад в текущей очереди), repeat-one, persistent volume/mute. Native restart-to-zero сохраняет паузу. Repeat-one/cross-track Previous и volume reload покрыты renderer/unit тестами, полное естественное завершение повторяемого ролика в native отдельно не проверялось. Volume prefs — только localStorage UI-настройка, не секреты. Полные favourites/repeat-queue/SMTC/межисточниковый playback stack остаются.
+
+Windows native smoke PASS: кириллический запрос и 4 раздела, открытие artist/album/playlist списков, просмотр не меняет текущий title, явный запуск списка наполняет очередь. Также PASS: SQLite fixture isolation, source session/batch, sample real YouTube volume=0 Play/Pause/seek, Previous seek0 paused, history, mini resize/maximized restore/topmost, single instance. Локально: 18 desktop Rust unit + 5 probe unit, Clippy PASS; 17 renderer smoke + 1 opt-in live test skipped; 5 TS pure unit PASS. Новая Windows сборка собрана после закрытия пользовательского окна. Новый CI ещё не завершён; runtime Linux/macOS для поиска/контролов не проверен.
+
+Living Dead Beat metadata search PASS и регрессионный fixture PASS; конкретный v-UX4hmUESg в отдельном live embed test не подготовился за таймаут. Не объявляем этот ролик воспроизводимым по одному поиску; alternative candidates/error path остаются обязательными.
