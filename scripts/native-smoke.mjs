@@ -1,7 +1,7 @@
 // Opt-in Windows desktop integration test. No credentials or API bodies are logged.
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
-import {existsSync} from 'node:fs';
+import {existsSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const root=process.cwd();
 const nativeApp=resolve(root,'apps/desktop/src-tauri/target/native-test/encore.exe');
@@ -102,6 +102,63 @@ try {
     await click('play');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',30000);
     await mediaUntil('playing');
+    assert.equal(await execute('return getComputedStyle(document.getElementById("player")).pointerEvents'),'none');
+    assert.equal(await execute('return new URL(document.getElementById("player").src).searchParams.get("controls")'),'0');
+    await execute('document.querySelector(".workspace").scrollIntoView({block:"start"})');
+    const frameElement=await request('/session/'+session+'/element',{using:'css selector',value:'#player'});
+    await request('/session/'+session+'/actions',{actions:[{type:'pointer',id:'video-hover',parameters:{pointerType:'mouse'},actions:[{type:'pointerMove',duration:200,origin:frameElement,x:0,y:0}]}]});
+    const readYouTube=async(script)=>{
+      const frame=await request('/session/'+session+'/element',{using:'css selector',value:'#player'});
+      await request('/session/'+session+'/frame',{id:frame});
+      try{return await execute(script);}finally{await request('/session/'+session+'/frame',{id:null});}
+    };
+    const captionState=async(expected)=>{
+      for(let attempt=0;attempt<25;attempt++){
+        if(await readYouTube('return document.getElementById("movie_player")?.isSubtitlesOn?.()')===expected)return;
+        await sleep(100);
+      }
+      throw new Error('YouTube actual caption state did not become '+expected);
+    };
+    const chromeVisible='function visible(selector){let item=document.querySelector(selector);if(!item||!item.getBoundingClientRect().width)return false;for(;item;item=item.parentElement){const style=getComputedStyle(item);if(style.display==="none"||style.visibility==="hidden"||Number(style.opacity)===0)return false;}return true;}return {top:visible(".ytp-chrome-top"),bottom:visible(".ytp-chrome-bottom")}';
+    await sleep(3500);
+    assert.deepEqual(await readYouTube(chromeVisible),{top:false,bottom:false},'YouTube chrome appeared on hover');
+    await click('forward');await sleep(1000);
+    assert.deepEqual(await readYouTube(chromeVisible),{top:false,bottom:false},'YouTube chrome appeared after custom seek');
+    await until('return !document.getElementById("captions").disabled && document.getElementById("captions").options.length>1');
+    await captionState(false);
+    const captionValue=await execute('const select=document.getElementById("captions");select.selectedIndex=1;select.dispatchEvent(new Event("change"));document.getElementById("caption-size").value="1";document.getElementById("caption-size").dispatchEvent(new Event("change"));return select.value');
+    await sleep(1000);await click('pause');await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"');
+    assert.equal(await execute('return document.getElementById("captions").value'),captionValue);
+    await captionState(true);
+    await execute('document.getElementById("captions").value="off";document.getElementById("captions").dispatchEvent(new Event("change"))');
+    await sleep(1000);await click('pause');await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"');
+    assert.equal(await execute('return document.getElementById("captions").value'),'off');
+    await captionState(false);
+    const rowsBeforeSettings=(await store({type:'history',query:''})).length;
+    const timeBeforeSettings=await execute('return Number(document.getElementById("seek").value)');
+    await click('youtube-settings');await until('return document.getElementById("status").textContent==="Воспроизведение"');
+    assert.equal(await execute('return getComputedStyle(document.getElementById("player")).pointerEvents'),'auto');
+    await click('youtube-settings');await until('return document.getElementById("status").textContent==="Воспроизведение"');await sleep(1000);
+    assert.equal(await execute('return getComputedStyle(document.getElementById("player")).pointerEvents'),'none');
+    assert(await execute('return Number(document.getElementById("seek").value)')>=timeBeforeSettings-3,'Settings reload lost position');
+    assert.equal((await store({type:'history',query:''})).length,rowsBeforeSettings,'Settings reload duplicated history');
+    await sleep(3500);
+    const shotRect=await request('/session/'+session+'/window/rect');
+    await request('/session/'+session+'/window/rect',{width:1200,height:1200});
+    await execute('document.querySelector(".workspace").scrollIntoView({block:"start"})');
+    writeFileSync(resolve(root,'.tools/native-custom-player.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
+    await request('/session/'+session+'/window/rect',shotRect);
+    console.log('Native clean hover/custom seek, real caption on/off, settings position/history preservation: PASS');
+    const frameBeforeFullscreen=await execute('return document.getElementById("player").src');
+    const clickFullscreen=async()=>{
+      const button=await request('/session/'+session+'/element',{using:'css selector',value:'#fullscreen'});
+      await request('/session/'+session+'/element/'+button['element-6066-11e4-a52e-4f735466cecf']+'/click',{});
+    };
+    await clickFullscreen();await until('return document.fullscreenElement?.classList.contains("workspace")');
+    assert.equal(await execute('return document.querySelectorAll("iframe#player").length'),1);
+    await clickFullscreen();await until('return !document.fullscreenElement');
+    assert.equal(await execute('return document.getElementById("player").src'),frameBeforeFullscreen);
+    console.log('Native custom fullscreen enters/exits with the same IFrame: PASS');
     const titleBeforeHide=await execute('return document.getElementById("track-title").textContent');
     const timeBeforeHide=await execute('return Number(document.getElementById("seek").value)');
     assert.equal((await nativeInvoke('desktop_status')).tray_available,true);

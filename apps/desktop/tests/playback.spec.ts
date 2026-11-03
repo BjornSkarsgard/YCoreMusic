@@ -117,7 +117,7 @@ async function mockAutomaticPlayer(page: import('@playwright/test').Page, failFi
   await page.route('https://www.youtube.com/iframe_api', route=>route.fulfill({contentType:'text/javascript',body:`
     window.loaded=[];window.played=[];window.seeks=[];window.YT={Player:class{
       constructor(id,options){this.el=document.getElementById(id);this.options=options;window.activePlayer=this;setTimeout(()=>options.events.onReady({target:this}),0);}
-      cueVideoById(id){this.id=id;window.loaded.push(id);if(${failFirst} && id==='Aaaaaaaaaaa'){queueMicrotask(()=>this.options.events.onError({data:101}));}else this.options.events.onStateChange({data:5,target:this});}
+      cueVideoById(value){const id=typeof value==='string'?value:value.videoId;this.id=id;window.loaded.push(id);if(${failFirst} && id==='Aaaaaaaaaaa'){queueMicrotask(()=>this.options.events.onError({data:101}));}else this.options.events.onStateChange({data:5,target:this});}
       setVolume(){} seekTo(position){window.seeks.push(position);} getDuration(){return 120;} getCurrentTime(){return 5;}
       playVideo(){window.played.push(this.id);this.options.events.onStateChange({data:1,target:this});}
       pauseVideo(){this.options.events.onStateChange({data:2,target:this});}
@@ -454,4 +454,50 @@ test('local Space and arrows control playback while search and link fields keep 
   await page.locator('#url').focus();await page.keyboard.press('Space');await page.keyboard.press('ArrowRight');
   expect(await page.evaluate(()=>(window as any).seeks)).toEqual([10,0]);
   expect(await page.evaluate(()=>(window as any).played)).toEqual(['M7lc1UVf-VE']);
+});
+
+test('custom controls suppress iframe input, captions use exposed options and settings reload preserves position/history',async({page})=>{
+  await page.addInitScript(()=>{
+    const w=window as any;w.isTauri=true;w.records=[];
+    w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch')return [{id:'1',title:'Fixture',artist:'Artist'}];
+      if(cmd==='search_videos')return [{id:'M7lc1UVf-VE',title:'Fixture',score:100,reason:'fixture'}];
+      if(cmd==='storage_command'&&args.request.type==='record')w.records.push(args.request.event);
+    }};
+  });
+  await page.route('https://www.youtube.com/iframe_api',route=>route.fulfill({contentType:'text/javascript',body:`
+    window.players=[];window.played=[];window.cues=[];window.captionWrites=[];
+    window.YT={Player:class {
+      constructor(id,options){this.options=options;this.track={languageCode:'en',kind:'',name:''};this.frame=document.createElement('iframe');this.frame.id=id;this.frame.srcdoc='<p>Video fixture</p>';document.getElementById(id).replaceWith(this.frame);window.players.push(this);setTimeout(()=>options.events.onReady({target:this}),0);}
+      getIframe(){return this.frame;}getCurrentTime(){return 42;}getDuration(){return 120;}setVolume(){}seekTo(){}
+      cueVideoById(value){window.cues.push(value);this.options.events.onStateChange({data:5,target:this});this.options.events.onApiChange({target:this});}
+      playVideo(){this.track={languageCode:'en',kind:'',name:''};window.played.push('play');this.options.events.onStateChange({data:1,target:this});}
+      pauseVideo(){this.options.events.onStateChange({data:2,target:this});}destroy(){this.frame.remove();}
+      loadModule(){} unloadModule(){this.track={};}
+      getOptions(){return ['track','tracklist','fontSize','reload'];}
+      getOption(module,option){if(option==='tracklist')return [{languageCode:'en',displayName:'English'},{languageCode:'ru',displayName:'Русский'}];return this.track;}
+      setOption(module,option,value){window.captionWrites.push({option,value});if(option==='track')this.track=value;}
+    }};window.onYouTubeIframeAPIReady();
+  `}));
+  await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
+  await expect(page.locator('#player')).toHaveCSS('pointer-events','none');await expect(page.locator('#player')).toHaveAttribute('tabindex','-1');
+  expect(await page.evaluate(()=>(window as any).players[0].options.playerVars)).toMatchObject({controls:0,fs:0,disablekb:1});
+  await expect(page.locator('#captions')).toBeEnabled();await expect(page.locator('#captions')).toHaveValue('off');
+  await page.locator('#play').click();await expect.poll(()=>page.evaluate(()=>(window as any).records.length)).toBe(1);
+  expect(await page.evaluate(()=>(window as any).players[0].track)).toEqual({});
+  await page.locator('#captions').selectOption({label:'Русский'});await page.locator('#caption-size').selectOption('1');
+  expect(await page.evaluate(()=>(window as any).players[0].track.languageCode)).toBe('ru');
+  await page.locator('#youtube-settings').click();await expect(page.locator('#youtube-settings')).toHaveAttribute('aria-pressed','true');await expect(page.locator('#play')).toBeEnabled();
+  await expect(page.locator('#player')).toHaveCSS('pointer-events','auto');
+  expect(await page.evaluate(()=>(window as any).players.at(-1).options.playerVars.controls)).toBe(1);
+  expect(await page.evaluate(()=>(window as any).cues.at(-1))).toEqual({videoId:'M7lc1UVf-VE',startSeconds:42});
+  expect(await page.evaluate(()=>(window as any).records.length)).toBe(1);
+  expect(await page.evaluate(()=>(window as any).players.at(-1).track.languageCode)).toBe('ru');
+  await page.locator('#pause').click();await page.locator('#youtube-settings').click();await expect(page.locator('#play')).toBeEnabled();
+  await expect(page.locator('#player')).toHaveCSS('pointer-events','none');expect(await page.evaluate(()=>(window as any).played.length)).toBe(2);
+  expect(await page.evaluate(()=>(window as any).records.length)).toBe(1);
+  await page.evaluate(()=>{const w=window as any;w.players[0].options.events.onPlaybackQualityChange({data:'hd2160',target:w.players[0]});});
+  await expect(page.locator('#video-quality')).toHaveText('Качество: Авто');
+  await page.evaluate(()=>{const w=window as any;w.players.at(-1).options.events.onPlaybackQualityChange({data:'hd720',target:w.players.at(-1)});});
+  await expect(page.locator('#video-quality')).toHaveText('Качество: 720p');
 });

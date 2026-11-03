@@ -6,14 +6,15 @@ import { PlaybackQueue, type Track, type QueueInput } from './queue';
 import { storage, type HistoryEntry } from './storage';
 import {mountCatalogue,collectionPage,type CollectionContext} from './catalogue-ui';
 import {PreviousGesture,VolumeState} from './playback-controls';
+import {CaptionControls,qualityLabel} from './player-options';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 <header><a class="brand">encore<span>●</span></a><div class="window-actions"><button id="mini" aria-pressed="false">Миниплеер</button><button id="topmost" aria-pressed="false">Поверх окон</button><span class="badge">ЭТАП 0 · ЛАБОРАТОРИЯ</span></div></header>
 <main><section class="intro"><p class="eyebrow">МУЗЫКА ПОЛУЧАЕТ ЭКРАН</p><h1>Ещё одну.</h1><p>Первый шаг к вашему музыкальному телеканалу.<br>Проверяем воспроизведение, прежде чем строить эфир.</p></section>
 <details class="catalogue-panel" open><summary>Поиск в Яндекс Музыке</summary><section id="catalogue"></section></details><section class="source-panel"><div class="source-actions"><button id="source-start">Моя волна · новая сессия</button><button id="source-more" disabled>Ещё рекомендации</button><button id="find-video" disabled>Подобрать заново</button></div><p id="source-status" role="status">Яндекс доступен в desktop-версии после локального подключения аккаунта.</p><h2 id="track-title">Ручная проверка видео</h2><p id="track-artist"></p><details><summary>Очередь</summary><ol id="queue-list"></ol></details></section><p id="storage-status" role="status"></p><section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
-<form id="load"><label for="url">YouTube-ссылка или ID</label><div class="input-row"><input id="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required><button>Подготовить</button></div></form>
+
 <div class="controls"><button id="previous" aria-label="Предыдущий трек" title="В начало; повторно за 3 секунды — предыдущий трек" disabled>⏮</button><button id="play" disabled>▶ Play</button><button id="pause" disabled>Ⅱ Пауза</button><button id="queue-next" aria-label="Следующий трек" disabled>⏭</button><button id="repeat" aria-pressed="false">Повтор: выкл.</button><button id="mute" aria-pressed="false">Звук</button><button id="back" disabled>−5 с</button><button id="forward" disabled>+5 с</button><label>Громкость <input id="volume" type="range" min="0" max="100" value="50"></label></div>
-<div class="timeline"><output id="elapsed">0:00</output><input id="seek" aria-label="Позиция видео" type="range" min="0" max="0" value="0" step="1" disabled><output id="duration">0:00</output></div><div id="candidate-list" aria-label="Найденные клипы"></div><p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
+<div class="timeline"><output id="elapsed">0:00</output><input id="seek" aria-label="Позиция видео" type="range" min="0" max="0" value="0" step="1" disabled><output id="duration">0:00</output></div><div class="player-options"><label>Субтитры <select id="captions" aria-label="Субтитры" disabled></select></label><label>Размер <select id="caption-size" aria-label="Размер субтитров" disabled><option value="-1">Мелкий</option><option value="0" selected>Обычный</option><option value="1">Крупный</option><option value="2">Очень крупный</option></select></label><span id="video-quality">Качество: Авто</span><button id="youtube-settings" aria-pressed="false" title="Показать панель YouTube для ручного выбора качества" disabled>Панель YouTube</button><button id="fullscreen" aria-pressed="false">На весь экран</button></div><p id="player-options-status" role="status"></p><form id="load"><label for="url">YouTube-ссылка или ID</label><div class="input-row"><input id="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required><button>Подготовить</button></div></form><div id="candidate-list" aria-label="Найденные клипы"></div><p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
 <aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Аудиовыходом управляет ОС. Анализ звука ещё не реализован. Автоподбор экспериментальный; при несовпадении замените ссылку вручную.</p><details id="history-panel"><summary>История прослушивания</summary><div class="history-actions"><input id="history-query" aria-label="Поиск в истории" placeholder="Название или исполнитель"><button id="history-refresh">Обновить</button><button id="history-clear">Очистить историю</button></div><p id="history-status" role="status"></p><ol id="history-list"></ol></details><dialog id="clear-dialog"><p>Удалить всю историю прослушивания? Ручные ссылки сохранятся.</p><button id="clear-cancel">Отмена</button><button id="clear-confirm">Удалить историю</button></dialog><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const queue = new PlaybackQueue();
@@ -21,6 +22,11 @@ let player: YT.Player | undefined;
 let generation = 0;
 let playerReady = false;
 let activeVideo:QueueInput|undefined;
+interface PlayRecord {event:{playbackId:string;trackId:string;title:string;artist:string;videoId:string};recorded:boolean;pending:boolean}
+let activeRecord:PlayRecord|undefined;
+let activeAutomatic=false;
+let youtubeControls=false;
+const captionControls=new CaptionControls(element<HTMLSelectElement>('captions'),element<HTMLSelectElement>('caption-size'),element('player-options-status'));
 let apiPromise: Promise<void> | undefined;
 let playIntent=false;
 let powerPaused=false;
@@ -55,7 +61,7 @@ function report(message: string) {
   log.textContent = `${new Date().toLocaleTimeString()} ${message}\n${log.textContent}`.slice(0, 6000);
 }
 function enabled(value: boolean) {
-  for (const id of ['play', 'pause', 'back', 'forward']) element<HTMLButtonElement>(id).disabled = !value;
+  for (const id of ['play', 'pause', 'back', 'forward','youtube-settings']) element<HTMLButtonElement>(id).disabled = !value;
 }
 function api(): Promise<void> {
   if (window.YT?.Player) return Promise.resolve();
@@ -79,18 +85,25 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
   if(isTauri() && track && /^\d+$/.test(track.id)) void storage({type:'save_video',trackId:track.id,videoId:id}).then(()=>{element('storage-status').textContent='Ручной клип сохранён для этого трека.';}).catch(()=>{element('storage-status').textContent='Не удалось сохранить ручной клип. Текущий выбор действует только до перезапуска.';});
   void loadVideo(id);
 });
-async function loadVideo(id:string,resume=false,automatic=false) {
+async function loadVideo(id:string,resume=false,automatic=false,restore?:{position:number;record?:PlayRecord}) {
   previousGesture.reset();
   element<HTMLButtonElement>('previous').disabled=false;
   const sourceGeneration=queue.generation, ordinal=queue.current?.ordinal;
   if(ordinal!==undefined) queue.resolve(ordinal,id,sourceGeneration);
-  playIntent=resume;
+  playIntent=resume&&!powerPaused;
+  activeAutomatic=automatic;
+  if(!restore){youtubeControls=false;element('player-options-status').textContent='';}
+  document.querySelector('.screen')!.classList.toggle('interactive',youtubeControls);
+  element('youtube-settings').setAttribute('aria-pressed',String(youtubeControls));
+  element('youtube-settings').textContent=youtubeControls?'Скрыть панель YouTube':'Панель YouTube';
+  element('video-quality').textContent='Качество: Авто';
+  captionControls.reset();
   const trackAtLoad=queue.current;
   mediaTitle=trackAtLoad?.title??'YouTube · '+id;mediaArtist=trackAtLoad?.artist??'';
   activeVideo={id:trackAtLoad?.id??'manual:'+id,title:mediaTitle,artist:mediaArtist,videoId:id};
   mediaPlayback='stopped';publishMedia();
   const playEvent={playbackId:Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join(''),trackId:trackAtLoad?.id ?? 'manual:'+id,title:trackAtLoad?.title ?? 'YouTube · '+id,artist:trackAtLoad?.artist ?? '',videoId:id};
-  let recorded=false,recordPending=false;
+  const record=restore?.record??{event:playEvent,recorded:false,pending:false};activeRecord=record;
   const current = ++generation;
   enabled(false);
   if(resume) element<HTMLButtonElement>('pause').disabled=false;
@@ -108,7 +121,7 @@ async function loadVideo(id:string,resume=false,automatic=false) {
     if (!document.getElementById('player')) { const mount = document.createElement('div'); mount.id = 'player'; document.querySelector('.screen')!.prepend(mount); }
     player = new YT.Player('player', {
       width: '100%', height: '100%',
-      playerVars: { autoplay: 0, playsinline: 1, origin: location.origin },
+      playerVars: { autoplay: 0, playsinline: 1, controls:youtubeControls?1:0,fs:0,disablekb:1,rel:0,iv_load_policy:3,cc_load_policy:1,origin: location.origin },
       events: {
         onReady: event => {
           if (current !== generation) return;
@@ -116,19 +129,22 @@ async function loadVideo(id:string,resume=false,automatic=false) {
           event.target.setVolume(volume.output);
           element('empty').hidden = true;
           report('Подготовка видео…');
-          event.target.cueVideoById(id);
+          event.target.getIframe?.()?.setAttribute('tabindex',youtubeControls?'0':'-1');
+          if(restore && restore.position>0)event.target.cueVideoById({videoId:id,startSeconds:restore.position});
+          else event.target.cueVideoById(id);
         },
         onStateChange: event => {
           if (current !== generation) return;
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
           report(states[event.data] ?? `Состояние ${event.data}`);
-          if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); if(playIntent) event.target.playVideo(); }
+          if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); captionControls.refresh(event.target);if(playIntent&&!powerPaused) event.target.playVideo(); }
           if(event.data===1) {
             if(powerPaused){playIntent=false;event.target.pauseVideo();return;}
             playIntent=true;
-            if(isTauri() && !recorded && !recordPending) {
-              recordPending=true;
-              void storage({type:'record',event:playEvent}).then(()=>{recorded=true;}).catch(()=>{element('storage-status').textContent='Не удалось записать прослушивание в историю.';}).finally(()=>{recordPending=false;});
+            captionControls.refresh(event.target,true);
+            if(isTauri() && !record.recorded && !record.pending) {
+              record.pending=true;
+              void storage({type:'record',event:record.event}).then(()=>{record.recorded=true;}).catch(()=>{element('storage-status').textContent='Не удалось записать прослушивание в историю.';}).finally(()=>{record.pending=false;});
             }
           }
           if(event.data===2) playIntent=false;
@@ -136,7 +152,9 @@ async function loadVideo(id:string,resume=false,automatic=false) {
           if(event.data===0 && !powerPaused){if(repeatMode==='one')void loadVideo(id,playIntent,automatic);else if(queue.current)void advance(playIntent);}
         },
         onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(automatic) tryAlternative(sourceGeneration,ordinal); } },
-        onAutoplayBlocked: () => { if (current === generation) report('Webview заблокировал Play. Попробуйте кнопку в самом видео.'); },
+        onApiChange:event=>{if(current===generation)captionControls.refresh(event.target);},
+        onPlaybackQualityChange:event=>{if(current===generation)element('video-quality').textContent='Качество: '+qualityLabel(event.data);},
+        onAutoplayBlocked: () => { if (current === generation) report('YouTube заблокировал Play. Откройте панель YouTube и нажмите Play на видео.'); },
       },
     });
   } catch (error) { if (current === generation) report(error instanceof Error ? error.message : 'Ошибка загрузки'); }
@@ -177,7 +195,7 @@ const positionTimer = setInterval(() => {
 window.addEventListener('beforeunload', () => { clearInterval(positionTimer); player?.destroy(); });
 
 function stopPlayer() {
-  activeVideo=undefined;
+  activeVideo=undefined;activeRecord=undefined;captionControls.reset();
   mediaPlayback='stopped';publishMedia();
   previousGesture.reset();
   ++generation; playerReady = false; player?.destroy(); player = undefined; enabled(false);
@@ -489,4 +507,21 @@ document.addEventListener('keydown',event=>{
   }else if(playerReady && (event.key==='ArrowLeft'||event.key==='ArrowRight')){
     event.preventDefault();seek(event.key==='ArrowLeft'?-5:5);
   }
+});
+
+
+element('youtube-settings').onclick=()=>{
+  if(!playerReady||!activeVideo?.videoId)return;
+  const position=player?.getCurrentTime()??0,record=activeRecord;
+  youtubeControls=!youtubeControls;
+  element('player-options-status').textContent=youtubeControls?'Для ручного качества нужна шестерёнка YouTube. После скрытия панели выбранное качество может сброситься.':'';
+  void loadVideo(activeVideo.videoId,playIntent,activeAutomatic,{position,record});
+};
+element('fullscreen').onclick=async()=>{
+  try{if(document.fullscreenElement)await document.exitFullscreen();else await document.querySelector<HTMLElement>('.workspace')!.requestFullscreen();}
+  catch{element('player-options-status').textContent='Полноэкранный режим недоступен.';}
+};
+document.addEventListener('fullscreenchange',()=>{
+  element('fullscreen').textContent=document.fullscreenElement?'Выйти из полного экрана':'На весь экран';
+  element('fullscreen').setAttribute('aria-pressed',String(!!document.fullscreenElement));
 });

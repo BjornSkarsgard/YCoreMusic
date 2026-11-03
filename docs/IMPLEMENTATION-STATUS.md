@@ -162,3 +162,12 @@ CI eff15db выявил macOS link failure _IOPSRelease в power-monitor 0.1.0. 
 Native smoke теперь запускает отдельный Cargo native-test executable, debug-only test identifier, отдельный WebView profile и isolated SQLite. Проверен рядом с уже работающим пользовательским Encore: пользовательский PID сохранился, тестовый процесс завершился. User-facing debug executable может оставаться заблокирован открытым экземпляром; новая сборка готова в native-test output.
 
 CI 0339af0: Ubuntu, macOS Intel и macOS Apple Silicon PASS, включая native link после vendor patch. Windows job ещё выполнялся при записи. Это сборка/автотесты, не доказательство аппаратного runtime на Linux/macOS. Новые repeat/local-key/test-isolation изменения ожидают следующего CI.
+
+
+### Свои controls, hover/seek и субтитры
+
+PASS Windows native с настоящим YouTube на volume=0: controls=0/pointer-events:none; перемещение указателя в центр видео и наша перемотка не показывают верхнюю/нижнюю chrome-панель YouTube. CC on/off проверен по фактическому состоянию тестового YouTube player, в том числе повторный Play после off. Это потребовало подавления автоматического включения CC при muted Play; одного track={} и чтения getOption(track) недостаточно. Свои доступные дорожки/размер текста и quality-event indicator под видео. Ручное разрешение остаётся в явной временной панели YouTube, не в фиктивном custom selector.
+
+PASS native: открытие/скрытие YouTube controls сохраняет позицию и не дублирует SQLite history; свой fullscreen входит/выходит с тем же единственным IFrame. Screenshot .tools/native-custom-player.png просмотрен: на активном видео нет chrome overlays, свои controls видны под ним. Остальной native catalogue/tray/power/mini/history/repeat smoke PASS. Renderer: 22 PASS + 1 live opt-in skipped; после CC enforcement дополнительно целевой regression с auto-enabled caption mock PASS. 6 TS unit, strict check, Windows native-test build PASS.
+
+Ограничения: branding/служебные заставки YouTube на pause/load полностью не отключаются; изменение качества через API no-op, закрытие native панели может сбросить ручной выбор. CC bridge использует обнаруженные runtime возможности, его совместимость с будущими изменениями YouTube не гарантируется. Native Linux/macOS для новой панели не проверен. CI f85cc64 полностью PASS: Windows, Ubuntu, macOS Intel, macOS Apple Silicon. Новая панель ожидает собственного CI.
