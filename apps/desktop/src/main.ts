@@ -48,7 +48,7 @@ try{volume=VolumeState.restore(localStorage.getItem(volumeKey));}catch{volume=ne
 element<HTMLInputElement>('volume').value=String(volume.level);
 element('mute').setAttribute('aria-pressed',String(volume.muted));
 element('mute').textContent=volume.muted?'Без звука':'Звук';
-let repeatOne=false;
+let repeatMode:'off'|'one'|'queue'='off';
 function report(message: string) {
   element('status').textContent = message;
   const log = element('log');
@@ -133,7 +133,7 @@ async function loadVideo(id:string,resume=false,automatic=false) {
           }
           if(event.data===2) playIntent=false;
           if([0,1,2,5].includes(event.data)){mediaPlayback=event.data===1?'playing':event.data===0?'stopped':'paused';publishMedia();}
-          if(event.data===0 && !powerPaused){if(repeatOne)void loadVideo(id,playIntent,automatic);else if(queue.current)void advance(playIntent);}
+          if(event.data===0 && !powerPaused){if(repeatMode==='one')void loadVideo(id,playIntent,automatic);else if(queue.current)void advance(playIntent);}
         },
         onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(automatic) tryAlternative(sourceGeneration,ordinal); } },
         onAutoplayBlocked: () => { if (current === generation) report('Webview заблокировал Play. Попробуйте кнопку в самом видео.'); },
@@ -154,7 +154,8 @@ function updateVolume(){
 }
 element('volume').oninput=()=>{volume.set(Number(element<HTMLInputElement>('volume').value));updateVolume();};
 element('mute').onclick=()=>{volume.toggleMute();updateVolume();};
-element('repeat').onclick=()=>{repeatOne=!repeatOne;element('repeat').setAttribute('aria-pressed',String(repeatOne));element('repeat').textContent=repeatOne?'Повтор: трек':'Повтор: выкл.';};
+function renderRepeat(){element('repeat').setAttribute('aria-pressed',String(repeatMode!=='off'));element('repeat').textContent=repeatMode==='one'?'Повтор: трек':repeatMode==='queue'?'Повтор: очередь':'Повтор: выкл.';}
+element('repeat').onclick=()=>{repeatMode=repeatMode==='off'?'one':repeatMode==='one'&&finiteSource?'queue':'off';renderRepeat();};
 function clock(seconds: number): string {
   const value = Math.max(0, Math.floor(seconds || 0));
   return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
@@ -208,7 +209,7 @@ async function sourceFetch(fresh: boolean) {
   try {
     const tracks=await invoke<Track[]>('source_fetch',{fresh});
     if(requestRevision!==sourceRevision)return false;
-    if (fresh) { stopPlayer(); queue.reset(tracks); finiteSource=false; activeCollection=undefined; choices.clear(); bypassSaved.clear(); element<HTMLInputElement>('url').value=''; }
+    if (fresh) { stopPlayer(); queue.reset(tracks); finiteSource=false; activeCollection=undefined;if(repeatMode==='queue'){repeatMode='off';renderRepeat();} choices.clear(); bypassSaved.clear(); element<HTMLInputElement>('url').value=''; }
     else queue.append(tracks);
     renderQueue();
     element('source-status').textContent='Получено ' + tracks.length + ' треков. Порядок сохранён. Подготавливаем клипы…';
@@ -322,8 +323,10 @@ async function advance(resume:boolean) {
   if(advancing || !queue.current) return;
   advancing=true; previousGesture.reset(); playIntent=resume;
   const epoch=queue.generation;
+  let wrapped=false;
   try {
-    if(!queue.hasNext) {
+    if(!queue.hasNext && finiteSource && repeatMode==='queue' && !activeCollection?.hasMore){queue.rewind();wrapped=true;}
+    else if(!queue.hasNext) {
       if(finiteSource){
         if(!activeCollection?.hasMore){playIntent=false;report('Конец выбранного списка.');return;}
         try{
@@ -331,7 +334,7 @@ async function advance(resume:boolean) {
           const page=await collectionPage(context.entity,context.page+1);
           if(epoch!==queue.generation)return;
           queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};
-          if(!page.tracks.length){playIntent=false;report('Больше треков в списке нет.');return;}
+          if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;report('Больше треков в списке нет.');return;}}
         }catch{if(epoch!==queue.generation)return;playIntent=false;report('Не удалось загрузить следующую часть списка. Очередь сохранена.');return;}
       }else {
       const received=await sourceFetch(false);
@@ -339,7 +342,7 @@ async function advance(resume:boolean) {
       if(!received){playIntent=false;return;}
       }
     }
-    if(!queue.next()) {playIntent=false;return;}
+    if(!wrapped && !queue.next()) {playIntent=false;return;}
     stopPlayer(); renderQueue();
     element<HTMLButtonElement>('pause').disabled=!playIntent; element<HTMLInputElement>('url').value='';
     if(queue.current.videoId) void loadVideo(queue.current.videoId,playIntent);
@@ -474,3 +477,16 @@ if(isTauri()){
     if(status)element('storage-status').textContent=status.tray_available?'Крестик скрывает Encore в трей. Выход — через меню значка.':'Трей недоступен. Закрытие окна завершит приложение.';
   }).catch(()=>{});
 }
+
+
+// Local to this WebView: typing and native control keys keep their normal behavior.
+document.addEventListener('keydown',event=>{
+  if(event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey)return;
+  if(event.target instanceof Element && event.target.closest('input,textarea,select,button,a,[contenteditable]:not([contenteditable="false"]),dialog'))return;
+  if(event.code==='Space'){
+    if(!playerReady || event.repeat)return;
+    event.preventDefault();systemControl('toggle');
+  }else if(playerReady && (event.key==='ArrowLeft'||event.key==='ArrowRight')){
+    event.preventDefault();seek(event.key==='ArrowLeft'?-5:5);
+  }
+});

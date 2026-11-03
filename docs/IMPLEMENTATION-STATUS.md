@@ -153,3 +153,12 @@ PASS локально: TS check + 5 unit, Rust 18 desktop + 5 probe unit, Clippy
 PASS: History Next/Append с сохранённым video ID не прерывают текущий Play/Pause, сохраняют Wave continuation, повторы и порядок. Manual video без source queue остаётся текущим при добавлении истории. Stable ordinal отделён от cursor, поздний resolve не переезжает после вставки. Локально 6 TS unit, 20 renderer smoke + 1 opt-in skipped. Native Windows PASS: две вставки из изолированной истории сохраняют current paused title, увеличивают очередь на 2; Next подготавливает сохранённое видео без autoplay. Остальной native tray/media/power/mini/catalogue smoke также PASS. Windows пересобран.
 
 CI eff15db выявил macOS link failure _IOPSRelease в power-monitor 0.1.0. Внесён минимальный лицензированный vendor patch с CFType create-rule RAII (CFRelease); Windows cargo check PASS. Подтверждение macOS-сборки ожидается от нового CI. Это реальная ошибка зависимости, в отличие от прежних отказов выделения runner.
+
+
+### Repeat queue, локальные клавиши и native test isolation
+
+Сделано: finite queue repeat с догрузкой коллекции перед возвратом в начало, сохранением pause при ручном Next через конец; Wave ограничен off/one, при новом Wave сбрасывается queue-repeat. Локальные Space и стрелки +/-5 с пропускают поля ввода и интерактивные controls. PASS 21 renderer smoke + 1 opt-in skipped, 6 TS unit. Native Windows PASS: history queue из одного элемента оборачивается paused без autoplay; WebDriver keyboard Space запускает/ставит паузу настоящий IFrame на volume=0. Остальные tray/power/history/catalogue/mini проверки также PASS.
+
+Native smoke теперь запускает отдельный Cargo native-test executable, debug-only test identifier, отдельный WebView profile и isolated SQLite. Проверен рядом с уже работающим пользовательским Encore: пользовательский PID сохранился, тестовый процесс завершился. User-facing debug executable может оставаться заблокирован открытым экземпляром; новая сборка готова в native-test output.
+
+CI 0339af0: Ubuntu, macOS Intel и macOS Apple Silicon PASS, включая native link после vendor patch. Windows job ещё выполнялся при записи. Это сборка/автотесты, не доказательство аппаратного runtime на Linux/macOS. Новые repeat/local-key/test-isolation изменения ожидают следующего CI.

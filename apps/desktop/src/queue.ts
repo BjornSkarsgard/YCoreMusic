@@ -13,6 +13,7 @@ export class PlaybackQueue {
   reset(tracks: QueueInput[]) { this.epoch++; this.cursor = 0; this.nextOrdinal=0; this.entries = []; this.append(tracks); }
   append(tracks: QueueInput[]) { this.entries.push(...tracks.map(track=>({...track,ordinal:this.nextOrdinal++}))); }
   insertNext(tracks:QueueInput[]) { this.entries.splice(this.cursor+1,0,...tracks.map(track=>({...track,ordinal:this.nextOrdinal++}))); }
+  rewind():QueueEntry|undefined { this.cursor=0;return this.current; }
   get hasNext() { return this.cursor+1<this.entries.length; }
   ahead(count=3):readonly QueueEntry[] { return this.entries.slice(this.cursor,this.cursor+count).map(entry=>({...entry})); }
   resolve(ordinal: number, videoId: string, generation: number): boolean {

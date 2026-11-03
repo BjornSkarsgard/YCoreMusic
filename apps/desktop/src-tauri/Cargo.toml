@@ -36,3 +36,6 @@ windows = { version = "0.62.2", features = ["Win32_System_Power"] }
 
 [patch.crates-io]
 tauri-plugin-power-monitor = { path = "../../../vendor/tauri-plugin-power-monitor" }
+
+[profile.native-test]
+inherits = "dev"

@@ -76,6 +76,14 @@ async fn catalogue_collection(
     .map_err(str::to_string)
 }
 fn main() {
+    let mut context = tauri::generate_context!();
+    if cfg!(debug_assertions) && std::env::var_os("ENCORE_TEST_DATA_DIR").is_some() {
+        // Separate instance lock and WebView profile; never attach to the user's player.
+        context.config_mut().identifier = "io.encore.desktop.test".into();
+        if let Some(window) = context.config_mut().app.windows.first_mut() {
+            window.title = "Encore · нативная проверка".into();
+        }
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_power_monitor::init())
         .plugin(power::plugin())
@@ -127,6 +135,6 @@ fn main() {
             window_mode::window_topmost,
             window_mode::window_topmost_state
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("failed to run Encore");
 }

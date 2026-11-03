@@ -1,11 +1,15 @@
 // Opt-in Windows desktop integration test. No credentials or API bodies are logged.
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import {existsSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const root=process.cwd();
+const nativeApp=resolve(root,'apps/desktop/src-tauri/target/native-test/encore.exe');
+assert(existsSync(nativeApp),'Build the native-test profile first; see README native smoke instructions.');
+const nativeEnvironment={...process.env,ENCORE_TEST_DATA_DIR:resolve(root,'.tools/native-test-data')};
 const driver=spawn(process.env.ENCORE_TAURI_DRIVER ?? 'tauri-driver',[
   '--port','4444','--native-driver',process.env.ENCORE_EDGE_DRIVER ?? resolve(root,'.tools/edgedriver/msedgedriver.exe')
-],{windowsHide:true,stdio:'ignore',env:{...process.env,ENCORE_TEST_DATA_DIR:resolve(root,'.tools/native-test-data')}});
+],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
 let session;
 let originalVolume=null,volumeCaptured=false;
 async function request(path,body,method=body===undefined?'GET':'POST') {
@@ -28,7 +32,7 @@ async function click(id){await execute('document.getElementById(arguments[0]).cl
 try {
   driver.on('error',()=>{});
   for(let attempt=0;attempt<40;attempt++){try{await request('/status');break;}catch{await sleep(250);}}
-  const created=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:resolve(root,'apps/desktop/src-tauri/target/debug/encore.exe')}}}});
+  const created=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:nativeApp}}}});
   session=created.sessionId;
   await until('return !!document.getElementById("play")');
   await execute('window.nativeErrors=[];window.addEventListener("error",event=>window.nativeErrors.push(event.message));');
@@ -140,6 +144,22 @@ try {
     await click('queue-next');await until('return !document.getElementById("play").disabled');
     assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
     console.log('Native history Next/Append preserve current paused clip and cue saved video without autoplay: PASS');
+    await execute('Array.from(document.querySelector("#history-list li").querySelectorAll("button")).find(button=>button.textContent==="Воспроизвести").click()');
+    await until('return document.getElementById("status").textContent==="Воспроизведение"');
+    await click('pause');await mediaUntil('paused');
+    const repeatedTitle=await execute('return document.getElementById("track-title").textContent');
+    await click('repeat');await click('repeat');
+    assert.equal(await execute('return document.getElementById("repeat").textContent'),'Повтор: очередь');
+    await click('queue-next');await until('return !document.getElementById("play").disabled');
+    assert.equal(await execute('return document.querySelectorAll("#queue-list li").length'),1);
+    assert.equal(await execute('return document.getElementById("track-title").textContent'),repeatedTitle);
+    assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
+    console.log('Native finite queue repeat via Next wraps while paused without autoplay: PASS');
+    await execute('document.body.tabIndex=-1;document.body.focus()');
+    const press=async(value)=>request('/session/'+session+'/actions',{actions:[{type:'key',id:'encore-local',actions:[{type:'keyDown',value},{type:'keyUp',value}]}]});
+    await press(' ');await until('return document.getElementById("status").textContent==="Воспроизведение"');
+    await press(' ');await until('return document.getElementById("status").textContent==="Пауза"');
+    console.log('Native local Space Play/Pause through WebDriver keyboard input: PASS');
   }
   const rect=await request('/session/'+session+'/window/rect');
   await click('mini');
@@ -165,7 +185,7 @@ try {
   console.log('Native mini from maximized window and restore: PASS');
   await request('/session/'+session+'/window/minimize',{});
   assert.equal((await nativeInvoke('desktop_status')).minimized,true);
-  const extra=spawn(resolve(root,'apps/desktop/src-tauri/target/debug/encore.exe'),[],{windowsHide:true,stdio:'ignore'});
+  const extra=spawn(nativeApp,[],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
   const exited=await new Promise(resolve=>{const timeout=setTimeout(()=>{extra.kill();resolve(false);},5000);extra.on('close',()=>{clearTimeout(timeout);resolve(true);});});
   assert(exited,'Second instance did not exit');
   await execute('return document.title');

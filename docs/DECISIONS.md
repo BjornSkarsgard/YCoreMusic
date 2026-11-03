@@ -83,3 +83,10 @@ History Next/Append добавляют сохранённый video ID, не м�
 ## ADR-014 — Локальная macOS-поправка power-monitor 0.1.0
 
 CI выявил native link failure _IOPSRelease в зависимости. Минимальный vendor patch сохраняет upstream 0.1.0 и лицензии, удаляет отсутствующую FFI-функцию и использует CFType create-rule RAII для CFRelease snapshot. [Apple указывает CFRelease для результата IOPSCopyPowerSourcesInfo](https://developer.apple.com/documentation/iokit/1523839-iopscopypowersourcesinfo). Cargo patch лежит в src-tauri/Cargo.toml; происхождение и условие удаления описаны в vendor/tauri-plugin-power-monitor/ENCORE-PATCH.md. Это не отключение sleep/wake на macOS.
+
+
+## ADR-015 — Repeat queue и изолированный native профиль
+
+Repeat queue разрешён только finiteSource. Повтор начинается после последней загруженной страницы коллекции, использует ту же очередь/клип и новый play-event при фактическом старте; paused Next через конец остаётся paused. Новая Wave-сессия сбрасывает queue-repeat в off. Локальные Space и стрелки действуют в текущем WebView, пропускают editable/button/link/dialog targets и модификаторы; global keyboard hook отсутствует.
+
+Профиль Cargo native-test наследует dev и собирается в отдельный output, поэтому работающий пользовательский encore.exe больше не блокирует native smoke. Только debug + ENCORE_TEST_DATA_DIR заменяет config identifier на io.encore.desktop.test до создания приложения. Изолированы single-instance lock и WebView preferences; OS credential service остаётся прежним для разрешённых read-only live probes. Вторая тестовая копия получает тот же test env. Обычный пользовательский запуск и release не меняют identity. Native smoke рядом с работающим пользовательским PID прошёл, тестовый экземпляр завершился сам.

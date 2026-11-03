@@ -109,7 +109,11 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     let hwnd = None;
     let mut controls = MediaControls::new(PlatformConfig {
-        dbus_name: "encore",
+        dbus_name: if app.config().identifier.ends_with(".test") {
+            "encore_test"
+        } else {
+            "encore"
+        },
         display_name: "Encore",
         hwnd,
     })

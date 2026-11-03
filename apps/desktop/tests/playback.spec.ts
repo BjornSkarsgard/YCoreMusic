@@ -337,7 +337,7 @@ test('volume and mute survive reload without starting playback',async({page})=>{
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('encore.volume.v1')!))).toEqual({level:37,muted:false});
 });
 
-test('finite catalogue pagination continues the selected playlist without returning to My Wave',async({page})=>{
+test('finite pagination finishes before queue repeat, paused wrapping stays paused and Wave disables queue repeat',async({page})=>{
   await page.addInitScript(()=>{
     (globalThis as any).isTauri=true;(window as any).waveCalls=0;(window as any).collectionPages=[];
     (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
@@ -358,6 +358,19 @@ test('finite catalogue pagination continues the selected playlist without return
   await expect(page.locator('#track-title')).toHaveText('Q');
   expect(await page.evaluate(()=>(window as any).collectionPages)).toEqual([0,1]);
   expect(await page.evaluate(()=>(window as any).waveCalls)).toBe(1);
+  await expect(page.locator('#play')).toBeEnabled();
+  await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));
+  await expect(page.locator('#status')).toHaveText('Конец выбранного списка.');
+  await page.locator('#repeat').click();await page.locator('#repeat').click();await expect(page.locator('#repeat')).toHaveText('Повтор: очередь');
+  await page.locator('#play').click();await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));
+  await expect(page.locator('#track-title')).toHaveText('P');await expect(page.locator('#play')).toBeEnabled();
+  await expect.poll(()=>page.evaluate(()=>(window as any).played.filter((id:string)=>id==='Ppppppppppp').length)).toBe(2);
+  expect(await page.evaluate(()=>(window as any).collectionPages)).toEqual([0,1]);
+  await page.locator('#pause').click();
+  for(const title of ['Q','P']){await page.locator('#queue-next').click();await expect(page.locator('#track-title')).toHaveText(title);await expect(page.locator('#play')).toBeEnabled();}
+  expect(await page.evaluate(()=>(window as any).played.filter((id:string)=>id==='Ppppppppppp').length)).toBe(2);
+  await page.locator('#source-start').click();await expect(page.locator('#track-title')).toHaveText('Wave');await expect(page.locator('#repeat')).toHaveText('Повтор: выкл.');
+  await page.locator('#repeat').click();await page.locator('#repeat').click();await expect(page.locator('#repeat')).toHaveText('Повтор: выкл.');
 });
 
 
@@ -426,4 +439,19 @@ test('history next retains a playing manual video when there is no source queue'
   await expect(page.locator('#queue-list li')).toHaveCount(2);
   await page.locator('#queue-next').click();await expect(page.locator('#track-title')).toHaveText('History H');await expect(page.locator('#play')).toBeEnabled();
   expect(await page.evaluate(()=>(window as any).played)).toEqual(['M7lc1UVf-VE','Hhhhhhhhhhh']);
+});
+
+
+test('local Space and arrows control playback while search and link fields keep editing keys',async({page})=>{
+  await mockAutomaticPlayer(page);await page.goto('/');await page.locator('#url').fill('M7lc1UVf-VE');await page.locator('#load').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+  await expect(page.locator('#play')).toBeEnabled();await page.locator('h1').click();
+  await page.keyboard.press('Space');await expect(page.locator('#status')).toHaveText('Воспроизведение');
+  await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowLeft');
+  expect(await page.evaluate(()=>(window as any).seeks)).toEqual([10,0]);
+  await page.keyboard.press('Space');await expect(page.locator('#status')).toHaveText('Пауза');
+  await page.locator('#catalogue-query').fill('artist');await page.keyboard.press('Space');await page.keyboard.press('ArrowLeft');
+  await expect(page.locator('#catalogue-query')).toHaveValue('artist ');await expect(page.locator('#status')).toHaveText('Пауза');
+  await page.locator('#url').focus();await page.keyboard.press('Space');await page.keyboard.press('ArrowRight');
+  expect(await page.evaluate(()=>(window as any).seeks)).toEqual([10,0]);
+  expect(await page.evaluate(()=>(window as any).played)).toEqual(['M7lc1UVf-VE']);
 });
