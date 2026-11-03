@@ -80,3 +80,20 @@ CI коммита 90c5f06: Windows + Ubuntu + macOS завершились SUCCE
 Windows, локальный yandex-probe: account/status PASS, new session PASS без autoplay; 4 последовательные порции по 5 записей, суммарно 20, Session fetch PASS. Источник доказательства — присланный пользователем вывод утилиты, не самостоятельное наблюдение агента. Токен, session ID и список музыкальных предпочтений в репозиторий не копируются.
 
 Подтверждены авторизация, создание session и продолжение выдачи с queue уже полученных ID. Сохранение серверного порядка в утилите проверено unit-тестами. Полный S1 остаётся PARTIAL: ещё нужны desktop lifecycle, очередь с асинхронным подбором, реальные feedback по действиям/прослушиванию и сетевые ошибки. S2 (аудио) не проверен этим запуском.
+
+### Desktop вертикальный прототип: source + queue + миниплеер
+
+- Общий Rust модуль yandex используется CLI и native source adapter; запросы/секреты не переходят в JS. Источник создаёт новую сессию при полном запуске без autoplay.
+- Явное CLI --save-token после account PASS сохраняет секрет в OS store; --forget-token удаляет локально. Пользователь подтвердил успешное сохранение. Windows Credential Manager synthetic roundtrip PASS с удалением fixture; затем native source прочитал реальный credential без его вывода.
+- Desktop получает названия/исполнителей и порции source; одна TS очередь, один cursor, порядок/повторы сохранены. Source API bookkeeping — только полученные ID. При сетевой ошибке существующая очередь остаётся. Автоподбор клипов пока отсутствует, URL задаётся вручную для текущего трека; нет автоматического перехода по завершению.
+- Миниплеер в том же окне/плеере; topmost вручную. Добавлен single-instance guard. Persist window mode/settings, tray и remote пока отсутствуют.
+
+Проверки на текущей Windows 11, WebView2 156.0.4314.58 и Edge WebDriver 156.0.4314.58:
+- Native WebDriver PASS: startup без IFrame/autoplay, создание source session + следующая порция через OS store.
+- Native реальный YouTube M7lc1UVf-VE PASS: cue, Play с volume=0, Pause, seek с проверкой позиции. Слышимость/качество аудио не проверены.
+- Native PASS: mini resize/restore, из maximized в mini и обратно, topmost flag on/off, повторный запуск закрывает второй процесс.
+- Unit/renderer PASS: queue order при позднем C, stale-generation, duplicate ordinal, metadata text escaping, failure сохраняет queue, тот же player при mini. Cargo tests и Clippy PASS до последнего rebuild; финальная проверка фиксируется ниже.
+
+S3 Windows = PARTIAL (native управление видео подтверждено, слышимость/сбои/lifecycle ещё не полностью проверены). S4/S5/S6 и Linux/macOS runtime — НЕ ПРОВЕРЕНО. Вывод пока системный, REQ-022 не реализован. Новая CI-сборка с keyring/single-instance требует проверки на всех трёх ОС.
+
+Финальная локальная проверка этого среза: cargo test (6 desktop + 5 probe PASS, OS store test opt-in отдельно ранее PASS), Clippy all-targets с -D warnings PASS, TS queue/URL unit PASS, 4 renderer smoke PASS. Native integration test после final rebuild PASS, включая single instance и maximized mini roundtrip.

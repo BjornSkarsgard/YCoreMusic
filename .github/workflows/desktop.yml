@@ -1,5 +1,8 @@
 name: Desktop checks
 on: [push, pull_request, workflow_dispatch]
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -22,7 +25,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Linux webview dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev libdbus-1-dev
       - run: npm ci
       - run: npm run check
       - run: npm test
@@ -30,7 +33,7 @@ jobs:
       - run: npm run test:ui
       - run: npm run build
       - name: Yandex probe tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml --features yandex-probe --bin yandex-probe
+        run: cargo test --manifest-path src-tauri/Cargo.toml --features yandex-probe
       - name: Yandex probe executable
         run: cargo build --manifest-path src-tauri/Cargo.toml --features yandex-probe --bin yandex-probe
       - name: Native build (no installer)

@@ -14,3 +14,4 @@ apps/desktop/src-tauri/icons/ios/
 apps/desktop/test-results/
 apps/desktop/playwright-report/
 apps/desktop/src-tauri/gen/
+.tools/

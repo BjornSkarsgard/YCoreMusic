@@ -48,4 +48,3 @@ HTTPS с проверкой TLS, редиректы запрещены, сете
 - https://github.com/MarshalX/yandex-music-api/blob/main/yandex_music/rotor/rotor_session_tracks.py
 
 Это неофициальный API. Изменения контракта должны давать явную ошибку, а не фиктивный успех.
-

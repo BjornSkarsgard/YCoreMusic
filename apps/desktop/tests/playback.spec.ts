@@ -56,3 +56,50 @@ test('cue timeout cannot be revived by a late callback', async ({ page }) => {
   await expect(page.locator('#play')).toBeDisabled();
   await expect(page.locator('#status')).toContainText('Видео не подготовилось');
 });
+
+test('compact presentation preserves the same player and explicit play state', async ({ page }) => {
+  await page.route('https://www.youtube.com/iframe_api', route => route.fulfill({contentType:'text/javascript', body:`
+    window.calls=[]; window.YT={Player:class{
+      constructor(id,options){this.options=options;setTimeout(()=>options.events.onReady({target:this}),0);}
+      cueVideoById(){this.options.events.onStateChange({data:5});}
+      setVolume(){} getDuration(){return 120;} getCurrentTime(){return 30;}
+      playVideo(){window.calls.push('play');} destroy(){window.calls.push('destroy');}
+    }};window.onYouTubeIframeAPIReady();
+  `}));
+  await page.goto('/'); await page.locator('#url').fill('M7lc1UVf-VE');
+  await page.getByRole('button',{name:'Подготовить'}).click(); await expect(page.locator('#play')).toBeEnabled();
+  await page.locator('#play').click(); await page.locator('#mini').click();
+  await expect(page.locator('body')).toHaveClass('compact');
+  await expect(page.locator('#play')).toBeVisible();
+  await page.locator('#mini').click();
+  expect(await page.evaluate(()=>(window as any).calls)).toEqual(['play']);
+});
+
+test('source metadata stays text, failed prefetch preserves queue, mini invokes native window commands', async ({ page }) => {
+  await page.addInitScript(() => {
+    (globalThis as any).isTauri=true;
+    (window as any).commands=[];
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      (window as any).commands.push({cmd,args});
+      if(cmd==='source_fetch') {
+        if(!args.fresh) throw 'Network/TLS error';
+        return [{id:'1',title:'<img src=x onerror=alert(1)>',artist:'Artist A'},{id:'2',title:'Track B',artist:'Artist B'}];
+      }
+    }};
+  });
+  await page.goto('/');
+  await page.locator('#source-start').click();
+  await expect(page.locator('#queue-list li')).toHaveCount(2);
+  await expect(page.locator('#track-title')).toHaveText('<img src=x onerror=alert(1)>');
+  await expect(page.locator('#track-title img')).toHaveCount(0);
+  await page.locator('#source-more').click();
+  await expect(page.locator('#source-status')).toContainText('Текущая очередь сохранена');
+  await expect(page.locator('#queue-list li')).toHaveCount(2);
+  await page.locator('#queue-next').click();
+  await expect(page.locator('#track-title')).toHaveText('Track B');
+  await expect(page.locator('#play')).toBeDisabled();
+  await page.locator('#mini').click(); await page.locator('#topmost').click();
+  const commands=await page.evaluate(()=>(window as any).commands);
+  expect(commands).toContainEqual({cmd:'window_mini',args:{compact:true}});
+  expect(commands).toContainEqual({cmd:'window_topmost',args:{enabled:true}});
+});

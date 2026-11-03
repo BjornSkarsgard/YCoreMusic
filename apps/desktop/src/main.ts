@@ -1,15 +1,18 @@
 import './style.css';
 import { videoId } from './video-id';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { PlaybackQueue, type Track } from './queue';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-<header><a class="brand">encore<span>●</span></a><span class="badge">ЭТАП 0 · ЛАБОРАТОРИЯ</span></header>
+<header><a class="brand">encore<span>●</span></a><div class="window-actions"><button id="mini" aria-pressed="false">Миниплеер</button><button id="topmost" aria-pressed="false">Поверх окон</button><span class="badge">ЭТАП 0 · ЛАБОРАТОРИЯ</span></div></header>
 <main><section class="intro"><p class="eyebrow">МУЗЫКА ПОЛУЧАЕТ ЭКРАН</p><h1>Ещё одну.</h1><p>Первый шаг к вашему музыкальному телеканалу.<br>Проверяем воспроизведение, прежде чем строить эфир.</p></section>
-<section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
+<section class="source-panel"><div class="source-actions"><button id="source-start">Моя волна · новая сессия</button><button id="source-more" disabled>Ещё рекомендации</button><button id="queue-next" disabled>Следующий трек</button></div><p id="source-status" role="status">Яндекс доступен в desktop-версии после локального подключения аккаунта.</p><h2 id="track-title">Ручная проверка видео</h2><p id="track-artist"></p><details><summary>Очередь</summary><ol id="queue-list"></ol></details></section><section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
 <form id="load"><label for="url">YouTube-ссылка или ID</label><div class="input-row"><input id="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required><button>Подготовить</button></div></form>
 <div class="controls"><button id="play" disabled>▶ Play</button><button id="pause" disabled>Ⅱ Пауза</button><button id="back" disabled>−5 с</button><button id="forward" disabled>+5 с</button><label>Громкость <input id="volume" type="range" min="0" max="100" value="50"></label></div>
 <div class="timeline"><output id="elapsed">0:00</output><input id="seek" aria-label="Позиция видео" type="range" min="0" max="0" value="0" step="1" disabled><output id="duration">0:00</output></div><p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
-<aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Выбор устройства, Яндекс и аудиоанализ ещё не реализованы.</p><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
+<aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Выбор устройства и аудиоанализ ещё не реализованы. Для трека из очереди пока нужна ссылка на клип вручную.</p><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const queue = new PlaybackQueue();
 let player: YT.Player | undefined;
 let generation = 0;
 let playerReady = false;
@@ -40,6 +43,7 @@ element<HTMLFormElement>('load').addEventListener('submit', async event => {
   event.preventDefault();
   const id = videoId(element<HTMLInputElement>('url').value);
   if (!id) { report('Нужна HTTPS-ссылка YouTube или video ID из 11 символов.'); return; }
+  if (queue.current) queue.resolve(queue.current.ordinal, id, queue.generation);
   const current = ++generation;
   enabled(false);
   playerReady = false;
@@ -102,3 +106,78 @@ const positionTimer = setInterval(() => {
   if (!dragging) { seekInput.value = String(position); element('elapsed').textContent = clock(position); }
 }, 500);
 window.addEventListener('beforeunload', () => { clearInterval(positionTimer); player?.destroy(); });
+
+function stopPlayer() {
+  ++generation; playerReady = false; player?.destroy(); player = undefined; enabled(false);
+  element('empty').hidden = false; seekInput.disabled = true; seekInput.value = '0';
+  element('elapsed').textContent = '0:00'; element('duration').textContent = '0:00';
+}
+function renderQueue() {
+  element('track-title').textContent = queue.current?.title ?? 'Ручная проверка видео';
+  element('track-artist').textContent = queue.current?.artist ?? '';
+  element('queue-list').replaceChildren(...queue.snapshot.map(track => {
+    const item=document.createElement('li'); item.textContent = track.title + ' · ' + track.artist;
+    if (track.ordinal === queue.current?.ordinal) item.setAttribute('aria-current','true');
+    return item;
+  }));
+  element<HTMLButtonElement>('queue-next').disabled = !queue.current || queue.current.ordinal + 1 >= queue.snapshot.length;
+}
+let fetching = false;
+async function sourceFetch(fresh: boolean) {
+  if (fetching) return;
+  if (!isTauri()) { element('source-status').textContent = 'Откройте Encore desktop: браузерный режим не имеет доступа к аккаунту.'; return; }
+  fetching=true;
+  element<HTMLButtonElement>('source-start').disabled=true;
+  element<HTMLButtonElement>('source-more').disabled=true;
+  element('source-status').textContent='Получение рекомендаций…';
+  try {
+    const tracks=await invoke<Track[]>('source_fetch',{fresh});
+    if (fresh) { stopPlayer(); queue.reset(tracks); element<HTMLInputElement>('url').value=''; }
+    else queue.append(tracks);
+    renderQueue();
+    element('source-status').textContent='Получено ' + tracks.length + ' треков. Порядок сохранён. Выберите клип для текущего трека.';
+    if (fresh) report('Новая сессия · без autoplay');
+  } catch (error) {
+    const known: Record<string,string> = {
+      'No saved token. Run yandex-probe --save-token locally first.':'Сначала подключите аккаунт: yandex-probe --save-token в локальном терминале.',
+      'Authorization denied':'Срок доступа истёк или доступ отклонён. Подключите аккаунт заново.',
+      'Network/TLS error':'Не удалось связаться с Яндексом. Текущая очередь сохранена.',
+      'Credential store locked or unavailable':'Системное хранилище недоступно или заблокировано.',
+      'Identical batch returned; queue unchanged':'Сервер повторил порцию. Очередь сохранена, повторите позже.',
+    };
+    element('source-status').textContent=known[String(error)] ?? 'Не удалось получить рекомендации. Очередь сохранена.';
+  } finally {
+    fetching=false; element<HTMLButtonElement>('source-start').disabled=false;
+    element<HTMLButtonElement>('source-more').disabled=!queue.current;
+  }
+}
+element('source-start').onclick=()=>void sourceFetch(true);
+element('source-more').onclick=()=>void sourceFetch(false);
+element('queue-next').onclick=()=>{
+  if (!queue.next()) return;
+  stopPlayer(); renderQueue(); element<HTMLInputElement>('url').value='';
+  report('Следующий трек · вставьте ссылку на клип. Автоподбор ещё не подключён.');
+};
+
+let compact=false, topmost=false, changingWindow=false;
+element('mini').onclick=async()=>{
+  if(changingWindow) return;
+  changingWindow=true;
+  try {
+    if(isTauri()) await invoke('window_mini',{compact:!compact});
+    compact=!compact; document.body.classList.toggle('compact',compact);
+    element('mini').textContent=compact?'Полный вид':'Миниплеер';
+    element('mini').setAttribute('aria-pressed',String(compact));
+  } catch { report('Не удалось изменить размер окна.'); }
+  finally { changingWindow=false; }
+};
+element('topmost').onclick=async()=>{
+  if(!isTauri()) {report('Поверх окон доступно только в desktop-версии.');return;}
+  if(changingWindow) return;
+  changingWindow=true;
+  try {await invoke('window_topmost',{enabled:!topmost});topmost=!topmost;element('topmost').setAttribute('aria-pressed',String(topmost));}
+  catch {report('Оконный менеджер не разрешил режим поверх окон.');}
+  finally {changingWindow=false;}
+};
+
+if (isTauri()) void sourceFetch(true);
