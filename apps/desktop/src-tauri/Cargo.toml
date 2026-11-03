@@ -15,7 +15,9 @@ rpassword = { version = "7.5.4" }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154" }
-tauri = { version = "2", features = [] }
+souvlaki = { version = "0.9.3", default-features = false, features = ["use_zbus"] }
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-power-monitor = "0.1.0"
 tauri-plugin-single-instance = "2"
 unicode-normalization = "0.1.26"
 zeroize = { version = "1.9.1" }
@@ -28,3 +30,6 @@ yandex-probe = []
 name = "yandex-probe"
 path = "src/bin/yandex-probe.rs"
 required-features = ["yandex-probe"]
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_System_Power"] }

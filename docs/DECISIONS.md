@@ -59,3 +59,16 @@ Native catalogue adapter повторно использует защищённ�
 У Previous монотонные часы performance.now и отдельный gesture state (3 секунды). Сейчас движение назад ограничено текущей очередью; cross-source playback stack ещё отсутствует. Repeat-one пересоздаёт цикл того же клипа, пишет отдельный history event после фактического Play. Несколько favourite-вариантов/random/no-repeat и repeat-queue ещё не реализованы.
 
 Volume/mute — JSON под ключом encore.volume.v1 в origin-localStorage WebView. Это UI-предпочтения без credentials; OAuth туда не попадает. Некорректные/недоступные preferences не препятствуют запуску, ошибка записи видима. Default 50%, full launch не запускает музыку независимо от сохранённых настроек. Native smoke сохраняет/восстанавливает исходную volume preference, чтобы временный volume=0 не оставался у пользователя.
+
+
+## ADR-012 — Трей, системные media controls и sleep/wake
+
+CloseRequested скрывает окно только при успешно созданном трее; без трея остаётся обычное закрытие. Open/повторный запуск показывают прежнее окно, снимают minimize и сохраняют сессию. Выход — отдельное действие app.exit, без перехвата OS shutdown. Tray Play/Pause, SMTC/MPRIS/Now Playing отправляют команды существующему TS-координатору, без global keyboard hook или второй очереди.
+
+Souvlaki 0.9.3 владеет native media controls на Tauri event-loop thread (thread_local, важно для macOS). Метаданные/состояние публикуются из реальных IFrame событий; progress обновляется раз в 2 секунды, revision отсекает поздние сообщения. На Windows Chromium HardwareMediaKeyHandling выключен, чтобы собственный обработчик WebView не дублировал SMTC. См. [API Souvlaki](https://docs.rs/souvlaki/0.9.3/souvlaki/).
+
+Sleep/wake наблюдает tauri-plugin-power-monitor 0.1.0 ([API](https://docs.rs/tauri-plugin-power-monitor/0.1.0/tauri_plugin_power_monitor/)). Suspend/resume отменяют play intent, сохраняют очередь и позицию без новой Wave-сессии. До явного Play поздний PLAYING снова ставится на паузу. Возможен отказ OS listener; реальный sleep и аппаратные медиаклавиши требуют ручной проверки. Linux зависит от logind, альтернативные окружения ещё не проверены.
+
+На Windows во время фактического PLAYING применяется thread-local SetThreadExecutionState SYSTEM_REQUIRED + DISPLAY_REQUIRED; пауза, suspend/resume и полный Exit снимают запрос. Ручной сон/lock не блокируются. Linux/macOS idle inhibition ещё не реализован. Native smoke имитирует события suspend/resume, не усыпляет компьютер и не выдаёт этот результат за аппаратную проверку.
+
+Две macOS arm64 CI jobs не получили hosted runner из-за capacity constraints, без запуска шагов. Добавлен независимый macos-15-intel; arm64 job сохранён. [Доступные стандартные labels GitHub](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).

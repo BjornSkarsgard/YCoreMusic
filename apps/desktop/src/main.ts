@@ -1,6 +1,7 @@
 import './style.css';
 import { videoId } from './video-id';
 import { invoke, isTauri } from '@tauri-apps/api/core';
+import {listen} from '@tauri-apps/api/event';
 import { PlaybackQueue, type Track } from './queue';
 import { storage, type HistoryEntry } from './storage';
 import {mountCatalogue,collectionPage,type CollectionContext} from './catalogue-ui';
@@ -21,6 +22,17 @@ let generation = 0;
 let playerReady = false;
 let apiPromise: Promise<void> | undefined;
 let playIntent=false;
+let powerPaused=false;
+let suspendPosition:number|undefined;
+let mediaRevision=Date.now()*1000;
+let mediaPlayback:'stopped'|'paused'|'playing'='stopped';
+let mediaTitle='Encore',mediaArtist='';
+let lastMediaPublish=0;
+function publishMedia(){
+  if(!isTauri())return;
+  lastMediaPublish=Date.now();
+  void invoke('media_update',{update:{revision:++mediaRevision,title:mediaTitle,artist:mediaArtist,playback:mediaPlayback,position:playerReady?player?.getCurrentTime()??0:0,duration:playerReady?player?.getDuration()??0:0,volume:volume.output/100}}).catch(()=>{});
+}
 let finiteSource=false;
 let activeCollection:CollectionContext|undefined;
 interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number;reason:string;saved?:boolean;needsReview?:boolean}
@@ -73,6 +85,8 @@ async function loadVideo(id:string,resume=false,automatic=false) {
   if(ordinal!==undefined) queue.resolve(ordinal,id,sourceGeneration);
   playIntent=resume;
   const trackAtLoad=queue.current;
+  mediaTitle=trackAtLoad?.title??'YouTube · '+id;mediaArtist=trackAtLoad?.artist??'';
+  mediaPlayback='stopped';publishMedia();
   const playEvent={playbackId:Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join(''),trackId:trackAtLoad?.id ?? 'manual:'+id,title:trackAtLoad?.title ?? 'YouTube · '+id,artist:trackAtLoad?.artist ?? '',videoId:id};
   let recorded=false,recordPending=false;
   const current = ++generation;
@@ -106,8 +120,9 @@ async function loadVideo(id:string,resume=false,automatic=false) {
           if (current !== generation) return;
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
           report(states[event.data] ?? `Состояние ${event.data}`);
-          if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); if(resume && playIntent) event.target.playVideo(); }
+          if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); if(playIntent) event.target.playVideo(); }
           if(event.data===1) {
+            if(powerPaused){playIntent=false;event.target.pauseVideo();return;}
             playIntent=true;
             if(isTauri() && !recorded && !recordPending) {
               recordPending=true;
@@ -115,20 +130,22 @@ async function loadVideo(id:string,resume=false,automatic=false) {
             }
           }
           if(event.data===2) playIntent=false;
-          if(event.data===0){if(repeatOne)void loadVideo(id,playIntent,automatic);else if(queue.current)void advance(playIntent);}
+          if([0,1,2,5].includes(event.data)){mediaPlayback=event.data===1?'playing':event.data===0?'stopped':'paused';publishMedia();}
+          if(event.data===0 && !powerPaused){if(repeatOne)void loadVideo(id,playIntent,automatic);else if(queue.current)void advance(playIntent);}
         },
-        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(automatic) tryAlternative(sourceGeneration,ordinal); } },
+        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(automatic) tryAlternative(sourceGeneration,ordinal); } },
         onAutoplayBlocked: () => { if (current === generation) report('Webview заблокировал Play. Попробуйте кнопку в самом видео.'); },
       },
     });
   } catch (error) { if (current === generation) report(error instanceof Error ? error.message : 'Ошибка загрузки'); }
 }
-element('play').onclick = () => {playIntent=true;player?.playVideo();};
+element('play').onclick = () => {powerPaused=false;playIntent=true;player?.playVideo();};
 element('pause').onclick = () => {playIntent=false;player?.pauseVideo();};
 function seek(delta: number) { previousGesture.reset(); if (player) player.seekTo(Math.max(0, Math.min(player.getDuration(), player.getCurrentTime() + delta)), true); }
 element('back').onclick = () => seek(-5);
 element('forward').onclick = () => seek(5);
 function updateVolume(){
+  publishMedia();
   element<HTMLInputElement>('volume').value=String(volume.level);element('mute').setAttribute('aria-pressed',String(volume.muted));element('mute').textContent=volume.muted?'Без звука':'Звук';
   if(playerReady)player?.setVolume(volume.output);
   try{localStorage.setItem(volumeKey,volume.serialize());}catch{element('storage-status').textContent='Громкость действует, но сохранить настройку не удалось.';}
@@ -148,6 +165,7 @@ const positionTimer = setInterval(() => {
   if (!playerReady || !player) { seekInput.disabled = true; return; }
   const duration = player.getDuration();
   const position = player.getCurrentTime();
+  if(Date.now()-lastMediaPublish>=2000)publishMedia();
   seekInput.disabled = duration <= 0;
   seekInput.max = String(duration);
   element('duration').textContent = clock(duration);
@@ -156,6 +174,7 @@ const positionTimer = setInterval(() => {
 window.addEventListener('beforeunload', () => { clearInterval(positionTimer); player?.destroy(); });
 
 function stopPlayer() {
+  mediaPlayback='stopped';publishMedia();
   previousGesture.reset();
   ++generation; playerReady = false; player?.destroy(); player = undefined; enabled(false);
   element('candidate-list').replaceChildren();
@@ -362,7 +381,7 @@ async function refreshHistory(){
      button.textContent='Воспроизвести';button.onclick=()=>{
        stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist}]);finiteSource=true;activeCollection=undefined;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
        element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
-       void loadVideo(entry.videoId,true);
+       powerPaused=false;void loadVideo(entry.videoId,true);
      };
      item.append(title,button);return item;
    }));
@@ -383,7 +402,7 @@ element('clear-confirm').onclick=async()=>{
 mountCatalogue(selection=>{
   if(!selection.tracks.length)return;
   stopPlayer();++sourceRevision;queue.reset(selection.tracks);choices.clear();bypassSaved.clear();
-  finiteSource=true;activeCollection=selection.collection;playIntent=true;renderQueue();
+  finiteSource=true;activeCollection=selection.collection;powerPaused=false;playIntent=true;renderQueue();
   element<HTMLButtonElement>('source-more').disabled=true;
   element('source-status').textContent='Яндекс Музыка · '+selection.title;
   element<HTMLInputElement>('url').value='';prepareAhead();
@@ -399,3 +418,38 @@ element('previous').onclick=()=>{
   if(queue.current?.videoId)void loadVideo(queue.current.videoId,playIntent);
   else prepareAhead();
 };
+
+function systemControl(action:string){
+  switch(action){
+    case 'toggle': if(playIntent){playIntent=false;player?.pauseVideo();}else{powerPaused=false;playIntent=true;if(playerReady)player?.playVideo();}break;
+    case 'play':powerPaused=false;playIntent=true;if(playerReady)player?.playVideo();break;
+    case 'pause':playIntent=false;player?.pauseVideo();break;
+    case 'next':void advance(playIntent);break;
+    case 'previous':element('previous').click();break;
+  }
+}
+function powerPause(resume:boolean){
+  powerPaused=true;playIntent=false;
+  if(!resume)suspendPosition=playerReady?player?.getCurrentTime():undefined;
+  player?.pauseVideo();
+  if(resume && suspendPosition!==undefined && playerReady)player?.seekTo(suspendPosition,true);
+  if(resume)suspendPosition=undefined;
+  mediaPlayback='paused';publishMedia();
+  report(resume?'После сна · пауза. Нажмите Play, чтобы продолжить.':'Переход в сон · пауза.');
+}
+if(isTauri()){
+  void listen('power-monitor://suspend',()=>powerPause(false)).catch(()=>{});
+  void listen('power-monitor://resume',()=>powerPause(true)).catch(()=>{});
+  void listen<{action:string,value:number}>('encore-media',event=>{
+    const {action,value}=event.payload;
+    if(action==='seek')seek(value);
+    else if(action==='position' && playerReady){previousGesture.reset();player?.seekTo(Math.max(0,Math.min(player.getDuration(),value)),true);}
+    else if(action==='volume'){volume.set(Math.round(value*100));updateVolume();}
+    else systemControl(action);
+  }).catch(()=>{});
+  publishMedia();
+  void listen<string>('encore-control',event=>systemControl(event.payload)).catch(()=>{element('storage-status').textContent='Управление из трея пока недоступно.';});
+  void invoke<{tray_available:boolean}>('desktop_status').then(status=>{
+    if(status)element('storage-status').textContent=status.tray_available?'Крестик скрывает Encore в трей. Выход — через меню значка.':'Трей недоступен. Закрытие окна завершит приложение.';
+  }).catch(()=>{});
+}

@@ -359,3 +359,31 @@ test('finite catalogue pagination continues the selected playlist without return
   expect(await page.evaluate(()=>(window as any).collectionPages)).toEqual([0,1]);
   expect(await page.evaluate(()=>(window as any).waveCalls)).toBe(1);
 });
+
+
+test('system controls share the player; wake cancels autoplay and rejects late PLAYING until explicit Play',async({page})=>{
+  await page.addInitScript(()=>{
+    const w=window as any;w.isTauri=true;w.events={};w.callbacks={};w.sourceCalls=0;w.mediaUpdates=[];let next=0;
+    w.__TAURI_INTERNALS__={transformCallback:(callback:any)=>{w.callbacks[++next]=callback;return next;},invoke:async(cmd:string,args:any)=>{
+      if(cmd==='plugin:event|listen'){w.events[args.event]=w.callbacks[args.handler];return args.handler;}
+      if(cmd==='source_fetch'){w.sourceCalls++;return [{id:'1',title:'Track A',artist:'Artist A'}];}
+      if(cmd==='search_videos')return [{id:'Aaaaaaaaaaa',title:'Track A',score:100,reason:'fixture'}];
+      if(cmd==='media_update')w.mediaUpdates.push(args.update);
+    }};
+    w.emit=(event:string,payload:any)=>w.events[event]({event,payload});
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
+  await page.evaluate(()=>(window as any).emit('encore-media',{action:'play',value:0}));
+  await expect(page.locator('#status')).toHaveText('Воспроизведение');
+  await page.evaluate(()=>(window as any).emit('power-monitor://suspend',null));
+  await page.evaluate(()=>(window as any).emit('power-monitor://resume',null));
+  await expect(page.locator('#status')).toContainText('После сна · пауза');
+  expect(await page.evaluate(()=>(window as any).seeks)).toEqual([5]);
+  await page.evaluate(()=>{const w=window as any;w.activePlayer.options.events.onStateChange({data:1,target:w.activePlayer});});
+  await expect(page.locator('#status')).toHaveText('Пауза');
+  expect(await page.evaluate(()=>(window as any).played)).toHaveLength(1);
+  expect(await page.evaluate(()=>(window as any).sourceCalls)).toBe(1);
+  await page.locator('#play').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
+  const updates=await page.evaluate(()=>(window as any).mediaUpdates);
+  expect(updates.at(-1).playback).toBe('playing');expect(updates.some((u:any)=>u.playback==='paused')).toBe(true);
+});

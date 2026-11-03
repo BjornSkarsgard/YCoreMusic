@@ -19,8 +19,11 @@ async function execute(script,args=[]) {return request('/session/'+session+'/exe
 async function until(script,timeout=25000) {
   const end=Date.now()+timeout;
   do {if(await execute(script))return;await sleep(250);}while(Date.now()<end);
-  throw new Error('Native condition timed out: '+script);
+  const diagnostic=await execute('return {status:document.getElementById("status")?.textContent,source:document.getElementById("source-status")?.textContent,errors:window.nativeErrors}');
+  throw new Error('Native condition timed out: '+script+' '+JSON.stringify(diagnostic));
 }
+async function nativeInvoke(cmd,args={}){return request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke(arguments[0],arguments[1]).then(done).catch(()=>done(null));',args:[cmd,args]});}
+async function mediaUntil(playback){for(let n=0;n<40;n++){const status=await nativeInvoke('media_status');if(status?.available&&status.playback===playback)return;await sleep(100);}throw new Error('Native media status did not become '+playback);}
 async function click(id){await execute('document.getElementById(arguments[0]).click()', [id]);}
 try {
   driver.on('error',()=>{});
@@ -28,6 +31,7 @@ try {
   const created=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:resolve(root,'apps/desktop/src-tauri/target/debug/encore.exe')}}}});
   session=created.sessionId;
   await until('return !!document.getElementById("play")');
+  await execute('window.nativeErrors=[];window.addEventListener("error",event=>window.nativeErrors.push(event.message));');
   assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
   originalVolume=await execute('return localStorage.getItem("encore.volume.v1")');volumeCaptured=true;
   console.log('Native startup without autoplay: PASS');
@@ -68,8 +72,8 @@ try {
     }
     assert.equal(await execute('return document.getElementById("track-title").textContent'),before);
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));');
-    await execute('document.querySelector("#catalogue-collection > button").click()');
-    await until('return document.getElementById("source-status").textContent.startsWith("Яндекс Музыка")');
+    await execute('window.expectedCatalogueTrack=document.querySelector("#catalogue-collection .catalogue-track span").textContent;document.querySelector("#catalogue-collection > button").click()');
+    await until('return document.getElementById("track-title").textContent+" · "+document.getElementById("track-artist").textContent===window.expectedCatalogueTrack');
     assert(await execute('return document.querySelectorAll("#queue-list li").length>0'));
     console.log('Native catalogue: Cyrillic query, four sections, artist/album/playlist lists and selection: PASS');
   }
@@ -93,14 +97,30 @@ try {
     assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
     await click('play');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',30000);
-    await click('pause');
+    await mediaUntil('playing');
+    const titleBeforeHide=await execute('return document.getElementById("track-title").textContent');
+    const timeBeforeHide=await execute('return Number(document.getElementById("seek").value)');
+    assert.equal((await nativeInvoke('desktop_status')).tray_available,true);
+    await nativeInvoke('desktop_close');await sleep(4000);
+    assert.equal((await nativeInvoke('desktop_status')).visible,false);
+    assert(await execute('return Number(document.getElementById("seek").value)')>timeBeforeHide+1,'Hidden playback timeline did not advance');
+    await nativeInvoke('desktop_action',{action:'open'});
+    assert.equal((await nativeInvoke('desktop_status')).visible,true);
+    assert.equal(await execute('return document.getElementById("track-title").textContent'),titleBeforeHide);
+    await nativeInvoke('desktop_action',{action:'toggle'});
     await until('return document.getElementById("status").textContent==="Пауза"');
     await click('forward');
     await until('return Number(document.getElementById("seek").value)>=4');
-    console.log('Native real YouTube cue, muted Play, Pause, seek: PASS');
+    await mediaUntil('paused');
+    await nativeInvoke('plugin:event|emit',{event:'power-monitor://suspend',payload:null});
+    await nativeInvoke('plugin:event|emit',{event:'power-monitor://resume',payload:null});
+    await until('return document.getElementById("status").textContent.includes("После сна · пауза")');
+    await mediaUntil('paused');
+    console.log('Native simulated suspend/resume event delivery: PASS (physical sleep not tested)');
+    console.log('Native real YouTube cue, muted Play, close to tray, hidden timeline, restore, tray Pause, SMTC state, seek: PASS');
     await click('previous');
     await until('return Number(document.getElementById("seek").value)<1');
-    assert.equal(await execute('return document.getElementById("status").textContent'),'Пауза');
+    assert.match(await execute('return document.getElementById("status").textContent'),/Пауза|пауза/);
     console.log('Native Previous restart preserves pause: PASS');
     let recorded=false;
     for(let attempt=0;attempt<15;attempt++){
@@ -117,7 +137,6 @@ try {
   const compact=await request('/session/'+session+'/window/rect');
   assert(compact.width<rect.width);
   await click('topmost');
-  const nativeInvoke=async(cmd)=>request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke(arguments[0]).then(done).catch(()=>done(null));',args:[cmd]});
   assert.equal(await nativeInvoke('window_topmost_state'),true);
   await click('topmost');
   assert.equal(await nativeInvoke('window_topmost_state'),false);
@@ -134,13 +153,17 @@ try {
   const restoredMaximized=await request('/session/'+session+'/window/rect');
   assert.equal(restoredMaximized.width,maximized.width);
   console.log('Native mini from maximized window and restore: PASS');
+  await request('/session/'+session+'/window/minimize',{});
+  assert.equal((await nativeInvoke('desktop_status')).minimized,true);
   const extra=spawn(resolve(root,'apps/desktop/src-tauri/target/debug/encore.exe'),[],{windowsHide:true,stdio:'ignore'});
   const exited=await new Promise(resolve=>{const timeout=setTimeout(()=>{extra.kill();resolve(false);},5000);extra.on('close',()=>{clearTimeout(timeout);resolve(true);});});
   assert(exited,'Second instance did not exit');
   await execute('return document.title');
-  console.log('Native single instance guard: PASS');
+  assert.equal((await nativeInvoke('desktop_status')).minimized,false);
+  console.log('Native single instance guard restores minimized existing window: PASS');
 } finally {
   if(session && volumeCaptured) await execute('if(arguments[0]===null)localStorage.removeItem("encore.volume.v1");else localStorage.setItem("encore.volume.v1",arguments[0]);',[originalVolume]).catch(()=>{});
+  if(session) await nativeInvoke('desktop_action',{action:'quit'}).catch(()=>{});
   if(session) await request('/session/'+session,undefined,'DELETE').catch(()=>{});
   if(process.platform==='win32') { await new Promise(resolve=>{const cleanup=spawn('taskkill',['/PID',String(driver.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});cleanup.on('close',resolve);cleanup.on('error',resolve);}); } else driver.kill();
 }

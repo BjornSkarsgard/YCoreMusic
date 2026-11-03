@@ -2,7 +2,10 @@
 mod catalogue;
 #[allow(dead_code)]
 mod credentials;
+mod desktop;
 mod matcher;
+mod media;
+mod power;
 mod source;
 mod storage;
 use tauri::Manager;
@@ -74,7 +77,14 @@ async fn catalogue_collection(
 }
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
+        .plugin(tauri_plugin_power_monitor::init())
+        .plugin(power::plugin())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = desktop::open(app);
+        }))
+        .manage(desktop::DesktopState::default())
+        .manage(media::MediaState::default())
+        .on_window_event(desktop::closing)
         .setup(|app| {
             let test_directory = if cfg!(debug_assertions) {
                 std::env::var_os("ENCORE_TEST_DATA_DIR")
@@ -95,6 +105,8 @@ fn main() {
                 storage::Store::open(&directory.join("encore.sqlite"))
             });
             app.manage(storage::StorageState { store, test_mode });
+            let _ = desktop::install(app.handle());
+            let _ = media::install(app.handle());
             Ok(())
         })
         .manage(source::Source::default())
@@ -102,6 +114,11 @@ fn main() {
         .manage(window_mode::WindowMode::default())
         .invoke_handler(tauri::generate_handler![
             source_fetch,
+            media::media_update,
+            media::media_status,
+            desktop::desktop_action,
+            desktop::desktop_status,
+            desktop::desktop_close,
             catalogue_search,
             catalogue_collection,
             storage::storage_command,
