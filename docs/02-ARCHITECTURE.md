@@ -40,7 +40,7 @@ APP: BOOTING → READY_PAUSED → ACTIVE ↔ PAUSED → STOPPING
 SOURCE: MY_WAVE | LIKES | PLAYLIST | ALBUM | ARTIST | SEARCH | MANUAL | SMART_HISTORY
 TRACK: RESOLVING → VIDEO_READY | AUDIO_FALLBACK_READY | UNAVAILABLE
 PLAYER: IDLE → LOADING → PLAYING ↔ PAUSED → BUFFERING → RECOVERING → FAILED
-DEVICE: AVAILABLE ↔ MISSING (MISSING => forced PAUSED; return => READY_PAUSED)
+DEVICE: системная маршрутизация ОС; отдельное закрепление endpoint не требуется
 MONITOR: VIDEO | VISUALIZER | OFF; plus DETACHED (temporary, no reassignment)
 ```
 Не объединять `source_mode`, `repeat_mode`, `player_status`, `scene_mode` в один enum: это независимые измерения.

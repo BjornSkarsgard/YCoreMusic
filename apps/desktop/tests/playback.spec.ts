@@ -185,3 +185,66 @@ test('Pause while next track is being resolved cancels automatic continuation',a
   await expect(page.locator('#play')).toBeEnabled();
   expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa']);
 });
+
+test('saved manual clip precedes search and pause/resume produces one history event',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;(window as any).records=[];(window as any).searches=0;(window as any).saved=[];
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch')return [{id:'123',title:'A',artist:'Fixture'}];
+      if(cmd==='search_videos'){(window as any).searches++;return [];}
+      if(cmd==='storage_command'){
+        const request=args.request;
+        if(request.type==='get_video')return 'Bbbbbbbbbbb';
+        if(request.type==='record')(window as any).records.push(request.event);
+        if(request.type==='save_video')(window as any).saved.push(request.videoId);
+      }
+    }};
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
+  expect(await page.evaluate(()=>(window as any).searches)).toBe(0);
+  expect(await page.evaluate(()=>(window as any).records)).toEqual([]);
+  await page.locator('#play').click();await page.locator('#pause').click();await page.locator('#play').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).records.length)).toBe(1);
+  await page.locator('#url').fill('Ccccccccccc');await page.getByRole('button',{name:'Подготовить'}).click();
+  expect(await page.evaluate(()=>(window as any).saved)).toEqual(['Ccccccccccc']);
+});
+test('history replay wins over late startup source and clearing requires confirmation',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;(window as any).cleared=0;
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch')return new Promise(resolve=>(window as any).releaseSource=()=>resolve([{id:'123',title:'Late wave',artist:'Fixture'}]));
+      if(cmd==='storage_command'){
+        if(args.request.type==='history')return [{id:1,trackId:'321',title:'From history',artist:'Fixture',videoId:'Bbbbbbbbbbb',startedAt:'2026-11-03T10:00:00Z'}];
+        if(args.request.type==='clear_history')(window as any).cleared++;
+      }
+    }};
+  });
+  await mockAutomaticPlayer(page);await page.goto('/');
+  await page.locator('#history-panel summary').click();await page.locator('#history-list button').click();
+  await expect(page.locator('#track-title')).toHaveText('From history');
+  await page.evaluate(()=>(window as any).releaseSource());
+  await expect(page.locator('#source-start')).toBeEnabled();
+  await expect(page.locator('#track-title')).toHaveText('From history');
+  await page.locator('#history-clear').click();expect(await page.evaluate(()=>(window as any).cleared)).toBe(0);
+  await page.locator('#clear-cancel').click();expect(await page.evaluate(()=>(window as any).cleared)).toBe(0);
+  await page.locator('#history-clear').click();await page.locator('#clear-confirm').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).cleared)).toBe(1);
+});
+
+test('unavailable saved clip falls back to search without deleting the saved choice',async({page})=>{
+  await page.addInitScript(()=>{
+    (globalThis as any).isTauri=true;(window as any).removed=0;
+    (window as any).__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+      if(cmd==='source_fetch')return [{id:'123',title:'A',artist:'Fixture'}];
+      if(cmd==='storage_command'){
+        if(args.request.type==='get_video')return 'Aaaaaaaaaaa';
+        if(args.request.type==='remove_video')(window as any).removed++;
+      }
+      if(cmd==='search_videos')return [{id:'Bbbbbbbbbbb',title:'A',artist:'Fixture',score:100,reason:'fixture'}];
+    }};
+  });
+  await mockAutomaticPlayer(page,true);await page.goto('/');
+  await expect.poll(()=>page.evaluate(()=>(window as any).loaded)).toEqual(['Aaaaaaaaaaa','Bbbbbbbbbbb']);
+  expect(await page.evaluate(()=>(window as any).removed)).toBe(0);
+  expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+});

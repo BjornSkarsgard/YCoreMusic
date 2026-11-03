@@ -107,3 +107,17 @@ S3 Windows = PARTIAL (native управление видео подтвержд�
 Windows native integration PASS: источник → auto match → настоящий IFrame cue, отдельно известный search fixture → cue, sample video Play/Pause/seek на volume=0, mini/topmost/single-instance. В одном из более ранних запусков рекомендация не дала безопасного совпадения и потребовала ручной ссылки — покрытие неполное. Слышимость звука/все кандидаты не проверены.
 
 Локально PASS: 10 desktop Rust unit + 5 probe unit (дубли общих parser tests в двух бинарниках); opt-in live metadata spike PASS; Clippy all-targets PASS; 8 renderer smoke PASS (live browser test по умолчанию skipped). S10 остаётся PARTIAL. Новые возможности пока ожидают CI. Предыдущий коммит 182250f собрался на Windows, Ubuntu и macOS.
+
+### Обновление аудиотребований
+
+Пользователь отменил endpoint selector/routing. Используется системная маршрутизация, REQ-022 superseded, S4 не блокер. Незакоммиченная аудиодиагностика удалена. Настройки Windows не менялись, audible probe не выполнялся. При volume=0 процессный audio-session owner не подтвердился (0 сессий), поэтому S6 остаётся НЕ ПРОВЕРЕНО. Далее — persistent manual video override/history.
+
+### SQLite: ручные клипы и базовая история
+
+Сделано: persistent manual override на track ID, приоритет перед поиском, отказ сохранённого клипа → временный автоподбор без удаления пользовательской привязки. История фактических PLAYING-start, без дублей при pause/resume; поиск по title/artist с кириллицей, воспроизведение записи, подтверждаемая очистка (manual overrides остаются). История не перезаписывается поздним source-init callback. OAuth не хранится в SQLite.
+
+Локальные проверки PASS: 13 desktop Rust + 5 probe unit (общие parser tests дублируются в двух бинарниках), Clippy -D warnings, 11 renderer smoke + skipped opt-in live test. Миграция пустой схемы/идемпотентность/search/reopen override/refusal newer schema покрыты тестами.
+
+Native Windows PASS: отдельная .tools/native-test-data SQLite, чтение/запись override, идемпотентная запись, clear history не удаляет override, removal override. После реального sample Play на volume=0 read-only проверка этой тестовой БД подтвердила запись M7lc1UVf-VE и отсутствие очищенного синтетического fixture. Source/YouTube/mini/topmost/single-instance smoke также PASS. Личная история и сохранённый OAuth не очищались; открытое пользователем окно не закрывали.
+
+Ограничения: история пока только старты (нет listened duration/end_reason/date filter/pagination), одна ручная привязка вместо полного набора favourites, нет Play Next/Append из истории, native-runtime Linux/macOS для нового storage не проверен. Сборка Windows обновлена. Предыдущий d7e7610 прошёл CI всех 3 ОС; этот срез ждёт новой CI-проверки. Аудиовыход теперь системный по решению пользователя.

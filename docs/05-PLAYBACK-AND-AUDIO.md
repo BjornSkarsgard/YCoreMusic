@@ -47,3 +47,7 @@
 - SMTC metadata title/artist, Play/Pause/Next/Previous, единая логика Previous.
 - При PLAYING держать `SYSTEM_REQUIRED` и `DISPLAY_REQUIRED`; на PAUSED/STOP/Exit освобождать.
 - Win+L не должен останавливать звук; после unlock resync сцен. Wake из сна — всегда PAUSED.
+
+## Обновление по решению пользователя, 2026-11-03
+
+Собственный выбор/закрепление output endpoint отменён. Раздел «Аудиоустройство» выше больше не задаёт обязательный lifecycle отключения/возврата: маршрутизацией и fallback управляет ОС. Сохраняются один источник, громкость приложения и no-autoplay на запуске/wake. S4 больше не является блокером.

@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 const root=process.cwd();
 const driver=spawn(process.env.ENCORE_TAURI_DRIVER ?? 'tauri-driver',[
   '--port','4444','--native-driver',process.env.ENCORE_EDGE_DRIVER ?? resolve(root,'.tools/edgedriver/msedgedriver.exe')
-],{windowsHide:true,stdio:'ignore'});
+],{windowsHide:true,stdio:'ignore',env:{...process.env,ENCORE_TEST_DATA_DIR:resolve(root,'.tools/native-test-data')}});
 let session;
 async function request(path,body,method=body===undefined?'GET':'POST') {
   const response=await fetch('http://127.0.0.1:4444'+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(45000)});
@@ -29,6 +29,22 @@ try {
   await until('return !!document.getElementById("play")');
   assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
   console.log('Native startup without autoplay: PASS');
+  const store=async(requestBody)=>request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("storage_command",{request:arguments[0]}).then(done).catch(()=>done({testError:true}));',args:[requestBody]});
+  const storageStatus=await store({type:'status'});
+  assert.equal(storageStatus.testMode,true,'Refuse storage tests against the personal database');
+  assert.equal(storageStatus.available,true,'Test database unavailable');
+  const fixture='native-fixture-'+Date.now();
+  await store({type:'save_video',trackId:'123456789',videoId:'M7lc1UVf-VE'});
+  assert.equal(await store({type:'get_video',trackId:'123456789'}),'M7lc1UVf-VE');
+  const event={playbackId:fixture,trackId:'123456789',title:fixture,artist:'Test fixture',videoId:'M7lc1UVf-VE'};
+  await store({type:'record',event});await store({type:'record',event});
+  const history=await store({type:'history',query:fixture});
+  assert.equal(history.length,1);
+  await store({type:'clear_history'});
+  assert.equal(await store({type:'get_video',trackId:'123456789'}),'M7lc1UVf-VE');
+  await store({type:'remove_video',trackId:'123456789'});
+  assert.equal(await store({type:'get_video',trackId:'123456789'}),null);
+  console.log('Native isolated SQLite override/history/idempotency/clear: PASS');
   if(process.env.ENCORE_LIVE_YANDEX==='1') {
     await until('return document.querySelectorAll("#queue-list li").length>0');
     const count=await execute('return document.querySelectorAll("#queue-list li").length');
@@ -61,6 +77,14 @@ try {
     await click('forward');
     await until('return Number(document.getElementById("seek").value)>=4');
     console.log('Native real YouTube cue, muted Play, Pause, seek: PASS');
+    let recorded=false;
+    for(let attempt=0;attempt<15;attempt++){
+      const rows=await store({type:'history',query:''});
+      recorded=Array.isArray(rows)&&rows.some(entry=>entry.videoId==='M7lc1UVf-VE');
+      if(recorded)break;await sleep(100);
+    }
+    assert(recorded,'Actual Play did not persist a history entry');
+    console.log('Native actual Play -> SQLite history: PASS');
   }
   const rect=await request('/session/'+session+'/window/rect');
   await click('mini');

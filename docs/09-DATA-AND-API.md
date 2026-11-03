@@ -105,3 +105,11 @@ CREATE TABLE trusted_devices (
 - Yandex OAuth token — Windows Credential Manager/DPAPI, доступ только backend/native bridge.
 - Pairing credential — hash/защищённое хранилище, не в query string.
 - Логи без токенов, URL с секретами, cookies и приватных данных.
+
+## Реализованный срез SQLite v1 (2026-11-03)
+
+Фактическая схема в src-tauri/src/storage.rs — минимальное подмножество предложений выше: manual_videos (одна ручная привязка на Yandex track ID), play_history (фактические старты). Данные в AppData/application data Encore, файл encore.sqlite. OAuth остаётся в OS credential store, не в БД.
+
+PRAGMA user_version=1, создание пустой схемы транзакционно. Неизвестная непустая/более новая схема отклоняется без удаления; существующие данные не сбрасываются. Будущие миграции с данными требуют отдельной backup/restore проверки, сейчас таких переходов нет. Параметризованные запросы, SQLite доступ сериализован mutex и вынесен в native workers. History search хранит нормализованную копию title/artist для кириллицы; возвращает до 100 последних совпадений.
+
+playback_id создаётся на загрузку видео; несколько PLAYING после pause/resume пишут одну запись, повторная загрузка — отдельную. Это история стартов, а не полноценный учёт listened_ms/end_reason. Manual override сохраняется при ручной подготовке, cue не пишет историю. История очищается только по подтверждённому действию UI; manual_videos при этом не удаляется. Неудачный сохранённый клип не удаляется автоматически, пробуется автоподбор.

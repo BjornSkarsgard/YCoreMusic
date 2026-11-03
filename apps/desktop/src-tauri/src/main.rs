@@ -3,6 +3,8 @@
 mod credentials;
 mod matcher;
 mod source;
+mod storage;
+use tauri::Manager;
 mod window_mode;
 #[allow(dead_code)]
 mod yandex;
@@ -40,11 +42,34 @@ async fn search_videos(
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {}))
+        .setup(|app| {
+            let test_directory = if cfg!(debug_assertions) {
+                std::env::var_os("ENCORE_TEST_DATA_DIR")
+            } else {
+                None
+            };
+            let test_mode = test_directory.is_some();
+            let directory = match test_directory {
+                Some(path) => Ok(std::path::PathBuf::from(path)),
+                None => app
+                    .path()
+                    .app_data_dir()
+                    .map_err(|_| "Cannot locate application data"),
+            };
+            let store = directory.and_then(|directory| {
+                std::fs::create_dir_all(&directory)
+                    .map_err(|_| "Cannot create application data directory")?;
+                storage::Store::open(&directory.join("encore.sqlite"))
+            });
+            app.manage(storage::StorageState { store, test_mode });
+            Ok(())
+        })
         .manage(source::Source::default())
         .manage(matcher::Matcher::default())
         .manage(window_mode::WindowMode::default())
         .invoke_handler(tauri::generate_handler![
             source_fetch,
+            storage::storage_command,
             search_videos,
             window_mode::window_mini,
             window_mode::window_topmost,

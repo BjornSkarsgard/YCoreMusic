@@ -2,15 +2,16 @@ import './style.css';
 import { videoId } from './video-id';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import { PlaybackQueue, type Track } from './queue';
+import { storage, type HistoryEntry } from './storage';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 <header><a class="brand">encore<span>●</span></a><div class="window-actions"><button id="mini" aria-pressed="false">Миниплеер</button><button id="topmost" aria-pressed="false">Поверх окон</button><span class="badge">ЭТАП 0 · ЛАБОРАТОРИЯ</span></div></header>
 <main><section class="intro"><p class="eyebrow">МУЗЫКА ПОЛУЧАЕТ ЭКРАН</p><h1>Ещё одну.</h1><p>Первый шаг к вашему музыкальному телеканалу.<br>Проверяем воспроизведение, прежде чем строить эфир.</p></section>
-<section class="source-panel"><div class="source-actions"><button id="source-start">Моя волна · новая сессия</button><button id="source-more" disabled>Ещё рекомендации</button><button id="find-video" disabled>Подобрать заново</button><button id="queue-next" disabled>Следующий трек</button></div><p id="source-status" role="status">Яндекс доступен в desktop-версии после локального подключения аккаунта.</p><h2 id="track-title">Ручная проверка видео</h2><p id="track-artist"></p><details><summary>Очередь</summary><ol id="queue-list"></ol></details></section><section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
+<section class="source-panel"><div class="source-actions"><button id="source-start">Моя волна · новая сессия</button><button id="source-more" disabled>Ещё рекомендации</button><button id="find-video" disabled>Подобрать заново</button><button id="queue-next" disabled>Следующий трек</button></div><p id="source-status" role="status">Яндекс доступен в desktop-версии после локального подключения аккаунта.</p><h2 id="track-title">Ручная проверка видео</h2><p id="track-artist"></p><details><summary>Очередь</summary><ol id="queue-list"></ol></details></section><p id="storage-status" role="status"></p><section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
 <form id="load"><label for="url">YouTube-ссылка или ID</label><div class="input-row"><input id="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required><button>Подготовить</button></div></form>
 <div class="controls"><button id="play" disabled>▶ Play</button><button id="pause" disabled>Ⅱ Пауза</button><button id="back" disabled>−5 с</button><button id="forward" disabled>+5 с</button><label>Громкость <input id="volume" type="range" min="0" max="100" value="50"></label></div>
 <div class="timeline"><output id="elapsed">0:00</output><input id="seek" aria-label="Позиция видео" type="range" min="0" max="0" value="0" step="1" disabled><output id="duration">0:00</output></div><p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
-<aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Выбор устройства и аудиоанализ ещё не реализованы. Автоподбор экспериментальный; при несовпадении замените ссылку вручную.</p><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
+<aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Аудиовыходом управляет ОС. Анализ звука ещё не реализован. Автоподбор экспериментальный; при несовпадении замените ссылку вручную.</p><details id="history-panel"><summary>История прослушивания</summary><div class="history-actions"><input id="history-query" aria-label="Поиск в истории" placeholder="Название или исполнитель"><button id="history-refresh">Обновить</button><button id="history-clear">Очистить историю</button></div><p id="history-status" role="status"></p><ol id="history-list"></ol></details><dialog id="clear-dialog"><p>Удалить всю историю прослушивания? Ручные ссылки сохранятся.</p><button id="clear-cancel">Отмена</button><button id="clear-confirm">Удалить историю</button></dialog><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const queue = new PlaybackQueue();
 let player: YT.Player | undefined;
@@ -18,9 +19,12 @@ let generation = 0;
 let playerReady = false;
 let apiPromise: Promise<void> | undefined;
 let playIntent=false;
-interface Candidate {id:string;title:string;artist:string;score:number;reason:string}
+let fromHistory=false;
+interface Candidate {id:string;title:string;artist:string;score:number;reason:string;saved?:boolean}
 const choices=new Map<string,{items:Candidate[];index:number}>();
 const searching=new Set<string>();
+const bypassSaved=new Set<string>();
+let sourceRevision=0;
 function report(message: string) {
   element('status').textContent = message;
   const log = element('log');
@@ -47,12 +51,17 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
   event.preventDefault();
   const id=videoId(element<HTMLInputElement>('url').value);
   if(!id){report('Нужна HTTPS-ссылка YouTube или video ID из 11 символов.');return;}
+  const track=queue.current;
+  if(isTauri() && track && /^\d+$/.test(track.id)) void storage({type:'save_video',trackId:track.id,videoId:id}).then(()=>{element('storage-status').textContent='Ручной клип сохранён для этого трека.';}).catch(()=>{element('storage-status').textContent='Не удалось сохранить ручной клип. Текущий выбор действует только до перезапуска.';});
   void loadVideo(id);
 });
 async function loadVideo(id:string,resume=false,automatic=false) {
   const sourceGeneration=queue.generation, ordinal=queue.current?.ordinal;
   if(ordinal!==undefined) queue.resolve(ordinal,id,sourceGeneration);
   playIntent=resume;
+  const trackAtLoad=queue.current;
+  const playEvent={playbackId:Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join(''),trackId:trackAtLoad?.id ?? 'manual:'+id,title:trackAtLoad?.title ?? 'YouTube · '+id,artist:trackAtLoad?.artist ?? '',videoId:id};
+  let recorded=false,recordPending=false;
   const current = ++generation;
   enabled(false);
   if(resume) element<HTMLButtonElement>('pause').disabled=false;
@@ -85,7 +94,13 @@ async function loadVideo(id:string,resume=false,automatic=false) {
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
           report(states[event.data] ?? `Состояние ${event.data}`);
           if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); if(resume && playIntent) event.target.playVideo(); }
-          if(event.data===1) playIntent=true;
+          if(event.data===1) {
+            playIntent=true;
+            if(isTauri() && !recorded && !recordPending) {
+              recordPending=true;
+              void storage({type:'record',event:playEvent}).then(()=>{recorded=true;}).catch(()=>{element('storage-status').textContent='Не удалось записать прослушивание в историю.';}).finally(()=>{recordPending=false;});
+            }
+          }
           if(event.data===2) playIntent=false;
           if(event.data===0 && queue.current) void advance(playIntent);
         },
@@ -141,12 +156,14 @@ async function sourceFetch(fresh: boolean) {
   if (fetching) return;
   if (!isTauri()) { element('source-status').textContent = 'Откройте Encore desktop: браузерный режим не имеет доступа к аккаунту.'; return; }
   fetching=true;
+  const requestRevision=++sourceRevision;
   element<HTMLButtonElement>('source-start').disabled=true;
   element<HTMLButtonElement>('source-more').disabled=true;
   element('source-status').textContent='Получение рекомендаций…';
   try {
     const tracks=await invoke<Track[]>('source_fetch',{fresh});
-    if (fresh) { stopPlayer(); queue.reset(tracks); choices.clear(); element<HTMLInputElement>('url').value=''; }
+    if(requestRevision!==sourceRevision)return false;
+    if (fresh) { stopPlayer(); queue.reset(tracks); fromHistory=false; choices.clear(); bypassSaved.clear(); element<HTMLInputElement>('url').value=''; }
     else queue.append(tracks);
     renderQueue();
     element('source-status').textContent='Получено ' + tracks.length + ' треков. Порядок сохранён. Подготавливаем клипы…';
@@ -154,6 +171,7 @@ async function sourceFetch(fresh: boolean) {
     prepareAhead();
     return true;
   } catch (error) {
+    if(requestRevision!==sourceRevision)return false;
     const known: Record<string,string> = {
       'No saved token. Run yandex-probe --save-token locally first.':'Сначала подключите аккаунт: yandex-probe --save-token в локальном терминале.',
       'Authorization denied':'Срок доступа истёк или доступ отклонён. Подключите аккаунт заново.',
@@ -164,7 +182,7 @@ async function sourceFetch(fresh: boolean) {
     element('source-status').textContent=known[String(error)] ?? 'Не удалось получить рекомендации. Очередь сохранена.';
   } finally {
     fetching=false; element<HTMLButtonElement>('source-start').disabled=false;
-    element<HTMLButtonElement>('source-more').disabled=!queue.current;
+    element<HTMLButtonElement>('source-more').disabled=!queue.current || fromHistory;
   }
 }
 element('source-start').onclick=()=>void sourceFetch(true);
@@ -172,10 +190,20 @@ element('source-more').onclick=()=>void sourceFetch(false);
 element('queue-next').onclick=()=>void advance(playIntent);
 element('find-video').onclick=()=>{
   if(!queue.current)return;
+  const track=queue.current;
+  if(isTauri() && /^\d+$/.test(track.id)) {
+    const epoch=queue.generation,ordinal=track.ordinal;
+    void storage({type:'remove_video',trackId:track.id}).then(()=>{if(queue.generation===epoch && queue.current?.ordinal===ordinal)resetMatching();}).catch(()=>{element('storage-status').textContent='Не удалось сбросить сохранённый клип.';});
+    return;
+  }
+  resetMatching();
+};
+function resetMatching(){
+  if(!queue.current)return;
   choices.delete(queue.generation+':'+queue.current.ordinal);
   queue.clearVideo(queue.current.ordinal);
   stopPlayer();playIntent=false;prepareAhead();
-};
+}
 
 function tryAlternative(epoch:number,ordinal:number|undefined) {
   queueMicrotask(()=>{
@@ -185,6 +213,8 @@ function tryAlternative(epoch:number,ordinal:number|undefined) {
       const next=entry.items[entry.index];
       report('Пробуем другой клип той же композиции…');
       void loadVideo(next.id,playIntent,true);
+    } else if(entry?.items[0]?.saved && ordinal!==undefined) {
+      const key=epoch+':'+ordinal;bypassSaved.add(key);choices.delete(key);queue.clearVideo(ordinal);stopPlayer();prepareAhead();
     } else {playIntent=false;report('Клипы недоступны. Задайте ссылку вручную; трек остаётся текущим.');}
   });
 }
@@ -206,7 +236,13 @@ function prepareAhead() {
     if(searching.has(key)) continue;
     searching.add(key);
     if(track.ordinal===queue.current.ordinal) report('Ищем клип для текущего трека…');
-    void invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist}).then(items=>{
+    void (async()=>{
+      if(/^\d+$/.test(track.id) && !bypassSaved.has(key)) {
+        try {const saved=await storage<string|null>({type:'get_video',trackId:track.id});if(saved)return [{id:saved,title:track.title,artist:track.artist,score:1000,reason:'Ваш сохранённый клип',saved:true}];}
+        catch {element('storage-status').textContent='Сохранённые клипы недоступны. Используется временный автоподбор.';}
+      }
+      return invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist});
+    })().then(items=>{
       if(epoch!==queue.generation) return;
       if(!Array.isArray(items)) items=[];
       choices.set(key,{items,index:0});
@@ -227,6 +263,7 @@ async function advance(resume:boolean) {
   const epoch=queue.generation;
   try {
     if(queue.current.ordinal+1>=queue.snapshot.length) {
+      if(fromHistory){playIntent=false;report('Конец очереди истории. Выберите запись или вернитесь к Моей волне.');return;}
       const received=await sourceFetch(false);
       if(!received || epoch!==queue.generation) {playIntent=false;return;}
     }
@@ -260,3 +297,35 @@ element('topmost').onclick=async()=>{
 };
 
 if (isTauri()) void sourceFetch(true);
+
+let historyRevision=0;
+async function refreshHistory(){
+ const revision=++historyRevision;
+ if(!isTauri()){element('history-status').textContent='История доступна в desktop-версии.';return;}
+ try {
+   const entries=await storage<HistoryEntry[]>({type:'history',query:element<HTMLInputElement>('history-query').value});
+   if(revision!==historyRevision)return;
+   if(!Array.isArray(entries))return;
+   element('history-list').replaceChildren(...entries.map(entry=>{
+     const item=document.createElement('li'),title=document.createElement('span'),button=document.createElement('button');
+     title.textContent=entry.title+' · '+entry.artist+' · '+new Date(entry.startedAt).toLocaleString();
+     button.textContent='Воспроизвести';button.onclick=()=>{
+       stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist}]);fromHistory=true;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
+       element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
+       void loadVideo(entry.videoId,true);
+     };
+     item.append(title,button);return item;
+   }));
+   element('history-status').textContent=entries.length?'Последние '+entries.length+' записей':'История пока пуста.';
+ }catch {element('history-status').textContent='Не удалось прочитать историю. Существующая база не удалялась.';}
+}
+let historyTimer:ReturnType<typeof setTimeout>|undefined;
+element('history-query').oninput=()=>{clearTimeout(historyTimer);historyTimer=setTimeout(()=>void refreshHistory(),200);};
+element('history-refresh').onclick=()=>void refreshHistory();
+element('history-panel').ontoggle=()=>{if(element<HTMLDetailsElement>('history-panel').open)void refreshHistory();};
+element('history-clear').onclick=()=>element<HTMLDialogElement>('clear-dialog').showModal();
+element('clear-cancel').onclick=()=>element<HTMLDialogElement>('clear-dialog').close();
+element('clear-confirm').onclick=async()=>{
+ try {await storage({type:'clear_history'});element<HTMLDialogElement>('clear-dialog').close();await refreshHistory();}
+ catch {element('history-status').textContent='Не удалось очистить историю.';}
+};
