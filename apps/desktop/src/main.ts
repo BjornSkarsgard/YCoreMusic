@@ -83,4 +83,3 @@ element('back').onclick = () => seek(-5);
 element('forward').onclick = () => seek(5);
 element('volume').oninput = () => player?.setVolume(Number(element<HTMLInputElement>('volume').value));
 window.addEventListener('beforeunload', () => player?.destroy());
-

@@ -8,3 +8,6 @@ __pycache__/
 !.env.example
 *.log
 .DS_Store
+# Mobile platforms are outside the current scope.
+apps/desktop/src-tauri/icons/android/
+apps/desktop/src-tauri/icons/ios/
