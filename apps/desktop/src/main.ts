@@ -7,11 +7,12 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
 <section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
 <form id="load"><label for="url">YouTube-ссылка или ID</label><div class="input-row"><input id="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required><button>Подготовить</button></div></form>
 <div class="controls"><button id="play" disabled>▶ Play</button><button id="pause" disabled>Ⅱ Пауза</button><button id="back" disabled>−5 с</button><button id="forward" disabled>+5 с</button><label>Громкость <input id="volume" type="range" min="0" max="100" value="50"></label></div>
-<p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
+<div class="timeline"><output id="elapsed">0:00</output><input id="seek" aria-label="Позиция видео" type="range" min="0" max="0" value="0" step="1" disabled><output id="duration">0:00</output></div><p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
 <aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Выбор устройства, Яндекс и аудиоанализ ещё не реализованы.</p><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 let player: YT.Player | undefined;
 let generation = 0;
+let playerReady = false;
 let apiPromise: Promise<void> | undefined;
 function report(message: string) {
   element('status').textContent = message;
@@ -41,6 +42,7 @@ element<HTMLFormElement>('load').addEventListener('submit', async event => {
   if (!id) { report('Нужна HTTPS-ссылка YouTube или video ID из 11 символов.'); return; }
   const current = ++generation;
   enabled(false);
+  playerReady = false;
   player?.destroy(); player = undefined;
   element('empty').hidden = false;
   report('Загрузка YouTube API…');
@@ -60,14 +62,16 @@ element<HTMLFormElement>('load').addEventListener('submit', async event => {
           clearTimeout(timer);
           if (current !== generation) return;
           ready = true;
+          playerReady = true;
           event.target.setVolume(Number(element<HTMLInputElement>('volume').value));
           event.target.cueVideoById(id);
           element('empty').hidden = true;
-          enabled(true); report('Видео подготовлено · нажмите Play');
+          report('Подготовка видео…');
         },
         onStateChange: event => {
           if (current !== generation) return;
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
+          if (event.data === 5) enabled(true);
           report(states[event.data] ?? `Состояние ${event.data}`);
         },
         onError: event => { clearTimeout(timer); if (current === generation) { enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); } },
@@ -82,4 +86,21 @@ function seek(delta: number) { if (player) player.seekTo(Math.max(0, Math.min(pl
 element('back').onclick = () => seek(-5);
 element('forward').onclick = () => seek(5);
 element('volume').oninput = () => player?.setVolume(Number(element<HTMLInputElement>('volume').value));
-window.addEventListener('beforeunload', () => player?.destroy());
+function clock(seconds: number): string {
+  const value = Math.max(0, Math.floor(seconds || 0));
+  return `${Math.floor(value / 60)}:${String(value % 60).padStart(2, '0')}`;
+}
+const seekInput = element<HTMLInputElement>('seek');
+let dragging = false;
+seekInput.oninput = () => { dragging = true; element('elapsed').textContent = clock(Number(seekInput.value)); seekInput.title = clock(Number(seekInput.value)); };
+seekInput.onchange = () => { if (playerReady) player?.seekTo(Number(seekInput.value), true); dragging = false; };
+const positionTimer = setInterval(() => {
+  if (!playerReady || !player) { seekInput.disabled = true; return; }
+  const duration = player.getDuration();
+  const position = player.getCurrentTime();
+  seekInput.disabled = duration <= 0;
+  seekInput.max = String(duration);
+  element('duration').textContent = clock(duration);
+  if (!dragging) { seekInput.value = String(position); element('elapsed').textContent = clock(position); }
+}, 500);
+window.addEventListener('beforeunload', () => { clearInterval(positionTimer); player?.destroy(); });

@@ -46,3 +46,13 @@ PASS: `npx tauri build --debug --no-bundle`, Rust 1.99.1, Tauri 2.12.5. Созд
 PASS (только process smoke): приложение не завершилось в первые 5 секунд, после проверки закрыто. Отрисовка окна, реальный embed и звук не проверены. S3 остаётся НЕ ПРОВЕРЕНО до ручного сценария.
 
 Установка Visual Studio Build Tools (MSVC + Windows SDK) завершилась успешно. Требуется новый терминал, чтобы обновлённый PATH Rust подхватился автоматически.
+
+### Реальный браузерный YouTube spike
+
+PASS в Chrome на текущей Windows: реальный YouTube API, video ID M7lc1UVf-VE, cue без autoplay, явный Play при громкости 0, Pause и seek +5 с с проверкой фактической позиции. Исправлена гонка: Play доступен после CUED, а не только onReady.
+
+Добавлен таймлайн (время видео, drag seek). Проверка реального API включается явно переменной ENCORE_LIVE_YOUTUBE=1; в обычном CI пропускается. Слышимость аудио не проверена. Chrome не заменяет WebView2/WKWebView/WebKitGTK: S3 native остаётся открытым.
+
+CI коммита c0c7e9: native build + UI smoke прошли на macOS и Ubuntu; Windows ещё выполняется на момент записи. Это сборочные проверки, не аппаратная приёмка.
+
+Подготовлен docs/S1-YANDEX-SPIKE.md; доступ к аккаунту и My Wave ещё не проверен.

@@ -11,8 +11,11 @@ test('startup is inert; loading cues, explicit Play plays; replacement removes o
         this.options = options;
         setTimeout(() => options.events.onReady({target:this}), 0);
       }
+      getDuration() { return 120; }
+      getCurrentTime() { return 0; }
+      seekTo() {}
       setVolume() {}
-      cueVideoById(id) { window.calls.push('cue:' + id); }
+      cueVideoById(id) { window.calls.push('cue:' + id); this.options.events.onStateChange({data:5}); }
       playVideo() { window.calls.push('play'); }
       pauseVideo() { window.calls.push('pause'); }
       destroy() { window.calls.push('destroy'); this.el.remove(); }
