@@ -5,7 +5,7 @@
 - Подготовлены Tauri shell и TypeScript-экран S3 с одним YouTube IFrame.
 - Только ручная загрузка/Play; авторизации, My Wave, очереди и backend пока нет.
 - Это лаборатория: вывод на системное устройство, REQ-022 не реализован. Не считать полноценным плеером.
-- Rust/Cargo не обнаружены: native build не проверен.
+- Rust установлен; Windows native debug build проходит. Linux/macOS сборки запущены в CI, аппаратные проверки не выполнены.
 
 | Проверка | Windows | Linux | macOS |
 |---|---|---|---|
@@ -30,4 +30,17 @@
 
 ## Автоматические проверки 2026-11-03
 
-PASS: TypeScript strict check, тест trusted YouTube URL/ID (включая отклонение чужих доменов/протоколов/credentials), Vite production build. Native build и реальное воспроизведение не проверены. npm install: 0 известных уязвимостей по результату текущего аудита.
+PASS: TypeScript strict check, тест trusted YouTube URL/ID (включая отклонение чужих доменов/протоколов/credentials), Vite production build. На момент первой проверки native build и реальное воспроизведение не были проверены; актуальные результаты ниже. npm install: 0 известных уязвимостей по результату текущего аудита.
+
+### Продолжение Этапа 0
+
+- Установлен Rust 1.99.1; запущена установка MSVC Build Tools + Windows SDK. Первая попытка native build остановилась на отсутствующем link.exe во время установки.
+- Добавлен Cargo.lock и временная векторная иконка.
+- CI собирает debug executable без инсталлятора на Windows, Ubuntu 24.04, macOS; результат сборки не означает прохождение аппаратных сценариев.
+- PASS: Playwright/Chrome с подменённым YouTube API — отсутствие запроса к YouTube при старте, cue без autoplay, явный Play, удаление прежнего плеера перед новым. Реальный YouTube этим тестом не проверяется.
+
+
+### Windows native build
+
+PASS: `npx tauri build --debug --no-bundle`, Rust 1.99.1, Tauri 2.12.5. Создан `apps/desktop/src-tauri/target/debug/encore.exe`.
+PASS (только process smoke): приложение не завершилось в первые 5 секунд, после проверки закрыто. Отрисовка окна, реальный embed и звук не проверены. S3 остаётся НЕ ПРОВЕРЕНО до ручного сценария.

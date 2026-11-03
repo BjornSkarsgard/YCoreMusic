@@ -26,3 +26,6 @@ npm run desktop
 Проверки: `npm run check`, `npm test`, `npm run build`.
 
 Документация: [ТЗ](docs/00-README.md), [решения](docs/DECISIONS.md), [статус](docs/IMPLEMENTATION-STATUS.md).
+
+Windows debug executable после сборки: `apps/desktop/src-tauri/target/debug/encore.exe`.
+UI smoke test (с подменённым YouTube API): `npm run test:ui`. Локально использует установленный Chrome; в CI — Playwright Chromium. Для CI браузер устанавливается через `npx playwright install chromium --with-deps`.

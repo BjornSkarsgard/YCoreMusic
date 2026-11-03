@@ -26,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: npx playwright install chromium --with-deps
+      - run: npm run test:ui
       - run: npm run build
       - name: Native build (no installer)
         run: npx tauri build --debug --no-bundle
@@ -36,3 +38,4 @@ jobs:
             apps/desktop/src-tauri/target/debug/encore.exe
             apps/desktop/src-tauri/target/debug/encore
           if-no-files-found: error
+
