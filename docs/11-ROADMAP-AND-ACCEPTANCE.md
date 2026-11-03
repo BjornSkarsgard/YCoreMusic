@@ -1,0 +1,68 @@
+# План разработки и приёмка
+
+## Этап 0 — исследование / блокеры
+- Собрать минимальный Windows 11 shell, backend и тестовый YouTube IFrame.
+- Выполнить S1–S6 из `10-RISKS-AND-SPIKES.md` и оформить ADR.
+- **Exit:** доказан минимальный end-to-end playback; известны реальные ограничения выбранного устройства вывода и audio capture.
+
+## Этап 1 — MVP, один монитор
+- Установка/dev-run, splash, backend, SQLite+migrations, авторизация, My Wave, выбор источника, очередь.
+- Автоподбор видео, ручной URL, play/pause/next/previous/seek, volume, repeat, history.
+- No autoplay, один звук, ошибки сети, basic UI, tray.
+- **Exit:** пользователь может провести 1-часовую сессию без ручной перезагрузки приложения; порядок My Wave сохранён.
+
+## Этап 2 — полноценная музыкальная логика
+- Избранные видео (несколько, random/no-repeat), search, лайки/дизлайки/Undo, outbox, Smart History, offline handling, recovery.
+- Yandex audio fallback **только после успешного S2**.
+- **Exit:** тесты очереди/реакций/истории и 15-минутного зависания/потери сети.
+
+## Этап 3 — мультимониторность и визуализаторы
+- Независимые сцены, несколько IFrame с единственным звуком, monitor hotplug, window persistence, fullscreen/topmost.
+- 4 визуализатора, WebGL/Canvas2D, per-monitor FPS/quality, общий аудиоанализ **после S6**.
+- **Exit:** 3 дисплея с разной частотой, seek и переключение без двойного звука, отключение/возврат ТВ.
+
+## Этап 4 — мобильный пульт и Windows
+- Pairing QR + подтверждение, trusted devices/revoke, WS sync, все основные действия на телефоне.
+- SMTC, global media keys, Power Requests, wake/lock, output device lifecycle.
+- **Exit:** мобильный пульт управляет проигрыванием при Win+L; после wake остаётся PAUSED.
+
+## Этап 5 — polish/release
+- Тёмная/стеклянная UI, анимации, fade/crossfade, полноценная диагностика, installer, autostart OFF, тесты DPI, локализация RU.
+- **Exit:** чистая установка и удаление, воспроизводимые сборки, секреты не попадают в логи.
+
+## Ключевые приёмочные сценарии (Given / When / Then)
+| ID | Given / When | Then |
+|---|---|---|
+| A01 | Полный запуск приложения | Новая My Wave-сессия, нет autoplay |
+| A02 | Скрыли последнее окно | Музыка играет, приложение остаётся в трее |
+| A03 | В My Wave трек B ищется дольше C | B не перескакивается ради C |
+| A04 | YouTube live длится дольше записи | Видео доигрывает целиком |
+| A05 | Два любимых видео, repeat-one | На новом цикле выбирается другое видео |
+| A06 | Первое Previous, затем второе через 2 с | Сначала 0:00, затем предыдущая композиция |
+| A07 | Previous при paused | Трек остаётся на паузе |
+| A08 | Дизлайк | Сразу next, Undo доступен 5 с |
+| A09 | Яндекс offline, очередь кончилась | Smart History, не возвращаться самовольно |
+| A10 | Аудиоустройство отключено | Пауза, нет fallback на default, после возврата ждать Play |
+| A11 | 3 монитора, один клип | Три синхронизированных видео, слышен ровно один источник |
+| A12 | ТВ пропал из Windows | Сцена ждёт ТВ, не переносится |
+| A13 | Win+L | Музыка продолжает играть, lock screen не обходится |
+| A14 | Ручной сон и wake | Сессия/позиция восстановлены, воспроизведение PAUSED |
+| A15 | Музыка играет 30+ минут без ввода | Windows не гасит экраны и не уходит в автоматический сон |
+| A16 | Полноэкранная игра на первом дисплее | Игра перекрывает окно, остальные сцены и звук работают |
+| A17 | Нажатие Space в игре | Музыкальное приложение не реагирует |
+| A18 | Нажатие мультимедийного Play/Pause в игре | Управление музыкой через SMTC |
+| A19 | Незнакомый телефон знает IP | Не может отправлять команды без pairing |
+| A20 | Доверенный телефон отозван | Его HTTP/WS credential перестаёт работать |
+| A21 | WebGL context lost | Canvas2D fallback, звук не прерывается |
+| A22 | Системный звук другого приложения | Визуализатор на него не реагирует |
+| A23 | У YouTube завис buffering | Recovery после таймаута без перехода на другой трек |
+| A24 | Закрыть приложение через tray Exit | Backend и power requests завершаются |
+
+## Автотесты
+- **Unit:** queue ordering, repeat, Previous 3 s, history weighting, video ranking, favorites random, volume, stale generation cancellation.
+- **Integration:** mock Yandex/YouTube, SQLite migrations, feedback outbox, pairing auth, WS snapshot/reconnect.
+- **E2E Windows:** окно/трей, media keys, monitor reconnect, output endpoint unplug, lock/wake, DPI, multiple refresh rates.
+- **Manual hardware:** 1/2/3 дисплея, HDMI-TV, USB DAC/Bluetooth headphones, Ethernet+Wi-Fi LAN, 60/120/144/180 Hz.
+
+## Definition of Done для задачи
+Функция работает на Windows 11, покрыта тестом или описан ручной тест, ошибки видны пользователю, состояние сохраняется корректно, нет утечек токенов, не нарушен один audio authority, нет тихого изменения согласованного UX.
