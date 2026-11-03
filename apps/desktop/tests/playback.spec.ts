@@ -103,3 +103,12 @@ test('source metadata stays text, failed prefetch preserves queue, mini invokes 
   expect(commands).toContainEqual({cmd:'window_mini',args:{compact:true}});
   expect(commands).toContainEqual({cmd:'window_topmost',args:{enabled:true}});
 });
+
+test('compact controls remain visible in a wide short window', async ({ page }) => {
+  await page.setViewportSize({width:900,height:420});
+  await page.goto('/'); await page.locator('#mini').click();
+  const bounds=await page.locator('.timeline').boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.y+bounds!.height).toBeLessThanOrEqual(420);
+  await expect(page.locator('#mini')).toBeVisible();
+});

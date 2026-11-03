@@ -97,3 +97,5 @@ Windows, локальный yandex-probe: account/status PASS, new session PASS 
 S3 Windows = PARTIAL (native управление видео подтверждено, слышимость/сбои/lifecycle ещё не полностью проверены). S4/S5/S6 и Linux/macOS runtime — НЕ ПРОВЕРЕНО. Вывод пока системный, REQ-022 не реализован. Новая CI-сборка с keyring/single-instance требует проверки на всех трёх ОС.
 
 Финальная локальная проверка этого среза: cargo test (6 desktop + 5 probe PASS, OS store test opt-in отдельно ранее PASS), Clippy all-targets с -D warnings PASS, TS queue/URL unit PASS, 4 renderer smoke PASS. Native integration test после final rebuild PASS, включая single instance и maximized mini roundtrip.
+
+Дополнение: 5 renderer smoke PASS после адаптации mini layout к широкому низкому окну; controls остаются в пределах viewport. Windows desktop пересобран. CI native/keyring/single-instance для новых изменений запущен; результаты Linux/macOS runtime по-прежнему не подтверждены.
