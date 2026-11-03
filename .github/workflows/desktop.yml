@@ -38,4 +38,3 @@ jobs:
             apps/desktop/src-tauri/target/debug/encore.exe
             apps/desktop/src-tauri/target/debug/encore
           if-no-files-found: error
-

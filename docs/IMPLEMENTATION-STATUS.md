@@ -44,3 +44,5 @@ PASS: TypeScript strict check, тест trusted YouTube URL/ID (включая �
 
 PASS: `npx tauri build --debug --no-bundle`, Rust 1.99.1, Tauri 2.12.5. Создан `apps/desktop/src-tauri/target/debug/encore.exe`.
 PASS (только process smoke): приложение не завершилось в первые 5 секунд, после проверки закрыто. Отрисовка окна, реальный embed и звук не проверены. S3 остаётся НЕ ПРОВЕРЕНО до ручного сценария.
+
+Установка Visual Studio Build Tools (MSVC + Windows SDK) завершилась успешно. Требуется новый терминал, чтобы обновлённый PATH Rust подхватился автоматически.
