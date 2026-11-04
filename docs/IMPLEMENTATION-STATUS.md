@@ -307,3 +307,9 @@ storage/history принимает optional from/until в Unixseconds: from вк
 Mock renderer scenarios используют общую thumbnail fixture вместо внешних i.ytimg.com запросов. Live spec остаётся без подмены, исправлен под текущий диалог и rangeinput: реальный Chrome YouTube cue/noautoplay/explicitmutedPlay/Pause/seekPASS (15.5сек). Полный mock suite62PASS+1opt-in skipped (28.7сек); это не замена native/runtimeприёмке. Productionкод этим срезом не менялся.
 
 Linux DEB/AppImage release41867671860PASS; скачаны и проверены AR/ELFформаты, SHA256/controlmetadata в.tools/linux-package-result.json. Native Linux/X11 run41871384767 идёт; MacARMpackage41870661876вочереди.
+
+## 2026-11-04: первый Linux X11 прогон и ожидание оконного менеджера
+
+NativeLinux41871384767 дошёл до реального GTKокна/noautoplay/autostartargument/diagnostics/SQLite/historydates+cursor+clearPASS. Упал на немедленном чтении topmostfalse после запросаtrue. Проверена реализация TaoLinux: setter отправляет WindowRequest, getter читает ABOVE из последующего WindowStateevent. Runner теперь ждёт подтверждённое состояние с ограничением5сек, не подменяет getter/результат. Повторный Linux прогон ещё ожидается. Windows basic native с этим ожиданиемPASS.
+
+CI получает cache Rustdependencies через rust-cache для уменьшения повторной компиляции (workspaces apps/desktop/src-tauri -> target,cache-on-failure). MacARMпакет пока вочереди, наличиеmacOS runtime не утверждается.

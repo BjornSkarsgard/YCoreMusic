@@ -33,6 +33,7 @@ async function network(offline){
   await request('/session/'+session+'/ms/cdp/execute',{cmd:'Network.emulateNetworkConditions',params:{offline,latency:0,downloadThroughput:-1,uploadThroughput:-1}});
   networkEmulated=offline;
 }
+async function commandUntil(command,expected){let actual;for(let n=0;n<50;n++){actual=await nativeInvoke(command);if(actual===expected)return;await sleep(100);}throw new Error('Native command state did not settle: '+command+' '+JSON.stringify(actual));}
 async function desktopUntil(field,expected){for(let n=0;n<50;n++){if((await nativeInvoke('desktop_status'))?.[field]===expected)return;await sleep(100);}throw new Error('Native window state did not settle: '+field);}
 async function mediaUntil(playback){for(let n=0;n<40;n++){const status=await nativeInvoke('media_status');if(status?.available&&status.playback===playback)return;await sleep(100);}throw new Error('Native media status did not become '+playback);}
 async function click(id){await execute('document.getElementById(arguments[0]).click()', [id]);}
@@ -427,9 +428,9 @@ try {
   const compact=await request('/session/'+session+'/window/rect');
   assert(compact.width<rect.width);
   await click('topmost');
-  assert.equal(await nativeInvoke('window_topmost_state'),true);
+  await commandUntil('window_topmost_state',true);
   await click('topmost');
-  assert.equal(await nativeInvoke('window_topmost_state'),false);
+  await commandUntil('window_topmost_state',false);
   await click('mini');
   await until('return !document.body.classList.contains("compact")');
   const restored=await request('/session/'+session+'/window/rect');
