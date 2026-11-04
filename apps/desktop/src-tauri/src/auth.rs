@@ -47,9 +47,9 @@ pub enum Action {
 
 fn callback(url: &Url, nonce: &str) -> Option<Result<Zeroizing<String>, Status>> {
     if url.scheme() != "https"
-        || url.host_str() != Some("oauth.yandex.ru")
+        || url.host_str() != Some("music.yandex.ru")
         || url.port().is_some()
-        || url.path() != "/verification_code"
+        || url.path() != "/"
     {
         return None;
     }
@@ -207,7 +207,6 @@ pub async fn auth_command(
             url.query_pairs_mut().extend_pairs([
                 ("response_type", "token"),
                 ("client_id", CLIENT_ID),
-                ("redirect_uri", "https://oauth.yandex.ru/verification_code"),
                 ("state", &nonce),
                 ("force_confirm", "yes"),
             ]);
@@ -315,11 +314,11 @@ mod tests {
     #[test]
     fn callbacks_require_exact_origin_path_state_and_single_token() {
         let parse = |text: &str| callback(&Url::parse(text).unwrap(), "nonce");
-        assert!(parse(
-            "https://oauth.yandex.ru/verification_code#state=nonce&access_token=fixture"
-        )
-        .unwrap()
-        .is_ok());
+        assert!(
+            parse("https://music.yandex.ru/#state=nonce&access_token=fixture")
+                .unwrap()
+                .is_ok()
+        );
         for url in [
             "https://evil.test/verification_code#state=nonce&access_token=fixture",
             "https://oauth.yandex.ru.evil.test/verification_code#state=nonce&access_token=fixture",
@@ -337,11 +336,9 @@ mod tests {
             "state=nonce&error=access_denied",
         ] {
             assert_eq!(
-                parse(&format!(
-                    "https://oauth.yandex.ru/verification_code#{fragment}"
-                ))
-                .unwrap()
-                .unwrap_err(),
+                parse(&format!("https://music.yandex.ru/#{fragment}"))
+                    .unwrap()
+                    .unwrap_err(),
                 Status::Denied
             );
         }
