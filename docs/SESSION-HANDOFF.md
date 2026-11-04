@@ -107,3 +107,7 @@ Linux runtime расследование (НЕ объявлять готовым
 -MacARMpackage41870661876cancelled:hostedrunnercapacity/неполученrunner,неcodefailedstep. Macruntime не проверен. Не тратитьresetcredits,2свободныхне использовались.
 
 Следующее после явного продолжения: проверить завершение/логи41874314737,при необходимостиограничитьAPTconnecttimeoutsиDEBIAN_FRONTENDnoninteractive,получитьPID/EWMHдиагностикуLinuxиразобратьсясtopmost/WM. ЕслиABOVEреальноесть,аTaogetterfalse —исследоватьGTKcachedstate;еслинет —проверитьmapped/managedwindowиWebKitautomation. Не подменятьрезультатфальшивымPASS. ЗатемноваяLinuxупаковкатекущегокода,Macпри доступностиrunner. ОстаютсяUIOAuthвход,liveuserfeedbackwrites,listen-duration/quickskip(Q06неодобрен),physicalsleep/lock,multi-monitor/visualizer/remote. Ни installer,ниOSautostart на пользовательском ПК не запускались; пользовательские данные не удалялись.
+
+## Продолжение 2026-11-05 — UI OAuth
+
+Пользователь утвердил порядок2→3→5; Linux/macOS в конце. Реализован native implicit OAuth popup + UI вход/отмена/disconnect, ADR025. Debugexe обновлён; пользовательский release PID23080 не трогали. Запрошена необязательная живая проверка через Settings→Войти в Яндекс после выхода из старой версии. Токен не просить. Новые credentials не сохранялись и не удалялись тестами.40app+5probeRust,Clippy,9TSunit,67renderer+1skipped и5targetedauth, native basic+OAuthopen/cancel/testguard PASS. Следующий срез — реальное время прослушивания/источник/способ завершения, без выдуманного Q06 и без отправки фиктивных прослушиваний Яндексу.

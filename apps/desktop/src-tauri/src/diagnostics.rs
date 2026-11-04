@@ -25,7 +25,7 @@ pub struct Snapshot {
     storage_available: bool,
     yandex: YandexState,
 }
-fn account_state(result: Result<serde_json::Value, &'static str>) -> YandexState {
+pub(crate) fn account_state(result: Result<serde_json::Value, &'static str>) -> YandexState {
     match result {
         Ok(value) => {
             let valid = value

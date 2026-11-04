@@ -8,9 +8,7 @@ pub fn load() -> Result<Zeroizing<String>, &'static str> {
         .get_password()
         .map(Zeroizing::new)
         .map_err(|error| match error {
-            keyring::Error::NoEntry => {
-                "No saved token. Run yandex-probe --save-token locally first."
-            }
+            keyring::Error::NoEntry => "No saved token. Connect Yandex Music in Settings.",
             _ => "Credential store locked or unavailable",
         })
 }

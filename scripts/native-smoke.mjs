@@ -53,6 +53,18 @@ try {
   isolated=true;
   appPid=(await nativeInvoke('desktop_status')).process_id;
   assert(Number.isInteger(appPid),'Native test process identity unavailable');
+  if(process.env.ENCORE_AUTH_SMOKE==='1'){
+    const handles=await request('/session/'+session+'/window/handles');
+    const loginStarted=await request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("auth_command",{action:"begin"}).then(done).catch(error=>done({loginError:String(error)}));',args:[]});
+    assert.equal(loginStarted,'waiting',JSON.stringify(loginStarted));
+    assert.equal(await nativeInvoke('auth_command',{action:'status'}),'waiting');
+    assert.equal((await request('/session/'+session+'/window/handles')).length,handles.length+1,'Login opens a separate window');
+    assert.equal(await nativeInvoke('auth_command',{action:'disconnect'}),'test_mode','Test profile must never remove user credentials');
+    assert.equal(await nativeInvoke('auth_command',{action:'cancel'}),'cancelled');
+    assert.equal((await request('/session/'+session+'/window/handles')).length,handles.length,'Cancel destroys the login window instead of hiding it in tray');
+    assert.equal(await execute('return document.querySelectorAll("iframe").length'),0);
+    console.log('Native isolated OAuth window/open/cancel/noautoplay and credential mutation guard: PASS');
+  }
   assert.equal(storageStatus.available,true,'Test database unavailable');
   if(backgroundSmoke){
     const desktop=await nativeInvoke('desktop_status');assert.equal(desktop.visible,!desktop.tray_available,'Autostart should stay hidden when tray is available');

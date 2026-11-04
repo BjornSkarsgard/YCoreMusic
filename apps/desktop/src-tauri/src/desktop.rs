@@ -105,6 +105,9 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 pub fn closing(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if window.label() != "main" {
+        return;
+    }
     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
         let state = window.state::<DesktopState>();
         if state.available.load(Ordering::Acquire) && !state.quitting.load(Ordering::Acquire) {

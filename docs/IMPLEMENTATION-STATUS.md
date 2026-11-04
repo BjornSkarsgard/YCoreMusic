@@ -323,3 +323,9 @@ LinuxNative41873691768: startup/autostart/health/SQLite/historyPASS, topmost п�
 ## 2026-11-04: остановка при9%лимита
 
 Текущие Windowsdebug/releaseNSIS пересобраны с фильтром дат и клавиатурнымguard; manifest.tools/windows-package-result.json, packageSHA25608171F4801A5C1648FD571B291F1F9F6B26FF0F662B6E26BCD5BFF00216F7603. Установщик не запускался. LinuxDEB/AppImage41867671860собраны на более старомsnapshot; nativeLinuxstartup/storage/historyпрошли,topmostнепрошёл. Последнийdiagnosticrun41874314737застрялнаAPT,запрошеныcancel/forcecancel;EWMH/PIDдиагностикаещёнеполучена. MacARMpackagecancelledиз-заhostedrunnercapacity. Состояние,коммиты,проверкииблокеры подробно сохраненывSESSION-HANDOFF.md. Новыхзадачпринизкомлимитененачинать;невыдаватьпроектза полностьюготовый.
+
+## Вход из настроек — 2026-11-05
+
+Добавлены native auth.rs и auth-ui.ts: вход в отдельном окне Яндекса, отмена/таймаут/ошибки, readonly проверка доступа перед OS-store save, подтверждённый локальный disconnect. Token/identity не передаются в интерфейс. Успех обновляет Encore без autoplay. Feedback cache инвалидируется с generation, outbox прежнего аккаунта сохраняется. Подробнее ADR025.
+
+PASS:40app+5probe Rust/9ignored;Clippy;TS/build;полный renderer67PASS+1opt-in skipped, после добавления сценария success/reload ещё5authPASS;9TSunit. Windows native auth popup open/cancel/actual destroy/noautoplay/testMode credential guard, затем autostart read/diagnostics/history dates/mini/topmost/maximized/single instance PASS. Обычный debugexe обновлён. Пользовательский release Encore не закрывался. Реальный вход после согласия пользователя НЕ ПРОВЕРЕН; проверка запрошена отдельно, работу по следующему пункту не блокирует. Linux/macOS отложены по новому приоритету пользователя.

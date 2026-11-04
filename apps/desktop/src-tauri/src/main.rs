@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod auth;
 mod autostart;
 mod catalogue;
 #[allow(dead_code)]
@@ -156,6 +157,7 @@ fn main() {
         })
         .manage(source::Source::default())
         .manage(feedback::Feedback::default())
+        .manage(auth::Auth::default())
         .manage(matcher::Matcher::default())
         .manage(window_mode::WindowMode::default())
         .invoke_handler(tauri::generate_handler![
@@ -163,6 +165,7 @@ fn main() {
             source_stations,
             autostart::autostart_status,
             diagnostics::diagnostics_status,
+            auth::auth_command,
             autostart::autostart_set,
             smart_history::smart_history_fetch,
             media::media_update,

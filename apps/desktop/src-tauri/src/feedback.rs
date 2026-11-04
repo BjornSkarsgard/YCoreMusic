@@ -29,6 +29,15 @@ pub struct Profile {
     pub disliked: HashSet<String>,
 }
 impl Feedback {
+    pub fn invalidate(&self) {
+        if let Ok(mut cache) = self.cache.lock() {
+            let generation = cache.generation + 1;
+            *cache = Cache {
+                generation,
+                ..Cache::default()
+            };
+        }
+    }
     pub fn profile(&self) -> Option<Profile> {
         let cache = self.cache.try_lock().ok()?;
         Some(Profile {
@@ -278,6 +287,23 @@ pub async fn feedback_command(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn account_change_discards_old_profile_and_late_refresh_without_losing_outbox() {
+        let feedback = warm();
+        let store = memory();
+        set_reaction(&feedback, &store, "77", 1, None).unwrap();
+        refresh_with(&feedback, &store, || {
+            feedback.invalidate();
+            Ok(remote("1", &["77"], &[]))
+        })
+        .unwrap();
+        assert!(feedback.profile().is_none());
+        assert_eq!(store.pending_reactions("1").unwrap().len(), 1);
+        refresh_with(&feedback, &store, || Ok(remote("2", &[], &[]))).unwrap();
+        assert_eq!(feedback.profile().unwrap().uid, "2");
+        assert!(!feedback.profile().unwrap().liked.contains("77"));
+        assert!(store.pending_reactions("2").unwrap().is_empty());
+    }
     fn memory() -> Store {
         Store::open(std::path::Path::new(":memory:")).unwrap()
     }

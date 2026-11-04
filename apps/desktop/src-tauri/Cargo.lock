@@ -981,6 +981,7 @@ name = "encore"
 version = "0.0.1"
 dependencies = [
  "chrono",
+ "getrandom 0.4.3",
  "keyring",
  "reqwest",
  "rpassword",
@@ -994,6 +995,7 @@ dependencies = [
  "tauri-plugin-power-monitor",
  "tauri-plugin-single-instance",
  "unicode-normalization",
+ "url",
  "windows",
  "zeroize",
 ]
