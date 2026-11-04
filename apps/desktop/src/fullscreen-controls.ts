@@ -23,6 +23,8 @@ export function mountFullscreenControls(workspace:HTMLElement,hud:HTMLElement){
  hud.addEventListener('focusout',()=>{if(active()){clearTimeout(timer);timer=setTimeout(hide,3000);}});
  workspace.addEventListener('keydown',reveal);
  document.addEventListener('fullscreenchange',()=>{
-   clearTimeout(timer);dragging=false;workspace.classList.remove('hud-visible');
+   clearTimeout(timer);dragging=false;
+   if(!active())workspace.classList.remove('hud-visible');
+   else if(workspace.classList.contains('hud-visible'))reveal();
  });
 }

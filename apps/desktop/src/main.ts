@@ -88,7 +88,7 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
   const id=videoId(element<HTMLInputElement>('url').value);
   if(!id){report('Нужна HTTPS-ссылка YouTube или video ID из 11 символов.');return;}
   clearRetry();sourceNeedsFresh=false;++sourceRevision;
-  if(!queue.current)finiteSource=true;
+  if(!queue.current){finiteSource=true;element('source-status').textContent='Открыт свой клип. Можно включить волну или выбрать музыку в поиске.';}
   const track=queue.current;
   if(isTauri() && track && /^\d+$/.test(track.id)) void storage({type:'save_video',trackId:track.id,videoId:id}).then(()=>{element('storage-status').textContent='Клип добавлен в избранное для этой песни.';refreshVideoFavorites();void favoritesChanged(track.id);}).catch(()=>{element('storage-status').textContent='Не удалось сохранить ручной клип. Текущий выбор действует только до перезапуска.';});
   element<HTMLDialogElement>('video-dialog').close();
@@ -111,6 +111,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
   captionControls.reset();
   const trackAtLoad=queue.current;
   mediaTitle=trackAtLoad?.title??'YouTube · '+id;mediaArtist=trackAtLoad?.artist??'';
+  if(!trackAtLoad){element('track-title').textContent=mediaTitle;element('track-artist').textContent='';element('source-name').textContent='Свой клип';}
   activeVideo={id:trackAtLoad?.id??'manual:'+id,title:mediaTitle,artist:mediaArtist,videoId:id};
   refreshVideoFavorites();ensureAlternatives();
   mediaPlayback='stopped';publishMedia();

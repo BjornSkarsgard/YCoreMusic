@@ -207,3 +207,11 @@ PASS native: открытие/скрытие YouTube controls сохраняет
 Проверки: TS/build, 8 unit PASS; renderer 35 PASS + 1 opt-in skipped; Rust27 app +5 probe PASS,9 opt-in ignored; Clippy PASS. Полный Windows native с настоящей медиатекой/чартом/YouTube и отдельный native test нескольких favourites PASS. Два реальных видео чередуются по END, снятие звезды не прерывает плеер. Реальные feedback writes по-прежнему не выполнялись и не объявляются подтверждёнными.
 
 Отдельный 20-минутный неускоренный прогон настоящей Wave: 5 автоматических смен трека, hidden, volume=0, один IFrame; максимальное замеченное ожидание около5сек при опросе5сек. Нет ручной перемотки/Next. Это ограниченная Windows проверка, не доказательство многочасовой/100% доступности. JSON результаты локально в .tools/wave-soak-result.json. CI26bb9ee целиком PASS на четырёх платформах; новый push запустит проверки текущего среза.
+
+## 2026-11-04: fullscreen quality panel и поздний fullscreenchange
+
+При явно открытой панели качества YouTube собственный HUD остаётся доступен: cross-origin iframe перехватывает движения мыши. После скрытия панели возвращается обычный idle timeout. Поздний fullscreenchange больше не отменяет уже произошедшее движение мыши. Regression имитирует задержанный event и проверяет видимость; обычное скрытие также проверено.
+
+Renderer36 PASS+1opt-in skipped, точечные fullscreen/manual сценарии PASS; Windows native: реальная interactive quality panel в fullscreen после hover/idle оставляет наши кнопки доступными, затем закрытие/остальные smoke PASS. Заголовок окна — Encore; standalone manual clip сразу обновляет title/source. Native runner получает PID из desktop_status после testMode verification, а не из browser capabilities, поэтому cleanup относится к подтверждённому своему приложению. History queue assertion учитывает обёртку отдельно играющего manual clip.
+
+CI d306f82: Windows/Linux/macOS ARM PASS; macOS Intel остановился на renderer таймауте Wave/fullscreen recovery. Следующий push включает защиту позднего fullscreenchange и её regression; окончательный результат CI ещё ожидается.

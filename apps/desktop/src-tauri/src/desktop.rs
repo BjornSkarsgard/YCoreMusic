@@ -19,6 +19,7 @@ pub enum Action {
 }
 #[derive(Serialize)]
 pub struct Status {
+    pub process_id: u32,
     pub tray_available: bool,
     pub visible: bool,
     pub minimized: bool,
@@ -122,6 +123,7 @@ pub fn desktop_status(window: tauri::WebviewWindow) -> Result<Status, String> {
     }
     let state = window.state::<DesktopState>();
     Ok(Status {
+        process_id: std::process::id(),
         tray_available: state.available.load(Ordering::Acquire),
         visible: window.is_visible().map_err(|_| "Cannot read visibility")?,
         minimized: window

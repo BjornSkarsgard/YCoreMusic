@@ -602,7 +602,7 @@ test('fullscreen controls overlay the video, wake on motion, stay while used and
  await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
  await expect(page.locator('.player-hud')).toHaveCSS('opacity','0');
  const video=await page.locator('.screen').boundingBox();expect(video!.x).toBe(0);expect(video!.y).toBe(0);
- await page.mouse.move(100,100);await page.clock.fastForward(200);await expect(page.locator('.player-hud')).toHaveCSS('opacity','1');
+ await page.mouse.move(100,100);await page.evaluate(()=>document.dispatchEvent(new Event('fullscreenchange')));await page.clock.fastForward(200);await expect(page.locator('.player-hud')).toHaveCSS('opacity','1');
  expect(await page.locator('.screen').boundingBox()).toEqual(video);
  await page.clock.fastForward(4000);await expect(page.locator('.player-hud')).toHaveCSS('opacity','0');
  await page.mouse.move(120,100);await page.clock.fastForward(200);await page.locator('#play').hover();
@@ -730,4 +730,11 @@ test('unavailable favorite is retained and another saved clip is tried before au
  }};});
  await mockAutomaticPlayer(page,false,['Bbbbbbbbbbb']);await page.goto('/');await expect.poll(()=>page.evaluate(()=>(window as any).loaded.at(-1))).toBe('Aaaaaaaaaaa');
  expect(await page.evaluate(()=>(window as any).failedVideos)).toContain('Bbbbbbbbbbb');await videoEditor(page);await expect(page.locator('#favorite-list .favorite-row')).toHaveCount(2);await expect(page.locator('#favorite-list')).toContainText('недоступен');expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+});
+
+test('fullscreen keeps the close-panel controls accessible while the interactive YouTube frame captures the pointer',async({page})=>{
+ await page.clock.install();await mockAutomaticPlayer(page);await page.goto('/');await videoEditor(page);await page.locator('#url').fill('M7lc1UVf-VE');await page.locator('#load').evaluate((form:HTMLFormElement)=>form.requestSubmit());await expect(page.locator('#play')).toBeEnabled();
+ await page.locator('#fullscreen').click();await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);await page.mouse.move(100,100);await page.locator('#youtube-settings').click();await expect(page.locator('.screen')).toHaveClass(/interactive/);
+ await page.mouse.move(150,100);await page.clock.fastForward(5000);await expect(page.locator('.player-hud')).toHaveCSS('opacity','1');await expect(page.locator('#youtube-settings')).toHaveText('Скрыть панель YouTube');
+ await page.locator('#youtube-settings').click();await expect(page.locator('.screen')).not.toHaveClass(/interactive/);await page.mouse.move(180,100);await page.clock.fastForward(4000);await expect(page.locator('.player-hud')).toHaveCSS('opacity','0');
 });

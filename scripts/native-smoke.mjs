@@ -34,7 +34,6 @@ try {
   for(let attempt=0;attempt<40;attempt++){try{await request('/status');break;}catch{await sleep(250);}}
   const created=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:nativeApp}}}});
   session=created.sessionId;
-  appPid=created.capabilities?.['goog:processID'];
   await until('return !!document.getElementById("play")');
   await execute('window.nativeErrors=[];window.addEventListener("error",event=>window.nativeErrors.push(event.message));');
   assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
@@ -44,6 +43,8 @@ try {
   const storageStatus=await store({type:'status'});
   assert.equal(storageStatus.testMode,true,'Refuse storage tests against the personal database');
   isolated=true;
+  appPid=(await nativeInvoke('desktop_status')).process_id;
+  assert(Number.isInteger(appPid),'Native test process identity unavailable');
   assert.equal(storageStatus.available,true,'Test database unavailable');
   const fixture='native-fixture-'+Date.now();
   await store({type:'save_video',trackId:'123456789',videoId:'M7lc1UVf-VE'});
@@ -223,6 +224,15 @@ try {
     await clickFullscreen();await until('return !document.fullscreenElement');
     assert.equal(await execute('return document.getElementById("player").src'),frameBeforeFullscreen);
     console.log('Native custom fullscreen enters/exits with the same IFrame: PASS');
+    await clickFullscreen();await until('return !!document.fullscreenElement');
+    await click('youtube-settings');await until('return document.querySelector(".screen").classList.contains("interactive") && document.getElementById("status").textContent==="Воспроизведение"');
+    const interactiveVideo=await request('/session/'+session+'/element',{using:'css selector',value:'#player'});
+    await request('/session/'+session+'/actions',{actions:[{type:'pointer',id:'quality-frame-hover',parameters:{pointerType:'mouse'},actions:[{type:'pointerMove',duration:200,origin:interactiveVideo,x:0,y:0}]}]});
+    await sleep(4000);assert.equal(await execute('return getComputedStyle(document.querySelector(".player-hud")).opacity'),'1');
+    await click('youtube-settings');await until('return !document.querySelector(".screen").classList.contains("interactive") && document.getElementById("status").textContent==="Воспроизведение"');
+    await clickFullscreen();await until('return !document.fullscreenElement');
+    assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);
+    console.log('Native fullscreen quality panel retains reachable custom controls while iframe captures the pointer: PASS');
     const titleBeforeHide=await execute('return document.getElementById("track-title").textContent');
     const timeBeforeHide=await execute('return Number(document.getElementById("seek").value)');
     assert.equal((await nativeInvoke('desktop_status')).tray_available,true);
@@ -260,7 +270,7 @@ try {
     await execute('document.getElementById("history-panel").open=true;document.getElementById("history-refresh").click()');
     await until('return document.querySelectorAll("#history-list li").length>0');
     await execute('const row=document.querySelector("#history-list li");Array.from(row.querySelectorAll("button")).find(button=>button.textContent==="Следом").click();Array.from(row.querySelectorAll("button")).find(button=>button.textContent==="В конец").click();');
-    assert.equal(await execute('return document.querySelectorAll("#queue-list li").length'),beforeHistoryQueue+2);
+    assert.equal(await execute('return document.querySelectorAll("#queue-list li").length'),beforeHistoryQueue?beforeHistoryQueue+2:3);
     assert.equal(await execute('return document.getElementById("track-title").textContent'),currentHistoryTitle);
     await click('queue-next');await until('return !document.getElementById("play").disabled');
     assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
@@ -355,8 +365,9 @@ try {
   if(session) await nativeInvoke('desktop_action',{action:'quit'}).catch(()=>{});
   if(session) await request('/session/'+session,undefined,'DELETE').catch(()=>{});
   if(isolated&&Number.isInteger(appPid)){
-    for(let count=0;count<30;count++){try{process.kill(appPid,0);}catch{break;}await sleep(100);}
-    try{process.kill(appPid);}catch{}
+    let alive=true;
+    for(let count=0;count<30;count++){try{process.kill(appPid,0);}catch{alive=false;break;}await sleep(100);}
+    if(alive)try{process.kill(appPid);}catch{}
   }
   if(process.platform==='win32') { await new Promise(resolve=>{const cleanup=spawn('taskkill',['/PID',String(driver.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});cleanup.on('close',resolve);cleanup.on('error',resolve);}); } else driver.kill();
 }
