@@ -215,3 +215,7 @@ PASS native: открытие/скрытие YouTube controls сохраняет
 Renderer36 PASS+1opt-in skipped, точечные fullscreen/manual сценарии PASS; Windows native: реальная interactive quality panel в fullscreen после hover/idle оставляет наши кнопки доступными, затем закрытие/остальные smoke PASS. Заголовок окна — Encore; standalone manual clip сразу обновляет title/source. Native runner получает PID из desktop_status после testMode verification, а не из browser capabilities, поэтому cleanup относится к подтверждённому своему приложению. History queue assertion учитывает обёртку отдельно играющего manual clip.
 
 CI d306f82: Windows/Linux/macOS ARM PASS; macOS Intel остановился на renderer таймауте Wave/fullscreen recovery. Следующий push включает защиту позднего fullscreenchange и её regression; окончательный результат CI ещё ожидается.
+
+## 2026-11-04: стабильная высота обзора при смене клипа
+
+По прямому замечанию пользователя область альтернатив получает постоянную адаптивную высоту, включая время загрузки/скрытое состояние. Scroll-область боковой панели занимает оставшееся место. При выборе трека обзор не растягивается и не меняет scrollTop. Отдельный renderer regression с 200 треками и управляемой задержкой YouTube matching PASS: размеры и прокрутка проверены до, во время и после загрузки.

@@ -20,3 +20,7 @@
 .discovery-track .chart-position{font-size:12px;min-width:20px;color:#a495b5}.discovery-track .track-text{flex:1}#discovery-status{font-size:12px;color:#a7a1b4;margin:12px 0}#discovery-content h3{margin:18px 0 12px;font-size:16px}
 .favorite-row{display:flex;align-items:center;gap:10px;margin:8px 0}.favorite-row img{width:90px;aspect-ratio:16/9;object-fit:cover;border-radius:5px}.favorite-row button{white-space:normal;text-align:left}.favorite-row button:nth-child(2){flex:1;justify-content:flex-start}.favorite-row button:last-child{font-size:11px}#favorite-status{font-size:12px;color:#aaa2b6}#video-dialog h3{font-size:14px;margin:18px 0 10px}#save-current-video[aria-pressed=true]{color:#d7bbff;background:#49305f}
 .workspace:fullscreen .screen.interactive + .player-hud{opacity:1;pointer-events:auto;cursor:auto}.workspace:fullscreen .screen.interactive{cursor:auto}
+/* Keep the browsing viewport stable while the current video's alternatives change. */
+.side-panel>.panel-scroll{flex:1 1 0}
+#video-alternatives{height:clamp(160px,26vh,220px);min-height:clamp(160px,26vh,220px);max-height:clamp(160px,26vh,220px)}
+#video-alternatives[hidden]{display:block!important;visibility:hidden}
