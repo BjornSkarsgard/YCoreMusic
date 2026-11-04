@@ -465,6 +465,13 @@ try {
     for(const args of [['-root','_NET_SUPPORTING_WM_CHECK'],['-name','Encore · нативная проверка','_NET_WM_STATE','_NET_WM_WINDOW_TYPE']]){
       try{details.push(execFileSync('xprop',args,{encoding:'utf8',timeout:3000}));}catch{details.push('X11 property read unavailable');}
     }
+    try{
+      const clients=execFileSync('xprop',['-root','_NET_CLIENT_LIST'],{encoding:'utf8',timeout:3000});
+      for(const id of clients.match(/0x[0-9a-f]+/gi)??[]){
+        const owner=execFileSync('xprop',['-id',id,'_NET_WM_PID'],{encoding:'utf8',timeout:3000});
+        if(Number(owner.match(/=\s*(\d+)/)?.[1])===appPid)details.push(execFileSync('xprop',['-id',id,'_NET_WM_STATE','_NET_WM_WINDOW_TYPE','_NET_WM_NAME','WM_NAME','WM_STATE'],{encoding:'utf8',timeout:3000}));
+      }
+    }catch{details.push('Owned X11 client enumeration unavailable');}
     details.push(JSON.stringify(await nativeInvoke('desktop_status').catch(()=>null)));
     details.push('topmost='+JSON.stringify(await nativeInvoke('window_topmost_state').catch(()=>null)));
     writeFileSync(resolve(root,'.tools/native-linux-error.txt'),details.join('\n'));console.log(details.join('\n'));
