@@ -117,3 +117,7 @@ playback_id создаётся на загрузку видео; несколь�
 ## Реализованный срез v2 (2026-11-04)
 
 Перед переходом с v1 Store::open создаёт SQLite snapshot через VACUUM INTO в encore.v1-backup-<timestamp>.sqlite рядом с исходной базой. В транзакции добавляется track_feedback(account_id,track_id,state,revision,pending,updated_at), ключ account_id+track_id; история и ручные ссылки сохраняются. Pending=1 и индекс feedback_outbox представляют постоянную очередь последнего желаемого состояния; ACK зависит от revision. Чужие аккаунты не смешиваются. Метаданные аккаунта и OAuth в UI не передаются; token остаётся в OS store. Тест миграции подтверждает v1 backup и сохранение данных, тест outbox — restart/failure/coalescing/account isolation/late ACK. Реальные запросы записи в тестовом режиме запрещены. ADR-017 описывает границы проверки внешнего API.
+
+## SQLite v3 — избранные видеоклипы
+
+video_favorites хранит несколько ID и пометку недоступности, video_play_state — последний фактически сыгранный ID. Прежняя одиночная manual_videos ссылка копируется при миграции. Backup v1/v2 создаётся VACUUM INTO до транзакционного изменения. Тесты подтверждают сохранность history, manual binding и pending reactions. Удаление отдельного favourite не затрагивает текущий звук/историю; неудачный embed не удаляется автоматически. Подробности random/no-repeat и rollback snapshot — ADR-019.

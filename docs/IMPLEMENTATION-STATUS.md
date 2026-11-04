@@ -199,3 +199,11 @@ PASS native: открытие/скрытие YouTube controls сохраняет
 Добавлены локальные Up/Down ±5% с clamp/persistence и F11 для того же fullscreen workspace. Поля ввода, кнопки, select, диалоги и modified keys не перехватываются; музыка от shortcuts настройки не запускается. Целевой renderer test PASS: границы 0–100, persistence, два F11 без пересоздания iframe, editing guard/no autoplay.
 
 Добавлен опциональный ENCORE_WAVE_SOAK_MINUTES (до 120) и отдельная ENCORE_NATIVE_TEST_DATA_DIR. Идёт 20-минутный настоящий неускоренный прогон, hidden+volume0, с периодическим JSON прогрессом в .tools. Результат на момент записи ещё не получен. Native-test бинарник занят прогоном: не пересобирать этот профиль до завершения. Следующий срез — REQ-014 несколько избранных клипов/random/no-repeat.
+
+## 2026-11-04: REQ-014 и длительный Wave прогон
+
+Несколько избранных клипов, звезда, список/удаление в диалоге, random/no-immediate-repeat, repeat-one, фактический last-play в SQLite, unavailable без автоудаления. «Автоподбор на этот раз» сохраняет набор. Миграция v3 импортирует старую ручную ссылку, сохраняет pending reactions и создаёт backup исходной v1/v2.
+
+Проверки: TS/build, 8 unit PASS; renderer 35 PASS + 1 opt-in skipped; Rust27 app +5 probe PASS,9 opt-in ignored; Clippy PASS. Полный Windows native с настоящей медиатекой/чартом/YouTube и отдельный native test нескольких favourites PASS. Два реальных видео чередуются по END, снятие звезды не прерывает плеер. Реальные feedback writes по-прежнему не выполнялись и не объявляются подтверждёнными.
+
+Отдельный 20-минутный неускоренный прогон настоящей Wave: 5 автоматических смен трека, hidden, volume=0, один IFrame; максимальное замеченное ожидание около5сек при опросе5сек. Нет ручной перемотки/Next. Это ограниченная Windows проверка, не доказательство многочасовой/100% доступности. JSON результаты локально в .tools/wave-soak-result.json. CI26bb9ee целиком PASS на четырёх платформах; новый push запустит проверки текущего среза.

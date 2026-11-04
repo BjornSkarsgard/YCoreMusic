@@ -100,7 +100,7 @@ try {
     writeFileSync(resolve(root,'.tools/native-discovery.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
     console.log('Native personal library, likes metadata and current chart browsing: PASS; live feedback writes blocked');
   }
-  if(process.env.ENCORE_LIVE_ALTERNATIVES==='1') {
+  if(process.env.ENCORE_LIVE_ALTERNATIVES==='1'||process.env.ENCORE_LIVE_FAVORITES==='1') {
     const results=await nativeInvoke('catalogue_search',{query:'Oasis Wonderwall',page:0});
     const track=results.tracks.find(track=>track.artist.includes('Oasis')&&track.title.toLowerCase().includes('wonderwall'));
     assert(track,'Known real alternative-video fixture not found');
@@ -117,6 +117,25 @@ try {
     await click('pause');
     writeFileSync(resolve(root,'.tools/native-alternatives.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
     console.log('Native real alternative video switch: preview, same track, one IFrame, explicit play preserved, muted: PASS');
+    if(process.env.ENCORE_LIVE_FAVORITES==='1'){
+      const candidates=await nativeInvoke('search_videos',{title:track.title,artist:track.artist});
+      assert(candidates.length>1);for(const candidate of candidates.slice(0,2))await store({type:'save_video',trackId:track.id,videoId:candidate.id});
+      await execute('document.querySelector(".alternative-video[aria-pressed=true]").click()');
+      await until('return !document.getElementById("play").disabled');
+      await click('edit-video');await until('return document.querySelectorAll("#favorite-list .favorite-row").length===2');await click('close-video-dialog');
+      await click('repeat');await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"');
+      for(let count=0;count<2;count++){
+        await execute('window.favoritePrevious=new URL(document.querySelector(".alternative-video[aria-pressed=true] img").src).pathname.split("/")[2];const seek=document.getElementById("seek");seek.value=String(Number(seek.max)-1);seek.dispatchEvent(new Event("input"));seek.dispatchEvent(new Event("change"));');
+        await until('return new URL(document.querySelector(".alternative-video[aria-pressed=true] img").src).pathname.split("/")[2]!==window.favoritePrevious && document.getElementById("status").textContent==="Воспроизведение"',45000);
+      }
+      await until('return document.getElementById("save-current-video").getAttribute("aria-pressed")==="true"');
+      await click('save-current-video');await until('return document.getElementById("save-current-video").getAttribute("aria-pressed")==="false"');
+      assert.equal((await store({type:'get_videos',trackId:track.id})).videos.length,1);
+      assert.equal(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
+      await click('repeat');await click('repeat');await click('pause');
+      await click('edit-video');writeFileSync(resolve(root,'.tools/native-favorites.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));await click('close-video-dialog');
+      console.log('Native two saved clips: repeat-one alternates at real END; removing a favorite keeps playback: PASS');
+    }
   }
   if(process.env.ENCORE_LIVE_MATCHING==='1') {
     await until('return !document.getElementById("play").disabled || /Уверенного|недоступен|недоступны/.test(document.getElementById("status").textContent)',40000);

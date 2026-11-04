@@ -47,3 +47,17 @@ cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --features yandex-p
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --features yandex-probe -- -D warnings
 
 Native-test: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol --bin encore; node scripts/native-smoke.mjs. Флаги ENCORE_LIVE_YANDEX/CATALOGUE/YOUTUBE/LIBRARY=1 для полного read-only набора; ENCORE_LIVE_ALTERNATIVES=1 — реальное переключение, ENCORE_LIVE_WAVE=1 — 2 END-перехода. Перед сборкой дождаться завершения своего native теста. Скриншоты .tools/native-alternatives.png, native-discovery.png, fullscreen-controls.png (ignored). Не запускать старый pending-update/apply.ps1: там pinned предыдущий executable.
+
+## Незавершённый следующий срез REQ-014
+
+3e39b5f локально закоммичен (ещё не pushed): Up/Down и F11, целевой renderer PASS, runner 20-min hidden soak. 26bb9ee CI полностью PASS.
+
+В рабочей папке сейчас SQLite v3 + favorite-store/ui/video-favorites modules: перенос старых manual links, несколько video IDs, метка unavailable без удаления, сохранение фактически сыгранного ID, random/no-immediate-repeat (включая repeat-one), звезда текущего клипа и список в диалоге. Renderer старые 33 PASS + 1 skipped, новые 2 favorite scenarios PASS. Rust26 app+5 probe PASS; v2→v3 backup/pending preservation targeted PASS. После последней правки fallback index и добавления нативного favorite test полный renderer ещё повторить. Native v3 ещё не собирался/не проверялся: профиль native-test занят 20-минутной Wave проверкой бинарника v2, session70835. Последний progress elapsed16min, 4 transitions, longest sampled wait5sec; .tools/wave-soak-result.json появится по завершении. Не пересобирать native-test до завершения! Затем native smoke ENCORE_LIVE_FAVORITES=1 проверит реальный repeat-one двух Oasis клипов и удаление без прерывания (только изолированная БД). Новые файлы ещё не committed. Обычный debug exe пока26bb9ee; после завершения всех проверок обновить.
+
+## Последний завершённый срез — REQ-014
+
+Рабочая реализация v3 проверена: renderer35 PASS+1skipped,8unit,Rust27+5,Clippy; полный native LIVE_FAVORITES/YOUTUBE/CATALOGUE/LIBRARY PASS. Настоящие два Oasis клипа чередуются по END, снятие звезды не прерывает звук. Миграцииv1/v2 сохраняют ссылки/историю/outbox. Файлы ещё ждут commit/push и normal debug build (команды завершаются сейчас).
+
+20-min hidden Wave soak завершён PASS:5transition,longest sampledwait5sec,volume0,1iframe,без ускорения. Session70835 завершена; native-test профиль свободен. .tools/wave-soak-result.json содержит completed:true. Последний полныйnative v3session22041 завершёнуспешно, renderer42554 тоже.
+
+CI26bb9ee PASSна4платформах. Следующий небольшой фикс: временная interactive YouTube quality-panel в fullscreen перехватывает mousemove (cross-origin iframe), поэтому собственный HUD должен оставаться доступным, пока эта панель явно открыта; нужен маленький regression. Остальной roadmap после checkpoint: SmartHistory/listening durations и безопасное восстановление, затем другие пункты.

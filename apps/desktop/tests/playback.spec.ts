@@ -699,3 +699,35 @@ test('local volume arrows clamp and persist; F11 uses the same fullscreen player
  expect(await page.locator('#player').getAttribute('src')).toBe(src);
  await page.locator('#catalogue-query').fill('artist');await page.keyboard.press('ArrowUp');await page.keyboard.press('F11');await expect(page.locator('#volume')).toHaveValue('0');expect(await page.evaluate(()=>!!document.fullscreenElement)).toBe(false);expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
 });
+
+test('favorite replay alternates videos, deletion keeps playback and Pause cancels late repeat autoplay',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.favorites=['Aaaaaaaaaaa','Bbbbbbbbbbb'];w.lastFavorite='Aaaaaaaaaaa';w.holdFavorite=false;w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+  if(cmd==='source_fetch')return [{id:'123',title:'Same song',artist:'Fixture'}];
+  if(cmd==='search_videos')return [];
+  if(cmd==='storage_command'){
+   const r=args.request;
+   if(r.type==='get_videos'){if(w.holdFavorite){w.holdFavorite=false;await new Promise(resolve=>w.releaseFavorite=resolve);}return {videos:w.favorites.map((videoId:string)=>({videoId,unavailable:false})),lastVideoId:w.lastFavorite};}
+   if(r.type==='record')w.lastFavorite=r.event.videoId;
+   if(r.type==='remove_favorite')w.favorites=w.favorites.filter((id:string)=>id!==r.videoId);
+  }
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();expect(await page.evaluate(()=>(window as any).loaded.at(-1))).toBe('Bbbbbbbbbbb');
+ await page.locator('#repeat').click();await page.locator('#play').click();
+ for(let count=0;count<6;count++){const before=await page.evaluate(()=>(window as any).played.at(-1));await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).not.toBe(before);}
+ const playing=await page.evaluate(()=>(window as any).played.at(-1));await videoEditor(page);await page.getByRole('button',{name:'Удалить избранный клип '+playing,exact:true}).click();await expect(page.locator('#favorite-list .favorite-row')).toHaveCount(1);await page.locator('#close-video-dialog').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ const count=await page.evaluate(()=>(window as any).played.length);
+ await page.evaluate(()=>{const w=window as any;w.holdFavorite=true;w.activePlayer.options.events.onStateChange({data:0});});await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseFavorite)).toBe('function');await page.locator('#pause').click();await page.evaluate(()=>(window as any).releaseFavorite());await expect(page.locator('#play')).toBeEnabled();expect(await page.evaluate(()=>(window as any).played.length)).toBe(count);await expect(page.locator('#track-title')).toHaveText('Same song');
+});
+
+test('unavailable favorite is retained and another saved clip is tried before automatic search',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.failedVideos=[];w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+  if(cmd==='source_fetch')return [{id:'123',title:'Same song',artist:'Fixture'}];
+  if(cmd==='search_videos')return [{id:'Ccccccccccc',title:'Automatic fallback',score:100,reason:'fixture'}];
+  if(cmd==='storage_command'){
+   const r=args.request;if(r.type==='get_videos')return {videos:['Aaaaaaaaaaa','Bbbbbbbbbbb'].map(videoId=>({videoId,unavailable:w.failedVideos.includes(videoId)})),lastVideoId:'Aaaaaaaaaaa'};
+   if(r.type==='video_failed')w.failedVideos.push(r.videoId);
+  }
+ }};});
+ await mockAutomaticPlayer(page,false,['Bbbbbbbbbbb']);await page.goto('/');await expect.poll(()=>page.evaluate(()=>(window as any).loaded.at(-1))).toBe('Aaaaaaaaaaa');
+ expect(await page.evaluate(()=>(window as any).failedVideos)).toContain('Bbbbbbbbbbb');await videoEditor(page);await expect(page.locator('#favorite-list .favorite-row')).toHaveCount(2);await expect(page.locator('#favorite-list')).toContainText('недоступен');expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+});

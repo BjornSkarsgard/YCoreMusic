@@ -7,6 +7,18 @@ use std::{
 };
 #[derive(Clone)]
 pub struct Store(Arc<Mutex<Connection>>);
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FavoriteVideo {
+    pub video_id: String,
+    pub unavailable: bool,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SavedVideos {
+    pub videos: Vec<FavoriteVideo>,
+    pub last_video_id: Option<String>,
+}
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Reaction {
@@ -50,7 +62,7 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|_| "Cannot read database schema; existing file preserved")?;
-    if version > 2 {
+    if version > 3 {
         return Err("Database schema is newer than Encore; existing file preserved");
     }
     if version == 0 {
@@ -83,6 +95,21 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
             .map_err(|_| "Cannot commit feedback migration")?;
     }
     connection.prepare("SELECT account_id,track_id,state,revision,pending,updated_at FROM track_feedback LIMIT 0").map_err(|_|"Invalid feedback schema")?;
+    if version < 3 {
+        let transaction = connection
+            .transaction()
+            .map_err(|_| "Cannot start favorites migration")?;
+        transaction.execute_batch("CREATE TABLE video_favorites(track_id TEXT NOT NULL,video_id TEXT NOT NULL,added_at TEXT NOT NULL,unavailable_at TEXT,PRIMARY KEY(track_id,video_id));CREATE TABLE video_play_state(track_id TEXT PRIMARY KEY,video_id TEXT NOT NULL);INSERT INTO video_favorites(track_id,video_id,added_at) SELECT track_id,video_id,updated_at FROM manual_videos;PRAGMA user_version=3;").map_err(|_|"Cannot migrate video favorites")?;
+        transaction
+            .commit()
+            .map_err(|_| "Cannot commit favorites migration")?;
+    }
+    connection
+        .prepare("SELECT track_id,video_id,added_at,unavailable_at FROM video_favorites LIMIT 0")
+        .map_err(|_| "Invalid favorites schema")?;
+    connection
+        .prepare("SELECT track_id,video_id FROM video_play_state LIMIT 0")
+        .map_err(|_| "Invalid video state schema")?;
     Ok(())
 }
 impl Store {
@@ -91,9 +118,9 @@ impl Store {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(|_| "Cannot read storage version")?;
-        if version == 1 {
+        if version == 1 || version == 2 {
             let backup = path.with_extension(format!(
-                "v1-backup-{}.sqlite",
+                "v{version}-backup-{}.sqlite",
                 chrono::Utc::now().timestamp_millis()
             ));
             connection
@@ -182,7 +209,82 @@ impl Store {
         if !track_id(track) || !video_id(video) {
             return Err("Invalid manual video");
         }
-        self.0.lock().map_err(|_|"Storage unavailable")?.execute("INSERT INTO manual_videos(track_id,video_id,updated_at) VALUES(?1,?2,?3) ON CONFLICT(track_id) DO UPDATE SET video_id=excluded.video_id,updated_at=excluded.updated_at",params![track,video,chrono::Utc::now().to_rfc3339()]).map_err(|_|"Cannot save manual video")?;
+        let mut connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let tx = connection
+            .transaction()
+            .map_err(|_| "Cannot start favorite transaction")?;
+        let now = chrono::Utc::now().to_rfc3339();
+        tx.execute("INSERT INTO manual_videos(track_id,video_id,updated_at) VALUES(?1,?2,?3) ON CONFLICT(track_id) DO UPDATE SET video_id=excluded.video_id,updated_at=excluded.updated_at",params![track,video,now]).map_err(|_|"Cannot save manual video")?;
+        tx.execute(
+            "INSERT OR IGNORE INTO video_favorites(track_id,video_id,added_at) VALUES(?1,?2,?3)",
+            params![track, video, now],
+        )
+        .map_err(|_| "Cannot save video favorite")?;
+        tx.commit().map_err(|_| "Cannot commit video favorite")?;
+        Ok(())
+    }
+    pub fn saved_videos(&self, track: &str) -> Result<SavedVideos, &'static str> {
+        if !track_id(track) {
+            return Err("Invalid track ID");
+        }
+        let connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let mut statement=connection.prepare("SELECT video_id,unavailable_at IS NOT NULL FROM video_favorites WHERE track_id=?1 ORDER BY added_at,video_id").map_err(|_|"Cannot read video favorites")?;
+        let videos = statement
+            .query_map([track], |row| {
+                Ok(FavoriteVideo {
+                    video_id: row.get(0)?,
+                    unavailable: row.get(1)?,
+                })
+            })
+            .map_err(|_| "Cannot read video favorites")?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "Cannot read video favorites")?;
+        let last_video_id = connection
+            .query_row(
+                "SELECT video_id FROM video_play_state WHERE track_id=?1",
+                [track],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| "Cannot read last video")?;
+        Ok(SavedVideos {
+            videos,
+            last_video_id,
+        })
+    }
+    pub fn remove_favorite(&self, track: &str, video: &str) -> Result<(), &'static str> {
+        if !track_id(track) || !video_id(video) {
+            return Err("Invalid video favorite");
+        }
+        let mut connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let tx = connection
+            .transaction()
+            .map_err(|_| "Cannot start favorite removal")?;
+        tx.execute(
+            "DELETE FROM video_favorites WHERE track_id=?1 AND video_id=?2",
+            params![track, video],
+        )
+        .map_err(|_| "Cannot remove video favorite")?;
+        tx.execute(
+            "DELETE FROM manual_videos WHERE track_id=?1 AND video_id=?2",
+            params![track, video],
+        )
+        .map_err(|_| "Cannot remove legacy video binding")?;
+        tx.commit().map_err(|_| "Cannot commit favorite removal")?;
+        Ok(())
+    }
+    pub fn video_failed(&self, track: &str, video: &str) -> Result<(), &'static str> {
+        if !track_id(track) || !video_id(video) {
+            return Err("Invalid video favorite");
+        }
+        self.0
+            .lock()
+            .map_err(|_| "Storage unavailable")?
+            .execute(
+                "UPDATE video_favorites SET unavailable_at=?3 WHERE track_id=?1 AND video_id=?2",
+                params![track, video, chrono::Utc::now().to_rfc3339()],
+            )
+            .map_err(|_| "Cannot mark unavailable video")?;
         Ok(())
     }
     pub fn saved_video(&self, track: &str) -> Result<Option<String>, &'static str> {
@@ -204,11 +306,15 @@ impl Store {
         if !track_id(track) {
             return Err("Invalid track ID");
         }
-        self.0
-            .lock()
-            .map_err(|_| "Storage unavailable")?
-            .execute("DELETE FROM manual_videos WHERE track_id=?1", [track])
+        let mut connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let tx = connection
+            .transaction()
+            .map_err(|_| "Cannot start video reset")?;
+        tx.execute("DELETE FROM manual_videos WHERE track_id=?1", [track])
             .map_err(|_| "Cannot reset manual video")?;
+        tx.execute("DELETE FROM video_favorites WHERE track_id=?1", [track])
+            .map_err(|_| "Cannot reset favorites")?;
+        tx.commit().map_err(|_| "Cannot commit video reset")?;
         Ok(())
     }
     pub fn record(&self, event: &PlayRecord) -> Result<(), &'static str> {
@@ -227,6 +333,19 @@ impl Store {
             return Err("Invalid play event");
         }
         self.0.lock().map_err(|_|"Storage unavailable")?.execute("INSERT OR IGNORE INTO play_history(playback_id,track_id,title,artist,video_id,started_at,search_text) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![event.playback_id,event.track_id,event.title,event.artist,event.video_id,chrono::Utc::now().to_rfc3339(),format!("{} {}",event.title,event.artist).to_lowercase()]).map_err(|_|"Cannot save playback history")?;
+        if track_id(&event.track_id) {
+            let mut connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+            let tx = connection
+                .transaction()
+                .map_err(|_| "Cannot start last-video update")?;
+            tx.execute("INSERT INTO video_play_state(track_id,video_id) VALUES(?1,?2) ON CONFLICT(track_id) DO UPDATE SET video_id=excluded.video_id",params![event.track_id,event.video_id]).map_err(|_|"Cannot remember last video")?;
+            tx.execute(
+                "UPDATE video_favorites SET unavailable_at=NULL WHERE track_id=?1 AND video_id=?2",
+                params![event.track_id, event.video_id],
+            )
+            .map_err(|_| "Cannot mark video available")?;
+            tx.commit().map_err(|_| "Cannot commit last-video update")?;
+        }
         Ok(())
     }
     pub fn history(&self, query: &str) -> Result<Vec<HistoryEntry>, &'static str> {
@@ -263,6 +382,113 @@ impl Store {
 mod tests {
     use super::*;
     #[test]
+    fn v2_upgrade_keeps_pending_feedback_and_imports_the_old_manual_binding() {
+        let path = std::env::temp_dir().join(format!(
+            "encore-v2-{}-{}.sqlite",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        {
+            let store = Store::open(&path).unwrap();
+            store.save_video("123", "M7lc1UVf-VE").unwrap();
+            store.set_reaction("1", "123", -1, None).unwrap();
+            store
+                .0
+                .lock()
+                .unwrap()
+                .execute_batch(
+                    "DROP TABLE video_favorites;DROP TABLE video_play_state;PRAGMA user_version=2;",
+                )
+                .unwrap();
+        }
+        {
+            let store = Store::open(&path).unwrap();
+            assert_eq!(
+                store.saved_videos("123").unwrap().videos[0].video_id,
+                "M7lc1UVf-VE"
+            );
+            assert_eq!(store.pending_reactions("1").unwrap()[0].state, -1);
+        }
+        let prefix = format!("{}.v2-backup-", path.file_stem().unwrap().to_string_lossy());
+        let backup = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .find(|p| {
+                p.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(&prefix)
+            })
+            .unwrap();
+        {
+            let connection = Connection::open(&backup).unwrap();
+            assert_eq!(
+                connection
+                    .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                2
+            );
+            assert_eq!(
+                connection
+                    .query_row(
+                        "SELECT pending FROM track_feedback WHERE track_id='123'",
+                        [],
+                        |r| r.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                1
+            );
+        }
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(backup).unwrap();
+    }
+    #[test]
+    fn favorites_keep_multiple_links_unavailable_state_and_actual_last_play_across_restart() {
+        let path = std::env::temp_dir().join(format!(
+            "encore-favorites-{}-{}.sqlite",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        {
+            let store = Store::open(&path).unwrap();
+            store.save_video("123", "Aaaaaaaaaaa").unwrap();
+            store.save_video("123", "Bbbbbbbbbbb").unwrap();
+            store.save_video("123", "Aaaaaaaaaaa").unwrap();
+            assert_eq!(store.saved_videos("123").unwrap().videos.len(), 2);
+            store.video_failed("123", "Bbbbbbbbbbb").unwrap();
+        }
+        {
+            let store = Store::open(&path).unwrap();
+            let videos = store.saved_videos("123").unwrap();
+            assert_eq!(videos.videos.len(), 2);
+            assert!(
+                videos
+                    .videos
+                    .iter()
+                    .find(|v| v.video_id == "Bbbbbbbbbbb")
+                    .unwrap()
+                    .unavailable
+            );
+            store
+                .record(&PlayRecord {
+                    playback_id: "actual-play".into(),
+                    track_id: "123".into(),
+                    title: "Keep".into(),
+                    artist: "Artist".into(),
+                    video_id: "Bbbbbbbbbbb".into(),
+                })
+                .unwrap();
+            let videos = store.saved_videos("123").unwrap();
+            assert_eq!(videos.last_video_id.as_deref(), Some("Bbbbbbbbbbb"));
+            assert!(!videos.videos.iter().any(|v| v.unavailable));
+            store.remove_favorite("123", "Aaaaaaaaaaa").unwrap();
+            assert_eq!(store.saved_videos("123").unwrap().videos.len(), 1);
+            assert_eq!(store.history("").unwrap().len(), 1);
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
     fn migration_backs_up_v1_and_preserves_history_and_manual_overrides() {
         let path = std::env::temp_dir().join(format!(
             "encore-migrate-{}-{}.sqlite",
@@ -285,7 +511,7 @@ mod tests {
                 .0
                 .lock()
                 .unwrap()
-                .execute_batch("DROP TABLE track_feedback;PRAGMA user_version=1;")
+                .execute_batch("DROP TABLE track_feedback;DROP TABLE video_favorites;DROP TABLE video_play_state;PRAGMA user_version=1;")
                 .unwrap();
         }
         let before: Vec<_> = std::fs::read_dir(path.parent().unwrap())
@@ -306,6 +532,10 @@ mod tests {
                 Some("M7lc1UVf-VE")
             );
             assert_eq!(store.history("").unwrap().len(), 1);
+            assert_eq!(
+                store.saved_videos("123").unwrap().videos[0].video_id,
+                "M7lc1UVf-VE"
+            );
             store.set_reaction("1", "123", 1, None).unwrap();
         }
         let backup = std::fs::read_dir(path.parent().unwrap())
@@ -419,6 +649,9 @@ pub enum Request {
     Status,
     SaveVideo { track_id: String, video_id: String },
     GetVideo { track_id: String },
+    GetVideos { track_id: String },
+    RemoveFavorite { track_id: String, video_id: String },
+    VideoFailed { track_id: String, video_id: String },
     RemoveVideo { track_id: String },
     Record { event: PlayRecord },
     History { query: String },
@@ -450,6 +683,16 @@ pub async fn storage_command(
             Request::SaveVideo { track_id, video_id } => store.save_video(&track_id, &video_id)?,
             Request::GetVideo { track_id } => {
                 return Ok(serde_json::json!(store.saved_video(&track_id)?))
+            }
+            Request::GetVideos { track_id } => {
+                return serde_json::to_value(store.saved_videos(&track_id)?)
+                    .map_err(|_| "Cannot serialize favorites")
+            }
+            Request::RemoveFavorite { track_id, video_id } => {
+                store.remove_favorite(&track_id, &video_id)?
+            }
+            Request::VideoFailed { track_id, video_id } => {
+                store.video_failed(&track_id, &video_id)?
             }
             Request::RemoveVideo { track_id } => store.remove_video(&track_id)?,
             Request::Record { event } => store.record(&event)?,

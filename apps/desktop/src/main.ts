@@ -1,4 +1,7 @@
 import {mountDiscovery} from './discovery-ui';
+import {mountVideoFavorites} from './favorite-ui';
+import {savedVideos} from './favorite-store';
+import {favoriteOrder,type SavedVideos} from './video-favorites';
 import {mountFeedback} from './feedback-ui';
 import './style.css';
 import {appShell,mountShellNavigation,showPanel} from './shell';
@@ -17,6 +20,8 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = appShell;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const queue = new PlaybackQueue();
 let refreshFeedback=()=>{};
+let refreshVideoFavorites=()=>{};
+const lastPlayedVideos=new Map<string,string>();
 let player: YT.Player | undefined;
 let generation = 0;
 let playerReady = false;
@@ -42,7 +47,7 @@ function publishMedia(){
 let finiteSource=false;
 let activeCollection:CollectionContext|undefined;
 interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number;durationSeconds?:number;reason:string;saved?:boolean;needsReview?:boolean}
-const choices=new Map<string,{items:Candidate[];index:number;alternativesLoaded?:boolean}>();
+const choices=new Map<string,{items:Candidate[];index:number;alternativesLoaded?:boolean;favoriteChosen?:boolean}>();
 const searching=new Set<string>();
 const bypassSaved=new Set<string>();
 let sourceRevision=0;
@@ -85,7 +90,7 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
   clearRetry();sourceNeedsFresh=false;++sourceRevision;
   if(!queue.current)finiteSource=true;
   const track=queue.current;
-  if(isTauri() && track && /^\d+$/.test(track.id)) void storage({type:'save_video',trackId:track.id,videoId:id}).then(()=>{element('storage-status').textContent='Ручной клип сохранён для этого трека.';}).catch(()=>{element('storage-status').textContent='Не удалось сохранить ручной клип. Текущий выбор действует только до перезапуска.';});
+  if(isTauri() && track && /^\d+$/.test(track.id)) void storage({type:'save_video',trackId:track.id,videoId:id}).then(()=>{element('storage-status').textContent='Клип добавлен в избранное для этой песни.';refreshVideoFavorites();void favoritesChanged(track.id);}).catch(()=>{element('storage-status').textContent='Не удалось сохранить ручной клип. Текущий выбор действует только до перезапуска.';});
   element<HTMLDialogElement>('video-dialog').close();
   void loadVideo(id);
 });
@@ -94,6 +99,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
   element<HTMLButtonElement>('previous').disabled=false;
   const sourceGeneration=queue.generation, ordinal=queue.current?.ordinal;
   if(ordinal!==undefined) queue.resolve(ordinal,id,sourceGeneration);
+  const selected=choices.get(sourceGeneration+':'+ordinal);if(selected)selected.index=selected.items.findIndex(candidate=>candidate.id===id);
   renderAlternatives();
   playIntent=resume&&!powerPaused;
   activeAutomatic=automatic;
@@ -106,6 +112,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
   const trackAtLoad=queue.current;
   mediaTitle=trackAtLoad?.title??'YouTube · '+id;mediaArtist=trackAtLoad?.artist??'';
   activeVideo={id:trackAtLoad?.id??'manual:'+id,title:mediaTitle,artist:mediaArtist,videoId:id};
+  refreshVideoFavorites();ensureAlternatives();
   mediaPlayback='stopped';publishMedia();
   const playEvent={playbackId:Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join(''),trackId:trackAtLoad?.id ?? 'manual:'+id,title:trackAtLoad?.title ?? 'YouTube · '+id,artist:trackAtLoad?.artist ?? '',videoId:id};
   const record=restore?.record??{event:playEvent,recorded:false,pending:false};activeRecord=record;
@@ -150,6 +157,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
           if(event.data===1) {
             if(powerPaused||(!playIntent&&!youtubeControls)){event.target.pauseVideo();return;}
             playIntent=true;clearRetry();skipStreak=0;retryAttempt=0;bufferingSince=0;loadStarted=0;intentUI();
+            if(trackAtLoad)lastPlayedVideos.set(trackAtLoad.id,id);
             captionControls.refresh(event.target,true);
             if(isTauri() && !record.recorded && !record.pending) {
               record.pending=true;
@@ -160,9 +168,9 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
           if(event.data===3&&playIntent&&!bufferingSince)bufferingSince=Date.now();
           if(event.data===5||event.data===0)bufferingSince=0;
           if([0,1,2,5].includes(event.data)){mediaPlayback=event.data===1?'playing':event.data===0?'stopped':'paused';publishMedia();}
-          if(event.data===0 && !powerPaused){if(repeatMode==='one')void loadVideo(id,playIntent,automatic);else if(queue.current)void advance(playIntent);}
+          if(event.data===0 && !powerPaused){if(repeatMode==='one')void repeatVideo(id,automatic);else if(queue.current)void advance(playIntent);}
         },
-        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); } },
+        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(isTauri()&&trackAtLoad&&/^\d+$/.test(trackAtLoad.id)&&[2,100,101,150].includes(event.data))void storage({type:'video_failed',trackId:trackAtLoad.id,videoId:id}).then(refreshVideoFavorites).catch(()=>{}); if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); } },
         onApiChange:event=>{if(current===generation)captionControls.refresh(event.target);},
         onPlaybackQualityChange:event=>{if(current===generation)element('video-quality').textContent='Качество: '+qualityLabel(event.data);},
         onAutoplayBlocked: () => { if (current === generation) report('YouTube заблокировал Play. Откройте панель YouTube и нажмите Play на видео.'); },
@@ -208,6 +216,7 @@ window.addEventListener('beforeunload', () => { clearInterval(positionTimer); pl
 function stopPlayer() {
   element('video-alternatives').hidden=true;
   activeVideo=undefined;activeRecord=undefined;captionControls.reset();
+  refreshVideoFavorites();
   intentUI();loadStarted=0;bufferingSince=0;
   mediaPlayback='stopped';publishMedia();
   previousGesture.reset();
@@ -218,6 +227,7 @@ function stopPlayer() {
 }
 function renderQueue() {
   refreshFeedback();
+  refreshVideoFavorites();
   element('track-title').textContent = queue.current?.title ?? 'Ручная проверка видео';
   element('track-artist').textContent = queue.current?.artist ?? '';
   element('queue-list').replaceChildren(...queue.snapshot.map(track => {
@@ -308,9 +318,8 @@ element('queue-next').onclick=()=>void advance(playIntent);
 element('find-video').onclick=()=>{
   if(!queue.current)return;
   const track=queue.current,epoch=queue.generation,ordinal=track.ordinal;
-  const reset=()=>{if(queue.generation!==epoch||queue.current?.ordinal!==ordinal)return;choices.delete(epoch+':'+ordinal);queue.clearVideo(ordinal);stopPlayer();playIntent=false;prepareAhead();};
-  if(isTauri()&&/^\d+$/.test(track.id))void storage({type:'remove_video',trackId:track.id}).then(reset).catch(()=>report('Не удалось сбросить сохранённый клип'));
-  else reset();
+  if(queue.generation!==epoch||queue.current?.ordinal!==ordinal)return;
+  bypassSaved.add(epoch+':'+ordinal);choices.delete(epoch+':'+ordinal);queue.clearVideo(ordinal);stopPlayer();playIntent=false;prepareAhead();
 };
 function renderCandidates(items:Candidate[],epoch:number,ordinal:number){
   renderAlternatives(items,epoch,ordinal);
@@ -333,22 +342,63 @@ function renderAlternatives(items?:Candidate[],epoch=queue.generation,ordinal=qu
       if(epoch!==queue.generation||ordinal!==queue.current?.ordinal)return;
       const track=queue.current;clearRetry();
       const entry=choices.get(epoch+':'+ordinal);if(entry)entry.index=entry.items.findIndex(item=>item.id===candidate.id);
-      if(isTauri()&&track&&/^\d+$/.test(track.id))void storage({type:'save_video',trackId:track.id,videoId:candidate.id}).catch(()=>{element('storage-status').textContent='Этот выбор не удалось сохранить.';});
+      if(isTauri()&&track&&/^\d+$/.test(track.id))void storage({type:'save_video',trackId:track.id,videoId:candidate.id}).then(()=>{refreshVideoFavorites();void favoritesChanged(track.id);}).catch(()=>{element('storage-status').textContent='Этот выбор не удалось сохранить.';});
       void loadVideo(candidate.id,playIntent,true);
     };
     return button;
   }));
 }
+function favoriteCandidates(saved:SavedVideos,title:string,existing:Candidate[]=[]):Candidate[]{
+  return saved.videos.filter(video=>!video.unavailable).map(video=>({...existing.find(item=>item.id===video.videoId),id:video.videoId,title:existing.find(item=>item.id===video.videoId)?.title??title,score:1000,reason:'Ваш избранный клип',saved:true}));
+}
+async function favoritesChanged(trackId:string){
+  const epoch=queue.generation;
+  try{
+    const saved=await savedVideos(trackId);if(epoch!==queue.generation)return;
+    for(const track of queue.snapshot){if(track.id!==trackId)continue;
+      const key=epoch+':'+track.ordinal,entry=choices.get(key),existing=entry?.items??[];
+      const favorites=favoriteCandidates(saved,track.title,existing),items=[...favorites,...existing.filter(item=>!item.saved&&!favorites.some(saved=>saved.id===item.id))];
+      const active=track.ordinal===queue.current?.ordinal?activeVideo?.videoId:undefined;
+      if(!items.length){choices.delete(key);if(active)renderCandidates([],epoch,track.ordinal);continue;}
+      choices.set(key,{items,index:active?items.findIndex(item=>item.id===active):0,favoriteChosen:!!active,alternativesLoaded:false});
+      if(track.ordinal===queue.current?.ordinal)renderCandidates(items,epoch,track.ordinal);
+    }
+    prepareAhead();
+  }catch{element('favorite-status').textContent='Список клипов не удалось обновить.';}
+}
+async function repeatVideo(id:string,automatic:boolean){
+  const track=queue.current,epoch=queue.generation,loadGeneration=generation;
+  if(isTauri()&&track&&/^\d+$/.test(track.id)){
+    try{
+      const saved=await savedVideos(track.id);
+      if(epoch!==queue.generation||loadGeneration!==generation||powerPaused)return;
+      const key=epoch+':'+track.ordinal,existing=choices.get(key)?.items??[];
+      const favorites=favoriteOrder(favoriteCandidates(saved,track.title,existing),lastPlayedVideos.get(track.id)??saved.lastVideoId);
+      if(favorites.length){
+        const items=[...favorites,...existing.filter(item=>!item.saved&&!favorites.some(favorite=>favorite.id===item.id))];
+        choices.set(key,{items,index:0,favoriteChosen:true});
+        void loadVideo(favorites[0].id,playIntent,true);return;
+      }
+    }catch{/* Keep the current working video when local favorites cannot be read. */}
+  }
+  if(epoch===queue.generation&&loadGeneration===generation&&!powerPaused)void loadVideo(id,playIntent,automatic);
+}
 function ensureAlternatives(){
+  if(!isTauri())return;
   const track=queue.current,epoch=queue.generation;if(!track)return;
-  const key=epoch+':'+track.ordinal,entry=choices.get(key);
-  if(!entry||entry.alternativesLoaded||!entry.items[0]?.saved||searching.size>=3)return;
-  entry.alternativesLoaded=true;const work='alt:'+key;searching.add(work);
+  const key=epoch+':'+track.ordinal;
+  let entry=choices.get(key);
+  if(!entry&&track.videoId){entry={items:[{id:track.videoId,title:track.title,score:0,reason:'Текущее видео'}],index:0};choices.set(key,entry);}
+  const work='alt:'+key;
+  if(!entry||entry.alternativesLoaded||searching.size>=3||searching.has(work))return;
+  entry.alternativesLoaded=true;searching.add(work);
+  const captured=entry;
   void invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist}).then(found=>{
-    if(epoch!==queue.generation||choices.get(key)!==entry||!Array.isArray(found))return;
-    const saved=entry.items[0],metadata=found.find(item=>item.id===saved.id);
-    entry.items=[{...metadata,...saved,title:metadata?.title??saved.title,views:metadata?.views,durationSeconds:metadata?.durationSeconds},...found.filter(item=>item.id!==saved.id)];
-    if(queue.current?.ordinal===track.ordinal)renderCandidates(entry.items,epoch,track.ordinal);
+    if(epoch!==queue.generation||choices.get(key)!==captured||!Array.isArray(found))return;
+    const favorites=captured.items.filter(item=>item.saved).map(saved=>{const metadata=found.find(item=>item.id===saved.id);return {...metadata,...saved,title:metadata?.title??saved.title,views:metadata?.views,durationSeconds:metadata?.durationSeconds};});
+    captured.items=[...favorites,...found.filter(item=>!favorites.some(saved=>saved.id===item.id))];
+    const active=queue.current?.ordinal===track.ordinal?activeVideo?.videoId:track.videoId;if(active)captured.index=captured.items.findIndex(item=>item.id===active);
+    if(queue.current?.ordinal===track.ordinal)renderCandidates(captured.items,epoch,track.ordinal);
   }).catch(()=>{}).finally(()=>{searching.delete(work);prepareAhead();});
 }
 function tryAlternative(epoch:number,ordinal:number|undefined){
@@ -382,6 +432,9 @@ function prepareAhead(){
     const cached=choices.get(key);
     if(cached){
       if(track.ordinal!==queue.current?.ordinal)continue;
+      if(!cached.favoriteChosen&&cached.items.some(item=>item.saved)){
+        cached.items=[...favoriteOrder(cached.items.filter(item=>item.saved),lastPlayedVideos.get(track.id)),...cached.items.filter(item=>!item.saved)];cached.index=0;cached.favoriteChosen=true;
+      }
       let candidate=cached.items[cached.index];
       if(canSkip()){while(candidate?.needsReview){++cached.index;candidate=cached.items[cached.index];}}
       if(candidate){
@@ -401,13 +454,13 @@ function prepareAhead(){
     let job=matchJobs.get(matchKey);
     if(!job){job=(async()=>{
       if(/^\d+$/.test(track.id)&&!bypassSaved.has(key)){
-        try{const saved=await storage<string|null>({type:'get_video',trackId:track.id});if(saved)return [{id:saved,title:track.title,score:1000,reason:'Ваш сохранённый клип',saved:true}];}catch{/* Match without a saved override. */}
+        try{const saved=await savedVideos(track.id);if(!lastPlayedVideos.has(track.id)&&saved.lastVideoId)lastPlayedVideos.set(track.id,saved.lastVideoId);const favorites=favoriteCandidates(saved,track.title);if(favorites.length)return favorites;}catch{/* Match without a saved override. */}
       }
       return invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist});
     })();matchJobs.set(matchKey,job);void job.finally(()=>matchJobs.delete(matchKey)).catch(()=>{});}
     void job.then(items=>{
       if(epoch!==queue.generation)return;
-      choices.set(key,{items:Array.isArray(items)?items:[],index:0});
+      choices.set(key,{items:Array.isArray(items)?items:[],index:0,alternativesLoaded:!items?.some(item=>item.saved)});
     }).catch(()=>{if(epoch===queue.generation)searchErrors.set(key,Date.now());}).finally(()=>{
       searching.delete(key);
       if(epoch===queue.generation)prepareAhead();
@@ -611,6 +664,7 @@ document.addEventListener('fullscreenchange',()=>{
 });
 
 refreshFeedback=mountFeedback(()=>queue.current,()=>void advance(playIntent));
+refreshVideoFavorites=mountVideoFavorites(()=>queue.current&&activeVideo?.id===queue.current.id?{trackId:queue.current.id,videoId:activeVideo.videoId,key:queue.generation+':'+queue.current.ordinal}:undefined,id=>void loadVideo(id,playIntent,true),id=>void favoritesChanged(id),id=>choices.get(queue.generation+':'+queue.current?.ordinal)?.items.find(item=>item.id===id)?.title);
 mountShellNavigation();
 mountFullscreenControls(document.querySelector<HTMLElement>('.workspace')!,document.querySelector<HTMLElement>('.player-hud')!);
 
