@@ -34,7 +34,10 @@ test('real listening excludes paused time, seek and buffering; panel recovery ke
  await page.locator('#seek').evaluate((input:HTMLInputElement)=>{input.value='90';input.dispatchEvent(new Event('input'));input.dispatchEvent(new Event('change'));});
  await page.locator('#play').click();await page.evaluate(()=>(window as any).position=92);await page.clock.fastForward(2000);
  await page.evaluate(()=>{const w=window as any;w.activePlayer.options.events.onStateChange({data:3,target:w.activePlayer});});await page.clock.fastForward(5000);
- await page.locator('#youtube-settings').click();await expect.poll(()=>page.evaluate(()=>(window as any).records.length)).toBe(1);
+ await page.evaluate(()=>{(window as any).beforeSettingsPlayer=(window as any).activePlayer;});
+ await page.locator('#youtube-settings').click();
+ await expect.poll(()=>page.evaluate(()=>(window as any).activePlayer!==(window as any).beforeSettingsPlayer&&document.getElementById('status')?.textContent==='Воспроизведение')).toBe(true);
+ expect(await page.evaluate(()=>(window as any).records.length)).toBe(1);
  await page.evaluate(()=>(window as any).position=93);await page.clock.fastForward(1000);await page.locator('#queue-next').click();
  const first=await page.evaluate(()=>{const w=window as any;return w.progress.filter((p:any)=>p.playbackId===w.records[0].playbackId).at(-1);});
  expect(first).toMatchObject({listenedMs:8000,durationMs:120000,source:'my_wave',endReason:'skip'});await expect.poll(()=>page.evaluate(()=>(window as any).records.length)).toBe(2);

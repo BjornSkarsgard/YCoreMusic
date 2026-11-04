@@ -259,6 +259,26 @@ try {
     assert.equal(await execute('return document.getElementById("source-name").textContent'),'Умная история');assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);await click('pause');
     console.log('Native local Smart History: known clip, explicit Play, real END continuation, one IFrame and sticky source: PASS');
   }
+  if(process.env.ENCORE_CONTROLS_SMOKE==='1') {
+    await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
+    await until('return !document.getElementById("play").disabled',30000);await click('play');
+    await until('return document.getElementById("status").textContent==="Воспроизведение"',30000);
+    await until('return Number(document.getElementById("seek").value)>1',20000);
+    const before=await execute('window.controlsFrame=document.getElementById("player");return Number(document.getElementById("seek").value)');
+    const rowsBefore=(await store({type:'history',query:''})).length;
+    await execute('document.getElementById("window-layout").value="controls";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
+    await sleep(6000);
+    assert.equal(await execute('return document.getElementById("player")===window.controlsFrame && document.querySelectorAll("iframe").length===1'),true);
+    assert(await execute('return Number(document.getElementById("seek").value)')>=before+3,'Controls layout stopped playback advancement');
+    assert.equal(await execute('return getComputedStyle(document.querySelector(".screen")).visibility'),'hidden');
+    await click('pause');await until('return document.getElementById("status").textContent==="Пауза"');
+    const paused=await execute('return Number(document.getElementById("seek").value)');await sleep(1500);
+    assert(Math.abs(await execute('return Number(document.getElementById("seek").value)')-paused)<2);
+    await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
+    assert.equal(await execute('return document.getElementById("player")===window.controlsFrame'),true);
+    assert.equal((await store({type:'history',query:''})).length,rowsBefore,'Layout switch duplicated listening history');
+    console.log('Native real YouTube controls layout: continued timeline, same single player/history, pause and return: PASS (muted test; physical sound not asserted)');
+  }
   if(process.env.ENCORE_LIVE_YOUTUBE==='1') {
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="M7lc1UVf-VE";document.getElementById("load").requestSubmit();');
     await until('return !document.getElementById("play").disabled',30000);

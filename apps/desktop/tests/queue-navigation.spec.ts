@@ -57,3 +57,38 @@ test('failed scroll loading offers retry without repeatedly requesting on every 
  await expect(page.locator('#queue-load-more')).toBeVisible();await pane.evaluate(element=>{for(let n=0;n<10;n++)element.dispatchEvent(new Event('scroll'));});expect(await page.evaluate(()=>(window as any).moreCalls)).toBe(1);
  await page.locator('#queue-load-more').click();await expect(page.locator('#queue-list li')).toHaveCount(50);await expect(page.locator('#queue-load-more')).toBeHidden();expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
 });
+
+test('control layout keeps catalogue and queue visible without recreating or starting the player',async({page})=>{
+ await setup(page,{initial:35,holdMore:false,failFirst:false,holdMatch:false});
+ await page.evaluate(()=>{(window as any).originalPlayer=(window as any).activePlayer;});
+ await page.locator('#window-layout').selectOption('controls');
+ await expect(page.locator('.controls-content')).toBeVisible();await expect(page.locator('.controls-queue')).toBeVisible();
+ await expect(page.locator('[data-pane=wave]')).toBeVisible();await expect(page.locator('#queue-list')).toBeVisible();
+ await page.locator('[data-panel=search]').click();await expect(page.locator('[data-pane=search]')).toBeVisible();await expect(page.locator('#queue-list')).toBeVisible();
+ expect(await page.evaluate(()=>(window as any).activePlayer===(window as any).originalPlayer)).toBe(true);
+ expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+ await page.locator('#queue-list li[data-ordinal="2"] button').click();await expect(page.locator('#track-title')).toHaveText('Song 3');
+ await expect(page.locator('[data-pane=search]')).toBeVisible();
+ await page.locator('#window-layout').selectOption('video');await expect(page.locator('.side-panel #queue-list')).toHaveCount(1);
+ await page.locator('[data-panel=queue]').click();await expect(page.locator('#queue-list li[aria-current=true]')).toHaveAttribute('data-ordinal','2');
+});
+
+test('pinned queue scroll extends Wave independently of catalogue scroll and preserves cursor',async({page})=>{
+ await setup(page,{initial:35,holdMore:true,failFirst:false,holdMatch:false});await page.locator('#window-layout').selectOption('controls');
+ await page.locator('[data-panel=search]').click();const pane=page.locator('.controls-queue-scroll');
+ await pane.evaluate(el=>{el.scrollTop=el.scrollHeight;el.dispatchEvent(new Event('scroll'));});
+ await expect.poll(()=>page.evaluate(()=>(window as any).moreCalls)).toBe(1);
+ const before=await pane.evaluate(el=>el.scrollTop);await page.evaluate(()=>(window as any).releaseMore());
+ await expect(page.locator('#queue-list li')).toHaveCount(55);expect(await pane.evaluate(el=>el.scrollTop)).toBe(before);
+ await expect(page.locator('#queue-list li[aria-current=true]')).toHaveAttribute('data-ordinal','0');expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+});
+
+test('control layout persists without autoplay and fits the minimum desktop size',async({page})=>{
+ await page.setViewportSize({width:800,height:650});await setup(page,{initial:35,holdMore:false,failFirst:false,holdMatch:false});
+ await page.locator('#window-layout').selectOption('controls');await page.reload();await expect(page.locator('#window-layout')).toHaveValue('controls');
+ await expect(page.locator('.controls-content')).toBeVisible();await expect(page.locator('#queue-list')).toBeVisible();
+ const hud=(await page.locator('.player-hud').boundingBox())!,content=(await page.locator('.controls-content').boundingBox())!,rail=(await page.locator('.controls-queue').boundingBox())!;
+ expect(hud.y+hud.height).toBeLessThanOrEqual(650);expect(content.y+content.height).toBeLessThanOrEqual(hud.y);expect(rail.x+rail.width).toBeLessThanOrEqual(800);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(800);expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+ await page.screenshot({path:'../../.tools/controls-layout-800.png'});
+});

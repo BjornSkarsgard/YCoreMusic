@@ -1,8 +1,8 @@
 # Статус реализации Encore
 
-## Актуальная сводка — 2026-11-04
+## Актуальная сводка — 2026-11-05
 
-Рабочий single-window prototype: Wave/жанры/поиск/медиатека/чарт/реакции/outbox/Smart History/favourites/history/mini/fullscreen/tray/recovery/autostart/диагностика. Windows native и настоящий60мин Wave прогон подтверждены ниже. Linux/macOS runtime, UIlogin, реальные preference writes, physical sleep/lock, multi-monitor/visualizer/remote и clean install остаются открытыми. ПоследниеCI mac jobs могут не стартовать из-за hostedrunnercapacity; это не успешная platform приёмка.
+Рабочий single-window prototype: Wave/жанры/поиск/медиатека/чарт/реакции/outbox/Smart History/favourites/history/mini/fullscreen/tray/recovery/autostart/диагностика, встроенный OAuth-вход, выбор трека очереди и её автоподгрузка. Пользователь подтвердил вход, отправку событий Wave и лайк Encore→Яндекс. Добавлен режим «Только управление» (REQ053): каталог и очередь одновременно, transport внизу; настоящий YouTube продолжает timeline при смене вида на Windows. Linux/macOS runtime, обратная ручная синхронизация реакций, physical sleep/lock, multi-monitor/visualizer/remote и clean install остаются открытыми. Последние CI mac jobs могут не стартовать из-за hosted runner capacity; это не успешная platform приёмка.
 
 Далее идёт хронологический журнал. Ранние записи описывают прошлое состояние и не отменяют более поздние решения (в частности, выбор audioendpoint отменён пользователем).
 

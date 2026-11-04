@@ -1,6 +1,7 @@
 import {mountDiagnostics} from './diagnostics-ui';
 import {mountAuth} from './auth-ui';
 import {mountQueueScroll} from './queue-scroll';
+import {mountWindowLayout} from './window-layout';
 import {ListeningMeter,type EndReason,type PlaybackSource} from './listening';
 import {mountAutostart} from './autostart-ui';
 import {mountHistory} from './history-ui';
@@ -650,6 +651,7 @@ element('mini').onclick=async()=>{
   try {
     if(isTauri()) await invoke('window_mini',{compact:!compact});
     compact=!compact; document.body.classList.toggle('compact',compact);
+    document.dispatchEvent(new Event('window-layout-change'));
     element('mini').textContent=compact?'Полный вид':'Миниплеер';
     element('mini').setAttribute('aria-pressed',String(compact));
   } catch { report('Не удалось изменить размер окна.'); }
@@ -803,6 +805,7 @@ const updateAccountConnection=mountAuth(()=>window.location.reload());
 mountDiagnostics(state=>{updateAccountConnection(state);if(state==='saved'||state==='connected')scheduleWaveSync();});
 mountAutostart();
 mountShellNavigation();
+mountWindowLayout();
 updateQueueScroll=mountQueueScroll({eligible:()=>!finiteSource&&!historySource&&!sourceNeedsFresh&&!startingSource&&!!queue.current,generation:()=>queue.generation,count:()=>queue.snapshot.length,ahead:()=>queue.ahead(501).length,load:()=>sourceFetch(false)});
 mountFullscreenControls(document.querySelector<HTMLElement>('.workspace')!,document.querySelector<HTMLElement>('.player-hud')!);
 

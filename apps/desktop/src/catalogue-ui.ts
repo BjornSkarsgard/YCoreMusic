@@ -10,6 +10,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
  const root=document.getElementById('catalogue')!;
  root.innerHTML=`<h2>Поиск в Яндекс Музыке</h2><form id="catalogue-search"><label for="catalogue-query">Исполнитель, песня, альбом или плейлист</label><div class="input-row"><input id="catalogue-query" placeholder="Например, рамштайн" autocomplete="off"><button id="catalogue-clear" type="button" aria-label="Очистить поиск" hidden>×</button><button>Найти</button></div></form><p id="catalogue-status" role="status"></p><div id="catalogue-filters" class="catalogue-filters" aria-label="Тип результатов"></div><div id="catalogue-results"></div><button id="catalogue-more" hidden>Ещё результаты</button><section id="catalogue-collection" hidden></section>`;
  const get=<T extends HTMLElement>(id:string)=>document.getElementById(id) as T;
+ get('catalogue-status').textContent='Найдите исполнителя, песню, альбом или плейлист в строке сверху.';
  let searchRevision=0,collectionRevision=0,page=0,query='',timer:ReturnType<typeof setTimeout>|undefined;
  let filter='Всё';
  let results:Results={artists:[],tracks:[],albums:[],playlists:[],page:0};
