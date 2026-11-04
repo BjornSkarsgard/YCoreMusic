@@ -22,7 +22,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    get('catalogue-results').inert=busy;
    get('catalogue-filters').inert=busy;
    get('catalogue-results').setAttribute('aria-busy',String(busy));
-   get<HTMLButtonElement>('catalogue-more').disabled=busy;
+   get<HTMLButtonElement>('catalogue-more').disabled=busy||get<HTMLInputElement>('catalogue-query').value.trim()!==query;
  }
  function clearResults(){
    results={artists:[],tracks:[],albums:[],playlists:[],page:0};page=0;query='';filter='Всё';hasSearchMore=false;
