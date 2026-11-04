@@ -36,3 +36,16 @@
 Реализована настройка автозапуска (REQ-043): собственный native API поверх официального Tauri plugin, defaultOFF без регистрации на init, запуск с --encore-autostart в трей/без autoplay. Подтверждение реального OSstate, retry/error внутри settings. В testMode запись OSautostart запрещена. Системная регистрация проверяется только по явному checkbox пользователя; тестовые прогоны её не включают.
 
 Диагностика в настройках: версия/платформа, открыто ли хранилище, сохранено ли подключение. Кнопка проверки делает один readonly account/status; UI получает только enum состояния (connected/authdenied/network/ratelimited/service), без личности пользователя и токена. Начальный просмотр не утверждает, что сохранённый токен действителен. Экспорт структурированных логов ещё не реализован.
+
+## Установочные пакеты (подготовка)
+
+Обычная разработка использует прежнюю конфигурацию без упаковки. Отдельный src-tauri/tauri.bundle.conf.json включает bundler, существующие иконки и NSIS currentUser с Russian/English. Команды из корня репозитория:
+
+- npm run package:windows --prefix apps/desktop — release NSIS.
+- npm run package:linux --prefix apps/desktop — release DEB/AppImage.
+- npm run package:macos --prefix apps/desktop — release APP/DMG.
+- После обычной debug сборки: npm run bundle:windows:debug --prefix apps/desktop — пакет для тестирования.
+
+GitHub Actions «Installation packages» запускается вручную для выбранной ОС и сохраняет артефакты на14дней, без публикации GitHubRelease. Идентификатор io.encore.desktop сохраняется: старое хранилище и OScredentials не меняют namespace. На Linux текущий runnerUbuntu24.04 определяет базовую ABI; совместимость с более старыми дистрибутивами ещё не проверена. macOS пакет пока без подписи/notarization, Windows без code signing. Это подготовка доставки, не завершённая приёмка чистой установки/удаления.
+
+Локальный Windows debug NSIS0.0.1 собран успешно (3.72MiB); installer не запускался. Проверен сгенерированный NSIS: currentUser/userexecutionlevel; пользовательские AppData удаляются только отдельным явным checkbox при удалении, updateMode их сохраняет; startup entry сохраняется при update. Токен и пользовательская SQLite в пакет не включаются. Первоначальная настройка доступа пока использует локальный yandex-probe --save-token; полноценный вход из приложения ещё остаётся задачей.
