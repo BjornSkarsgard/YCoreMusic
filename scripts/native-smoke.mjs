@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 const root=process.cwd();
 const nativeApp=resolve(root,'apps/desktop/src-tauri/target/native-test/encore.exe');
 assert(existsSync(nativeApp),'Build the native-test profile first; see README native smoke instructions.');
-const nativeEnvironment={...process.env,ENCORE_TEST_DATA_DIR:resolve(root,'.tools/native-test-data')};
+const nativeEnvironment={...process.env,ENCORE_TEST_DATA_DIR:process.env.ENCORE_NATIVE_TEST_DATA_DIR??resolve(root,'.tools/native-test-data')};
 const driver=spawn(process.env.ENCORE_TAURI_DRIVER ?? 'tauri-driver',[
   '--port','4444','--native-driver',process.env.ENCORE_EDGE_DRIVER ?? resolve(root,'.tools/edgedriver/msedgedriver.exe')
 ],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
@@ -263,11 +263,33 @@ try {
     await press(' ');await until('return document.getElementById("status").textContent==="Пауза"');
     console.log('Native local Space Play/Pause through WebDriver keyboard input: PASS');
   }
-  if(process.env.ENCORE_LIVE_WAVE==='1') {
+  const soakMinutes=Number(process.env.ENCORE_WAVE_SOAK_MINUTES??0);
+  if(process.env.ENCORE_LIVE_WAVE==='1'||soakMinutes>0) {
     await until('return !document.getElementById("source-start").disabled',30000);
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.querySelector("[data-panel=wave]").click();document.getElementById("station-select").value="user:onyourwave";document.getElementById("source-start").click();');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',120000);
-    for(let transition=0;transition<2;transition++) {
+    if(soakMinutes>0){
+      assert(Number.isFinite(soakMinutes)&&soakMinutes<=120,'Soak must be at most two hours');
+      const started=Date.now(),deadline=started+soakMinutes*60000;
+      let transitions=0,previous='',waitingSince=0,longestWaitMs=0,lastReport=0;
+      await nativeInvoke('desktop_close');
+      while(Date.now()<deadline){
+        const sample=await execute('return {title:document.getElementById("track-title").textContent,status:document.getElementById("status").textContent,frames:document.querySelectorAll("iframe").length}');
+        assert(sample.frames<=1,'Soak found multiple IFrames');
+        if(previous&&sample.title!==previous)transitions++;previous=sample.title;
+        if(sample.status==='Воспроизведение'){if(waitingSince)longestWaitMs=Math.max(longestWaitMs,Date.now()-waitingSince);waitingSince=0;}else if(!waitingSince)waitingSince=Date.now();
+        if(Date.now()-lastReport>=60000){
+          lastReport=Date.now();const result={elapsedMinutes:Math.floor((Date.now()-started)/60000),transitions,longestWaitSeconds:Math.round(longestWaitMs/1000),hidden:true,muted:true};
+          writeFileSync(resolve(root,'.tools/wave-soak-progress.json'),JSON.stringify(result,null,2));console.log('Native Wave soak: '+JSON.stringify(result));
+        }
+        await sleep(5000);
+      }
+      if(waitingSince)longestWaitMs=Math.max(longestWaitMs,Date.now()-waitingSince);
+      const result={minutes:soakMinutes,transitions,longestWaitSeconds:Math.round(longestWaitMs/1000),hidden:true,muted:true,completed:true};
+      writeFileSync(resolve(root,'.tools/wave-soak-result.json'),JSON.stringify(result,null,2));
+      await nativeInvoke('desktop_action',{action:'open'});
+      console.log('Native unaccelerated Wave soak complete: '+JSON.stringify(result));
+    }else for(let transition=0;transition<2;transition++) {
       const before=await execute('return document.querySelector("#queue-list li.current")?.textContent ?? document.getElementById("track-title").textContent');
       await execute('window.wavePrevious=arguments[0]',[before]);
       await until('return Number(document.getElementById("seek").max)>5');
@@ -277,7 +299,7 @@ try {
     assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);
     await click('pause');
     writeFileSync(resolve(root,'.tools/native-wave-redesign.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
-    console.log('Native real Wave: explicit start and two unattended natural-END transitions, one IFrame, muted: PASS');
+    if(!soakMinutes)console.log('Native real Wave: explicit start and two unattended natural-END transitions, one IFrame, muted: PASS');
   }
   const rect=await request('/session/'+session+'/window/rect');
   await click('mini');

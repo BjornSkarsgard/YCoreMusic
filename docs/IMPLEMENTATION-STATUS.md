@@ -193,3 +193,9 @@ PASS native: открытие/скрытие YouTube controls сохраняет
 - Проверки: strict TS/Vite, 7 unit; renderer 32 PASS + 1 opt-in skipped; Rust 25 app + 5 probe PASS, 9 opt-in ignored; Clippy all-targets -D warnings PASS. Migration backup/preservation и durable outbox failure/coalescing/account isolation/late ACK проверены.
 - Полный Windows native smoke: реальный Яндекс, каталог, медиатека/чарт, YouTube/CC/fullscreen/tray/media/power/mini/topmost/single instance PASS. Native driver после fullscreen теперь отводит указатель от HUD перед проверкой скрытия; наведение сохраняет управление по согласованному UX. При завершении убирается только PID изолированного тестового экземпляра.
 - Linux/macOS runtime, реальная delivery реакций и многочасовая непрерывность остаются неподтверждёнными. CI запускается при push.
+
+## REQ-037 и длительная проверка волны
+
+Добавлены локальные Up/Down ±5% с clamp/persistence и F11 для того же fullscreen workspace. Поля ввода, кнопки, select, диалоги и modified keys не перехватываются; музыка от shortcuts настройки не запускается. Целевой renderer test PASS: границы 0–100, persistence, два F11 без пересоздания iframe, editing guard/no autoplay.
+
+Добавлен опциональный ENCORE_WAVE_SOAK_MINUTES (до 120) и отдельная ENCORE_NATIVE_TEST_DATA_DIR. Идёт 20-минутный настоящий неускоренный прогон, hidden+volume0, с периодическим JSON прогрессом в .tools. Результат на момент записи ещё не получен. Native-test бинарник занят прогоном: не пересобирать этот профиль до завершения. Следующий срез — REQ-014 несколько избранных клипов/random/no-repeat.

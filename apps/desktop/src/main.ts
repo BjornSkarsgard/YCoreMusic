@@ -585,6 +585,10 @@ document.addEventListener('keydown',event=>{
     event.preventDefault();systemControl('toggle');
   }else if(playerReady && (event.key==='ArrowLeft'||event.key==='ArrowRight')){
     event.preventDefault();seek(event.key==='ArrowLeft'?-5:5);
+  }else if(event.key==='ArrowUp'||event.key==='ArrowDown'){
+    event.preventDefault();volume.set(volume.level+(event.key==='ArrowUp'?5:-5));updateVolume();
+  }else if(event.key==='F11'&&!event.repeat){
+    event.preventDefault();void toggleFullscreen();
   }
 });
 
@@ -596,10 +600,11 @@ element('youtube-settings').onclick=()=>{
   element('player-options-status').textContent=youtubeControls?'Для ручного качества нужна шестерёнка YouTube. После скрытия панели выбранное качество может сброситься.':'';
   void loadVideo(activeVideo.videoId,playIntent,activeAutomatic,{position,record});
 };
-element('fullscreen').onclick=async()=>{
+async function toggleFullscreen(){
   try{if(document.fullscreenElement)await document.exitFullscreen();else await document.querySelector<HTMLElement>('.workspace')!.requestFullscreen();}
   catch{element('player-options-status').textContent='Полноэкранный режим недоступен.';}
-};
+}
+element('fullscreen').onclick=()=>void toggleFullscreen();
 document.addEventListener('fullscreenchange',()=>{
   element('fullscreen').textContent=document.fullscreenElement?'Выйти из полного экрана':'На весь экран';
   element('fullscreen').setAttribute('aria-pressed',String(!!document.fullscreenElement));

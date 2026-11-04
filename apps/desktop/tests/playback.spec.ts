@@ -688,3 +688,14 @@ test('discovery preserves chart order, browsing is inert and refresh requests li
  await page.locator('#discovery-refresh').click();await expect.poll(()=>page.evaluate(()=>(window as any).discoveries)).toBe(2);
  await page.getByRole('button',{name:'▶ Включить чарт'}).click();await expect(page.locator('#queue-list li')).toHaveText(['Top · A','Second · B']);
 });
+
+test('local volume arrows clamp and persist; F11 uses the same fullscreen player and ignores editing fields',async({page})=>{
+ await page.addInitScript(()=>localStorage.removeItem('encore.volume.v1'));
+ await mockAutomaticPlayer(page);await page.goto('/');await videoEditor(page);await page.locator('#url').fill('M7lc1UVf-VE');await page.locator('#load').evaluate((form:HTMLFormElement)=>form.requestSubmit());await expect(page.locator('#play')).toBeEnabled();
+ await page.locator('#track-title').click();await page.keyboard.press('ArrowUp');await expect(page.locator('#volume')).toHaveValue('55');await page.keyboard.press('ArrowDown');await expect(page.locator('#volume')).toHaveValue('50');
+ for(let count=0;count<12;count++)await page.keyboard.press('ArrowDown');await expect(page.locator('#volume')).toHaveValue('0');
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('encore.volume.v1')!).level)).toBe(0);
+ const src=await page.locator('#player').getAttribute('src');await page.keyboard.press('F11');await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);await page.keyboard.press('F11');await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(false);
+ expect(await page.locator('#player').getAttribute('src')).toBe(src);
+ await page.locator('#catalogue-query').fill('artist');await page.keyboard.press('ArrowUp');await page.keyboard.press('F11');await expect(page.locator('#volume')).toHaveValue('0');expect(await page.evaluate(()=>!!document.fullscreenElement)).toBe(false);expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+});
