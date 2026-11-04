@@ -279,6 +279,43 @@ try {
     assert.equal((await store({type:'history',query:''})).length,rowsBefore,'Layout switch duplicated listening history');
     console.log('Native real YouTube controls layout: continued timeline, same single player/history, pause and return: PASS (muted test; physical sound not asserted)');
   }
+  if(process.env.ENCORE_MIRROR_PROBE==='1') {
+    assert.equal(process.platform,'win32','DWM probe is Windows only');
+    const outcome={oneYoutubePlayer:true,webviews:0,calibration:false,visible:null,hidden:null,transparent:null,controls:null};
+    const crop=()=>execute('const rect=document.querySelector(".screen").getBoundingClientRect();return {x:rect.x,y:rect.y,width:rect.width,height:rect.height}');
+    const capture=save=>nativeInvoke('mirror_probe',{action:'capture',save:!!save});
+    const frames=async(count=6,interval=250)=>{const result=[],started=Date.now();for(let i=0;i<count;i++){const frame=await capture(false);assert(frame?.frameHash,'Mirror capture unavailable');result.push(frame);await sleep(interval);}return {samples:count,sampledMs:Date.now()-started,uniqueFrames:new Set(result.map(value=>value.frameHash)).size,nonBlackRatio:result.reduce((sum,value)=>sum+value.nonBlackRatio,0)/result.length};};
+    try{
+      await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));window.mirrorOriginalPlayer=document.getElementById("player");const pattern=document.createElement("div");pattern.id="mirror-calibration";pattern.style="position:absolute;inset:0;background:rgb(255,0,0);z-index:20";document.querySelector(".screen").append(pattern);');
+      const withSurface=process.env.ENCORE_MIRROR_WEBVIEW==='1';
+      const opened=await nativeInvoke('mirror_probe',{action:withSurface?'open_surface':'open',crop:await crop()});assert(opened,'Mirror probe did not open; build with --features mirror-probe');
+      assert.equal(opened.webviews,withSurface?2:1,'Only the explicitly requested local UI surface may add a WebView');assert.equal(opened.windows,2);outcome.webviews=opened.webviews;
+      await sleep(800);const red=await capture(false);assert(red?.centerRgb?.[0]>220&&red.centerRgb[2]<30,'DWM must reflect the owned red calibration surface');
+      await execute('document.getElementById("mirror-calibration").style.background="rgb(0,0,255)"');await sleep(600);const blue=await capture(false);assert(blue?.centerRgb?.[2]>220&&blue.centerRgb[0]<30,'DWM must reflect the updated blue calibration surface');
+      outcome.calibration=true;await execute('document.getElementById("mirror-calibration").remove()');
+      if(process.env.ENCORE_CONTROLS_SMOKE==='1'){
+        await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"');await sleep(800);
+        outcome.visible=await frames(10);assert(outcome.visible.nonBlackRatio>.02&&outcome.visible.uniqueFrames>2,'Visible YouTube mirror must contain changing video');await capture(true);
+        if((await nativeInvoke('desktop_status')).tray_available){
+          const before=await execute('return Number(document.getElementById("seek").value)');await nativeInvoke('desktop_close');await sleep(600);outcome.hidden=await frames(8);
+          outcome.hidden.timelineAdvanced=(await execute('return Number(document.getElementById("seek").value)'))-before;
+          await nativeInvoke('desktop_action',{action:'open'});await sleep(600);
+        }
+        const transparent=await nativeInvoke('mirror_probe',{action:'conceal'});assert(transparent?.sourceAlpha===0&&transparent.mousePassthrough&&transparent.hitTestPassed,'Transparent source must have alpha0 and pass hit testing through');
+        const beforeTransparent=await execute('return Number(document.getElementById("seek").value)');
+        await sleep(600);outcome.transparent={alpha:transparent.sourceAlpha,mousePassthrough:transparent.mousePassthrough,hitTestPassed:transparent.hitTestPassed,...await frames(process.env.ENCORE_MIRROR_STRESS==='1'?90:10,process.env.ENCORE_MIRROR_STRESS==='1'?333:250)};
+        outcome.transparent.timelineAdvanced=(await execute('return Number(document.getElementById("seek").value)'))-beforeTransparent;
+        const restored=await nativeInvoke('mirror_probe',{action:'reveal'});assert.equal(restored.sourceAlpha,opened.sourceAlpha);assert.equal(restored.mousePassthrough,opened.mousePassthrough);await sleep(400);
+        await execute('document.getElementById("window-layout").value="controls";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
+        const accepted=await nativeInvoke('mirror_probe',{action:'update',crop:await crop()});outcome.controls={updateAccepted:accepted!==null,...await frames(6)};
+        await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
+        await nativeInvoke('mirror_probe',{action:'update',crop:await crop()});
+        assert.equal(await execute('return document.getElementById("player")===window.mirrorOriginalPlayer && document.querySelectorAll("iframe").length===1'),true,'Mirror/layout must preserve the one existing iframe');
+        await click('pause');
+      }
+      writeFileSync(resolve(root,'.tools/dwm-mirror-probe.json'),JSON.stringify(outcome,null,2));console.log('DWM single-WebView mirror probe results: '+JSON.stringify(outcome));
+    }finally{await execute('document.getElementById("mirror-calibration")?.remove();document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));').catch(()=>{});await nativeInvoke('desktop_action',{action:'open'}).catch(()=>{});await nativeInvoke('mirror_probe',{action:'close'}).catch(()=>{});}
+  }
   if(process.env.ENCORE_SCENE_SMOKE==='1') {
     const mainHandle=await request('/session/'+session+'/window');
     const beforeHandles=await request('/session/'+session+'/window/handles');

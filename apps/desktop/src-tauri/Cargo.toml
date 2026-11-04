@@ -28,6 +28,7 @@ zeroize = { version = "1.9.1" }
 
 [features]
 yandex-probe = []
+mirror-probe = ["tauri/unstable"]
 
 [[bin]]
 name = "yandex-probe"
@@ -35,7 +36,7 @@ path = "src/bin/yandex-probe.rs"
 required-features = ["yandex-probe"]
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.62.2", features = ["Win32_System_Power", "Win32_Graphics_Gdi"] }
+windows = { version = "0.62.2", features = ["Win32_System_Power", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging"] }
 
 [patch.crates-io]
 tauri-plugin-power-monitor = { path = "../../../vendor/tauri-plugin-power-monitor" }

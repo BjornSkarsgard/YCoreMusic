@@ -11,6 +11,7 @@ mod feedback;
 mod library;
 mod matcher;
 mod media;
+mod mirror_probe;
 mod monitors;
 mod power;
 mod scenes;
@@ -165,6 +166,7 @@ fn main() {
         .manage(matcher::Matcher::default())
         .manage(window_mode::WindowMode::default())
         .manage(scenes::Scenes::default())
+        .manage(mirror_probe::MirrorProbe::default())
         .invoke_handler(tauri::generate_handler![
             source_fetch,
             scenes::scene_window,
@@ -172,6 +174,7 @@ fn main() {
             scenes::scene_snapshot,
             scenes::scene_control,
             monitors::monitor_list,
+            mirror_probe::mirror_probe,
             wave_feedback::wave_sync,
             source_stations,
             autostart::autostart_status,
