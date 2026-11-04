@@ -196,7 +196,8 @@ fn main() {
             search_videos,
             window_mode::window_mini,
             window_mode::window_topmost,
-            window_mode::window_topmost_state
+            window_mode::window_topmost_state,
+            window_mode::window_test_monitor
         ])
         .build(context)
         .expect("failed to build YCore Music")

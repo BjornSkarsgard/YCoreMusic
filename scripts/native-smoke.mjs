@@ -259,6 +259,22 @@ try {
     assert.equal(await execute('return document.getElementById("source-name").textContent'),'Умная история');assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);await click('pause');
     console.log('Native local Smart History: known clip, explicit Play, real END continuation, one IFrame and sticky source: PASS');
   }
+  if(process.env.ENCORE_THEME_DPI==='1'){
+    const displays=await nativeInvoke('monitor_list');const scales=[];
+    for(let index=0;index<displays.length;index++){
+      const display=displays[index];await nativeInvoke('window_test_monitor',{monitorId:display.id});
+      await until('return Math.abs(window.devicePixelRatio-'+display.scaleFactor+')<.02');await sleep(250);
+      const view=await execute('return {width:innerWidth,scroll:document.documentElement.scrollWidth,logo:document.querySelector(".brand-mark").complete&&document.querySelector(".brand-mark").naturalWidth>0,background:getComputedStyle(document.documentElement).backgroundColor,icons:document.querySelectorAll(".ui-icon").length}');
+      assert.equal(view.logo,true);assert.equal(view.background,'rgb(11, 11, 20)');assert(view.icons>10);assert(view.scroll<=view.width,'Theme must not overflow at actual monitor DPI');scales.push(display.scaleFactor);
+      writeFileSync(resolve(root,'.tools/ycore-native-dpi-'+index+'.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
+    }
+    const primary=displays.find(display=>display.primary)??displays[0];await nativeInvoke('window_test_monitor',{monitorId:primary.id});
+    await until('return Math.abs(window.devicePixelRatio-'+primary.scaleFactor+')<.02');await sleep(500);
+    // WebView2 WebDriver rect writes resize the controller, not its native parent.
+    // Keep the native helper's settled parent/controller size for later mini tests.
+    await sleep(500);
+    console.log('Native theme across '+displays.length+' connected monitors, actual Windows DPI scales '+JSON.stringify(scales)+': PASS');
+  }
   if(process.env.ENCORE_CONTROLS_SMOKE==='1') {
     await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
     await until('return !document.getElementById("play").disabled',30000);await click('play');

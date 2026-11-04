@@ -1,3 +1,6 @@
+import {iconDefs,setIconLabel} from './icons';
+import {paintRange} from './visual-controls';
+document.body.insertAdjacentHTML('afterbegin',iconDefs);
 import './scene.css';
 import {invoke} from '@tauri-apps/api/core';
 import {listen} from '@tauri-apps/api/event';
@@ -57,9 +60,9 @@ function receive(snapshot:SceneSnapshot|null,shown=true){
  revision=snapshot.revision;latest=snapshot;visible=shown;
  get('scene-title').textContent=snapshot.title||'YCore Music';get('scene-artist').textContent=snapshot.artist;
  if(changed)seeking=false;
- if(!seeking){get('scene-elapsed').textContent=clock(snapshot.position);seek.value=String(snapshot.position);}
+ if(!seeking){get('scene-elapsed').textContent=clock(snapshot.position);seek.value=String(snapshot.position);paintRange(seek);}
  get('scene-duration').textContent=clock(snapshot.duration);seek.max=String(snapshot.duration);seek.disabled=!snapshot.videoId||!snapshot.duration;
- get('scene-toggle').textContent=snapshot.playback===1?'Ⅱ':'▶';
+ setIconLabel(get('scene-toggle'),snapshot.playback===1?'pause':'play','Воспроизвести или приостановить',true);
  if(changed){errorAt=0;retries=0;}
  if(!visible||!snapshot.videoId){destroy();status.textContent=snapshot.videoId?'':'Выберите музыку в основном окне YCore Music';return;}
  if(errorAt){if(Date.now()-errorAt<15000||retries>=2)return;++retries;errorAt=0;currentKey='';}
@@ -67,9 +70,9 @@ function receive(snapshot:SceneSnapshot|null,shown=true){
 }
 async function control(type:string,position?:number){try{
  const value=await invoke<{fullscreen:boolean;topmost:boolean}>('scene_control',{action:{type,...(position===undefined?{}:{position})}});
- if(value){const fullscreen=document.querySelector<HTMLButtonElement>('[data-control=fullscreen]')!,topmost=document.querySelector<HTMLButtonElement>('[data-control=topmost]')!;fullscreen.textContent=value.fullscreen?'Выйти из полного экрана':'На весь экран';fullscreen.setAttribute('aria-pressed',String(value.fullscreen));topmost.setAttribute('aria-pressed',String(value.topmost));}
+ if(value){const fullscreen=document.querySelector<HTMLButtonElement>('[data-control=fullscreen]')!,topmost=document.querySelector<HTMLButtonElement>('[data-control=topmost]')!;setIconLabel(fullscreen,value.fullscreen?'shrink':'fullscreen',value.fullscreen?'Выйти из полного экрана':'На весь экран',true);fullscreen.setAttribute('aria-pressed',String(value.fullscreen));topmost.setAttribute('aria-pressed',String(value.topmost));}
 }catch{status.textContent='Не удалось выполнить действие. Повторите в основном окне YCore Music.';}}
-for(const button of document.querySelectorAll<HTMLButtonElement>('[data-control]'))button.onclick=()=>void control(button.dataset.control!);
+for(const button of document.querySelectorAll<HTMLButtonElement>('[data-control]')){const type=button.dataset.control!,names:Record<string,string>={toggle:'play',previous:'previous',next:'next',fullscreen:'fullscreen',topmost:'pin'};setIconLabel(button,names[type]??type,button.getAttribute('aria-label')??button.textContent??'',true);button.onclick=()=>void control(type);}
 seek.oninput=()=>{seeking=true;get('scene-elapsed').textContent=clock(Number(seek.value));seek.title=clock(Number(seek.value));};
 seek.onchange=()=>{seeking=false;void control('seek',Number(seek.value));};
 seek.addEventListener('pointercancel',()=>{seeking=false;});

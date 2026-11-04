@@ -1,4 +1,8 @@
-# Статус реализации Encore
+# Статус реализации YCore Music
+
+## Premium Neon Dark — 2026-11-05
+
+Единая тема, SVG-иконки, логотип и Windows ICO внедрены без перестановки блоков или изменения playback/sync/audio. Windows debug YCoreMusic.exe собран. Native smoke прошёл на трёх мониторах (100%, 100%, 200%), Rust 54 PASS/9 ignored, Clippy/fmt PASS, TypeScript unit 12 PASS. Полный список ресурсов, затронутых файлов и границ проверки: [15-PREMIUM-NEON-DARK.md](15-PREMIUM-NEON-DARK.md). Single-player-host WIP остаётся отдельно в stash.
 
 ## Переименование — 2026-11-05
 

@@ -1,4 +1,12 @@
-# Encore — активный контекст, 2026-11-04
+# YCore Music — активный контекст, 2026-11-05
+
+## Актуально: Premium Neon Dark завершён
+
+Эта запись заменяет устаревшие планы ниже. Тема, SVG-иконки и векторная адаптация логотипа по пользовательскому референсу готовы. Сетка/расположение сохранены; player/sync/audio/GPU/FPS не менялись. Windows debug `C:\Users\Skar\Documents\Encore\apps\desktop\src-tauri\target\debug\YCoreMusic.exe` собран 2026-11-05. Нормальный экземпляр не запускали автоматически. Папку проекта в рамках визуальной задачи не перемещали. Remote уже https://github.com/BjornSkarsgard/YCoreMusic.git.
+
+Проверки: Playwright 93 PASS/1 skipped, TypeScript unit 12 PASS, Rust 54 PASS/9 ignored, fmt/Clippy PASS. Native smoke PASS, включая реальные три монитора с DPI 100/100/200%, mini/topmost/maximized/single-instance. Логотип в native CSP исправлен отдельным Vite asset вместо data URL, без ослабления CSP. ICO семь размеров 16..256. Подробности и список файлов: docs/15-PREMIUM-NEON-DARK.md. Локальные снимки .tools/ycore-theme-*.png, .tools/ycore-native-dpi-*.png, контактный лист в .tools/brand-build.
+
+Не проверяли живой значок в пользовательском трее/Explorer после перезапуска и новый runtime на Linux/macOS/Windows11. Нельзя объявлять эти пункты PASS. Отсутствующие визуализаторы/extensions/downloads не добавляли. Следующая независимая задача при необходимости — вернуть и адаптировать single-player-host WIP из stash@{0} `WIP single player host before YCore Music rename`; НЕ pop автоматически, там конфликты с переименованием и новыми view helper. Ночной shutdown больше не актуален. Subagents запрещены без запроса. Секреты не читать и не выводить.
 
 ## Сейчас: YCore Music rename готов, Premium Neon Dark начинается
 

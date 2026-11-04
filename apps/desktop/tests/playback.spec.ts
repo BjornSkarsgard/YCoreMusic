@@ -22,7 +22,7 @@ test('guest can search, browse public collections and play chart clips while per
  }
  await page.locator('.catalogue-card').filter({hasText:'Guest playlist'}).click();await page.locator('#catalogue-play-all').click();await expect.poll(()=>page.evaluate(()=>(window as any).played[0])).toBe('Aaaaaaaaaaa');
  await expect(page.locator('#like')).toBeDisabled();await expect(page.locator('#dislike')).toBeDisabled();
- await page.locator('[data-panel=discovery]').click();await expect(page.locator('#discovery-content .discovery-track')).toHaveCount(2);await expect(page.locator('#discovery-status')).toContainText('Публичные плейлисты');await page.getByRole('button',{name:'▶ Включить чарт'}).click();await expect(page.locator('#source-name')).toHaveText('Guest chart');await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBe(2);await expect(page.locator('#player')).toHaveCount(1);
+ await page.locator('[data-panel=discovery]').click();await expect(page.locator('#discovery-content .discovery-track')).toHaveCount(2);await expect(page.locator('#discovery-status')).toContainText('Публичные плейлисты');await page.getByRole('button',{name:'Включить чарт'}).click();await expect(page.locator('#source-name')).toHaveText('Guest chart');await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBe(2);await expect(page.locator('#player')).toHaveCount(1);
  await page.locator('[data-panel=library]').click();await expect(page.locator('#library-status')).toContainText('Поиск и чарт доступны без входа');expect(await page.evaluate(()=>(window as any).guestWrites)).toBe(0);
  await page.locator('[data-panel=search]').click();await page.locator('#catalogue-back').click();await page.evaluate(()=>(window as any).guestPrivate=true);await page.locator('.catalogue-card').filter({hasText:'Guest playlist'}).click();await expect(page.locator('#catalogue-status')).toContainText('нужен вход или доступ владельца');await expect(page.locator('#source-name')).toHaveText('Guest chart');
 });
@@ -333,7 +333,7 @@ test('Yandex catalogue renders sections, browsing leaves playback alone, startin
   await expect(page.locator('#catalogue-collection .catalogue-track')).toHaveCount(3);
   await expect(page.locator('#track-title')).toHaveText('Current wave');
   expect(await page.evaluate(()=>(window as any).played??[])).toEqual([]);
-  await page.getByRole('button',{name:'▶ Воспроизвести список'}).click();
+  await page.getByRole('button',{name:'Воспроизвести список'}).click();
   await expect(page.locator('#track-title')).toHaveText('Three');
   await expect(page.locator('#queue-list li')).toHaveText(['Three · Rammstein','One · Rammstein','Three · Rammstein']);
   expect(await page.evaluate(()=>(window as any).catalogueCalls[0])).toEqual({kind:'playlist',id:'4',owner:'5',page:0});
@@ -401,7 +401,7 @@ test('finite pagination finishes before queue repeat, paused wrapping stays paus
   });
   await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
   await page.locator('#catalogue-query').fill('fixture');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
-  await page.locator('.catalogue-card').click();await page.getByRole('button',{name:'▶ Воспроизвести список'}).click();
+  await page.locator('.catalogue-card').click();await page.getByRole('button',{name:'Воспроизвести список'}).click();
   await expect(page.locator('#track-title')).toHaveText('P');await expect.poll(()=>page.evaluate(()=>(window as any).played.includes('Ppppppppppp'))).toBe(true);
   await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));
   await expect(page.locator('#track-title')).toHaveText('Q');
@@ -685,7 +685,7 @@ test('personal library browses playlists and paginated likes without replacing p
  }};});
  await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await page.locator('[data-panel=library]').click();
  await page.locator('.library-playlist').click();await expect(page.locator('#library-content .catalogue-track')).toHaveCount(1);await expect(page.locator('#track-title')).toHaveText('Current');
- await page.getByRole('button',{name:'← Моя музыка'}).click();await page.locator('#library-likes').click();await page.getByRole('button',{name:'Ещё песни',exact:true}).click();
+ await page.locator('#library-content').getByRole('button',{name:'Моя музыка'}).click();await page.locator('#library-likes').click();await page.getByRole('button',{name:'Ещё песни',exact:true}).click();
  await expect(page.locator('#library-content .catalogue-track')).toHaveCount(2);expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
  await page.locator('#library-play-all').click();await expect(page.locator('#queue-list li')).toHaveText(['Liked 0 · Fixture','Liked 1 · Fixture']);
  expect(await page.evaluate(()=>(window as any).libraryCalls.map((c:any)=>c.kind))).toEqual(['playlist','likes','likes']);
@@ -733,7 +733,7 @@ test('discovery preserves chart order, browsing is inert and refresh requests li
  await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await page.locator('[data-panel=discovery]').click();await expect(page.locator('.chart-position')).toHaveText(['1','2']);await expect(page.locator('#track-title')).toHaveText('Current');
  await page.locator('#discovery-content .catalogue-card').click();await expect(page.locator('#catalogue-collection .catalogue-track')).toHaveCount(1);await page.locator('#catalogue-back').click();await expect(page.locator('#discovery-content')).toBeVisible();
  await page.locator('#discovery-refresh').click();await expect.poll(()=>page.evaluate(()=>(window as any).discoveries)).toBe(2);
- await page.getByRole('button',{name:'▶ Включить чарт'}).click();await expect(page.locator('#queue-list li')).toHaveText(['Top · A','Second · B']);
+ await page.getByRole('button',{name:'Включить чарт'}).click();await expect(page.locator('#queue-list li')).toHaveText(['Top · A','Second · B']);
 });
 
 test('local volume arrows clamp and persist; F11 uses the same fullscreen player and ignores editing fields',async({page})=>{

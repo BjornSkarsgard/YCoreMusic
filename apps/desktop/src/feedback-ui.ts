@@ -1,3 +1,4 @@
+import {setIconLabel} from './icons';
 import {invoke,isTauri} from '@tauri-apps/api/core';
 interface Reaction {trackId:string;state:number;revision:number;pending:boolean;generation?:number;excludedTrackIds?:string[]}
 export function mountFeedback(current:()=>{id:string}|undefined,next:()=>void){
@@ -9,7 +10,7 @@ export function mountFeedback(current:()=>{id:string}|undefined,next:()=>void){
  let retry:ReturnType<typeof setTimeout>|undefined,undoTimer:ReturnType<typeof setTimeout>|undefined;
  const notify=(trackId:string,state:number,pending=false)=>window.dispatchEvent(new CustomEvent('feedback-changed',{detail:{trackId,state,pending}}));
  const call=<T>(request:object)=>invoke<T>('feedback_command',{request});
- function paint(){like.textContent=record?.state===1?'♥':'♡';like.setAttribute('aria-pressed',String(record?.state===1));dislike.setAttribute('aria-pressed',String(record?.state===-1));like.title=record?.state===1?'Убрать из любимого':'Добавить в любимое';}
+ function paint(){setIconLabel(like,'heart',record?.state===1?'Убрать из любимого':'Добавить в любимое',true);like.setAttribute('aria-pressed',String(record?.state===1));dislike.setAttribute('aria-pressed',String(record?.state===-1));like.title=record?.state===1?'Убрать из любимого':'Добавить в любимое';}
  async function refresh(){
   const revision=++epoch,id=current()?.id;if(record?.trackId!==id)record=undefined;like.disabled=dislike.disabled=!record||!!id&&saving.has(id);paint();
   if(!isTauri()||!id||!/^\d+$/.test(id))return;

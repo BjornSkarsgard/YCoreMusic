@@ -1,3 +1,5 @@
+import {setIconLabel} from './icons';
+import {mountVisualControls,paintRange} from './visual-controls';
 import {mountDiagnostics} from './diagnostics-ui';
 import {mountAuth} from './auth-ui';
 import {mountQueueScroll} from './queue-scroll';
@@ -143,7 +145,7 @@ let volume:VolumeState;
 try{volume=VolumeState.restore(localStorage.getItem(volumeKey));}catch{volume=new VolumeState();}
 element<HTMLInputElement>('volume').value=String(volume.level);
 element('mute').setAttribute('aria-pressed',String(volume.muted));
-element('mute').textContent=volume.muted?'Без звука':'Звук';
+setIconLabel(element('mute'),volume.muted?'muted':'volume',volume.muted?'Без звука':'Звук',true);
 let repeatMode:'off'|'one'|'queue'='off';
 function report(message: string) {
   element('status').textContent = message;
@@ -277,13 +279,13 @@ element('back').onclick = () => seek(-5);
 element('forward').onclick = () => seek(5);
 function updateVolume(){
   publishMedia();
-  element<HTMLInputElement>('volume').value=String(volume.level);element('mute').setAttribute('aria-pressed',String(volume.muted));element('mute').textContent=volume.muted?'Без звука':'Звук';
+  element<HTMLInputElement>('volume').value=String(volume.level);paintRange(element<HTMLInputElement>('volume'));element('mute').setAttribute('aria-pressed',String(volume.muted));setIconLabel(element('mute'),volume.muted?'muted':'volume',volume.muted?'Без звука':'Звук',true);
   if(playerReady)player?.setVolume(volume.output);
   try{localStorage.setItem(volumeKey,volume.serialize());}catch{element('storage-status').textContent='Громкость действует, но сохранить настройку не удалось.';}
 }
 element('volume').oninput=()=>{volume.set(Number(element<HTMLInputElement>('volume').value));updateVolume();};
 element('mute').onclick=()=>{volume.toggleMute();updateVolume();};
-function renderRepeat(){element('repeat').setAttribute('aria-pressed',String(repeatMode!=='off'));element('repeat').textContent=repeatMode==='one'?'Повтор: трек':repeatMode==='queue'?'Повтор: очередь':'Повтор: выкл.';}
+function renderRepeat(){element('repeat').setAttribute('aria-pressed',String(repeatMode!=='off'));setIconLabel(element('repeat'),repeatMode==='one'?'repeat-one':'repeat',repeatMode==='one'?'Повтор: трек':repeatMode==='queue'?'Повтор: очередь':'Повтор: выкл.',true);}
 element('repeat').onclick=()=>{repeatMode=repeatMode==='off'?'one':repeatMode==='one'&&finiteSource?'queue':'off';renderRepeat();};
 function clock(seconds: number): string {
   const value = Math.max(0, Math.floor(seconds || 0));
@@ -303,7 +305,7 @@ const positionTimer = setInterval(() => {
   seekInput.disabled = duration <= 0;
   seekInput.max = String(duration);
   element('duration').textContent = clock(duration);
-  if (!dragging) { seekInput.value = String(position); element('elapsed').textContent = clock(position); }
+  if (!dragging) { seekInput.value = String(position); paintRange(seekInput); element('elapsed').textContent = clock(position); }
 }, 500);
 window.addEventListener('beforeunload', () => { finishRecord('shutdown');clearInterval(positionTimer); player?.destroy(); });
 
@@ -330,7 +332,7 @@ function renderQueue() {
   const focused=(document.activeElement as HTMLElement|null)?.closest('#queue-list li')?.getAttribute('data-ordinal');
   element('queue-list').replaceChildren(...snapshot.map((track,index) => {
     const item=document.createElement('li');item.dataset.ordinal=String(track.ordinal);item.dataset.phase=index<currentIndex?'past':index===currentIndex?'current':'upcoming';
-    const button=document.createElement('button');button.className='queue-play';button.textContent=track.title+' · '+track.artist;button.setAttribute('aria-label','Воспроизвести '+track.title);button.onclick=()=>jumpQueue(track.ordinal,epoch);item.append(button);
+    const button=document.createElement('button');button.className='queue-play';setIconLabel(button,'play',track.title+' · '+track.artist);button.setAttribute('aria-label','Воспроизвести '+track.title);button.onclick=()=>jumpQueue(track.ordinal,epoch);item.append(button);
     if (track.ordinal === queue.current?.ordinal) item.setAttribute('aria-current','true');
     return item;
   }));
@@ -656,7 +658,7 @@ element('mini').onclick=async()=>{
     if(isTauri()) await invoke('window_mini',{compact:!compact});
     compact=!compact; document.body.classList.toggle('compact',compact);
     document.dispatchEvent(new Event('window-layout-change'));
-    element('mini').textContent=compact?'Полный вид':'Миниплеер';
+    setIconLabel(element('mini'),'mini',compact?'Полный вид':'Миниплеер');
     element('mini').setAttribute('aria-pressed',String(compact));
   } catch { report('Не удалось изменить размер окна.'); }
   finally { changingWindow=false; }
@@ -786,7 +788,7 @@ async function toggleFullscreen(){
 }
 element('fullscreen').onclick=()=>void toggleFullscreen();
 document.addEventListener('fullscreenchange',()=>{
-  element('fullscreen').textContent=document.fullscreenElement?'Выйти из полного экрана':'На весь экран';
+  setIconLabel(element('fullscreen'),document.fullscreenElement?'shrink':'fullscreen',document.fullscreenElement?'Выйти из полного экрана':'На весь экран',true);
   element('fullscreen').setAttribute('aria-pressed',String(!!document.fullscreenElement));
 });
 
@@ -809,6 +811,7 @@ const updateAccountConnection=mountAuth(()=>window.location.reload());
 mountDiagnostics(state=>{updateAccountConnection(state);if(state==='saved'||state==='connected')scheduleWaveSync();});
 mountAutostart();
 mountShellNavigation();
+mountVisualControls();
 mountWindowLayout();
 mountScenes(()=>({generation,videoId:playerReady?activeVideo?.videoId??null:null,title:mediaTitle,artist:mediaArtist,position:playerReady?player?.getCurrentTime()??0:0,duration:playerReady?player?.getDuration()??0:0,playback:playerReady?scenePlayback:-1}));
 updateQueueScroll=mountQueueScroll({eligible:()=>!finiteSource&&!historySource&&!sourceNeedsFresh&&!startingSource&&!!queue.current,generation:()=>queue.generation,count:()=>queue.snapshot.length,ahead:()=>queue.ahead(501).length,load:()=>sourceFetch(false)});

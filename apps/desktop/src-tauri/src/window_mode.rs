@@ -2,6 +2,17 @@ use std::sync::Mutex;
 use tauri::{LogicalSize, PhysicalPosition, PhysicalSize, WebviewWindow};
 #[derive(Default)]
 pub struct WindowMode(Mutex<Option<Placement>>);
+#[tauri::command]
+pub fn window_test_monitor(
+    window: WebviewWindow,
+    state: tauri::State<'_, crate::storage::StorageState>,
+    monitor_id: String,
+) -> Result<(), String> {
+    if !cfg!(debug_assertions) || !state.test_mode || window.label() != "main" {
+        return Err("Display verification is restricted to isolated debug tests".into());
+    }
+    crate::monitors::place(&window, &monitor_id)
+}
 struct Placement {
     size: PhysicalSize<u32>,
     position: PhysicalPosition<i32>,

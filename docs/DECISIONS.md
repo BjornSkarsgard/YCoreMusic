@@ -1,3 +1,9 @@
+# ADR-035 — Premium Neon Dark поверх существующего UI
+
+2026-11-05. Централизованные CSS-токены и единый SVG-набор применяются к существующим DOM-компонентам, без перестановки блоков или замены архитектуры. Векторная адаптация предоставленного референса является мастер-ресурсом для прозрачных PNG и семи размеров ICO. Идентификаторы совместимости, настройки и логика плеера/синхронизации/аудио сохраняются. Отсутствующие разделы из референса не создаются. Большие backdrop-filter исключены, а короткие переходы учитывают reduced-motion. SVG остаётся отдельным Vite asset для существующей native CSP. Native DPI-хелпер закрыт debug/testMode/main-window guard.
+
+Проверки: Windows debug build, fmt/Clippy, Rust54, TSunit12, renderer93 PASS/1 skipped; native smoke с тремя мониторами100/100/200% PASS. Ресурсы и пределы проверки перечислены в docs/15-PREMIUM-NEON-DARK.md. Single-player-host рефакторинг не входит в это изменение и остаётся в stash.
+
 # ADR-034 — Переименование в YCore Music с сохранением пользовательских данных
 
 2026-11-05. Пользователь утвердил YCore Music / YCore / «Юкор Мьюзик», слоган `Your Music. Your Core, Your World.`, executable `YCoreMusic.exe` и repo `YCoreMusic`. Обновлены productName/mainBinaryName, Cargo package/default target, frontend package, UI/window/tray/SMTC copy, CI artifacts/build commands, README и branding14. GitHub repo переименован BjornSkarsgard/encore→BjornSkarsgard/YCoreMusic, origin обновлён; старый URL остаётся историческим.

@@ -1,3 +1,4 @@
+import {setIconLabel} from './icons';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { Track } from './queue';
 export interface CatalogueEntity {kind:'artist'|'album'|'playlist'|'likes';id:string;owner?:string;title:string;subtitle:string}
@@ -37,7 +38,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    get('catalogue-collection').hidden=!show;
  }
  function backButton(){
-   const button=document.createElement('button');button.type='button';button.id='catalogue-back';button.textContent=collectionReturn?'← К обзору':'← К результатам поиска';
+   const button=document.createElement('button');button.type='button';button.id='catalogue-back';setIconLabel(button,'back',collectionReturn?'К обзору':'К результатам поиска');
    button.onclick=()=>{
      ++collectionRevision;opened=undefined;collectionView(false);
      get('catalogue-status').textContent='Результаты Яндекс Музыки.';
@@ -52,7 +53,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    return tracks.map((track,index)=>{
      const row=document.createElement('div');row.className='catalogue-track';
      const text=document.createElement('span');text.className='track-text';const title=document.createElement('strong'),artist=document.createElement('small');title.textContent=track.title;artist.textContent=track.artist;text.append(title,artist);
-     const button=document.createElement('button');button.type='button';button.textContent='▶';button.setAttribute('aria-label','Воспроизвести '+track.title);button.onclick=()=>onPlay(index);
+     const button=document.createElement('button');button.type='button';setIconLabel(button,'play',"Воспроизвести",true);button.setAttribute('aria-label','Воспроизвести '+track.title);button.onclick=()=>onPlay(index);
      row.append(text,button);return row;
    });
  }
@@ -75,7 +76,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    if(!opened)return;
    const value=opened,container=get('catalogue-collection');container.hidden=false;container.replaceChildren();
    const heading=document.createElement('h3');heading.textContent=value.entity.title;
-   const playAll=document.createElement('button');playAll.id='catalogue-play-all';playAll.textContent='▶ Воспроизвести список';playAll.disabled=!value.tracks.length;playAll.onclick=()=>play([...value.tracks],value.entity.title,{entity:value.entity,page:value.page,hasMore:value.hasMore});
+   const playAll=document.createElement('button');playAll.id='catalogue-play-all';setIconLabel(playAll,'play',"Воспроизвести список",false);playAll.disabled=!value.tracks.length;playAll.onclick=()=>play([...value.tracks],value.entity.title,{entity:value.entity,page:value.page,hasMore:value.hasMore});
    const more=document.createElement('button');more.textContent='Ещё песни';more.hidden=!value.hasMore;more.onclick=()=>void open(value.entity,true);
    container.append(backButton(),heading,playAll,...trackRows(value.tracks,index=>play(value.tracks.slice(index),value.entity.title,{entity:value.entity,page:value.page,hasMore:value.hasMore})),more);
  }

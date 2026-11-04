@@ -1,3 +1,4 @@
+import {setIconLabel} from './icons';
 import {isTauri} from '@tauri-apps/api/core';
 import {storage} from './storage';
 import {savedVideos} from './favorite-store';
@@ -6,11 +7,11 @@ export function mountVideoFavorites(current:()=>Context|undefined,choose:(videoI
  const save=document.getElementById('save-current-video') as HTMLButtonElement,list=document.getElementById('favorite-list')!,status=document.getElementById('favorite-status')!;
  let epoch=0,selected=false;
  async function refresh(){
-  const revision=++epoch,context=current();save.disabled=true;save.setAttribute('aria-pressed','false');save.textContent='☆ Клип';list.replaceChildren();
+  const revision=++epoch,context=current();save.disabled=true;save.setAttribute('aria-pressed','false');setIconLabel(save,'star','Клип');list.replaceChildren();
   if(!isTauri()||!context||!/^\d+$/.test(context.trackId)){status.textContent='Избранные клипы доступны для песен Яндекс Музыки.';return;}
   try{
    const value=await savedVideos(context.trackId);if(revision!==epoch||current()?.key!==context.key)return;
-   selected=value.videos.some(video=>video.videoId===context.videoId);save.disabled=!context.videoId;save.setAttribute('aria-pressed',String(selected));save.textContent=selected?'★ Клип':'☆ Клип';save.title=selected?'Убрать этот клип из избранного':'Сохранить этот клип в избранное';
+   selected=value.videos.some(video=>video.videoId===context.videoId);save.disabled=!context.videoId;save.setAttribute('aria-pressed',String(selected));setIconLabel(save,'star','Клип');save.title=selected?'Убрать этот клип из избранного':'Сохранить этот клип в избранное';
    status.textContent=value.videos.length?'Избранные клипы меняются случайно, без повтора подряд.':'Сохранённых клипов пока нет.';
    for(const video of value.videos){
     const row=document.createElement('div');row.className='favorite-row';
