@@ -43,8 +43,11 @@ export function mountFeedback(current:()=>{id:string}|undefined,next:()=>void){
  }
  like.onclick=()=>set(false);dislike.onclick=()=>set(true);
  window.addEventListener('online',()=>{attempt=0;void sync();});
+ let focusTimer:ReturnType<typeof setTimeout>|undefined,lastFocus=-Infinity;
+ const focusRefresh=()=>{if(!current())return;clearTimeout(focusTimer);focusTimer=setTimeout(()=>{lastFocus=performance.now();void sync();},Math.max(250,3000-(performance.now()-lastFocus)));};
+ window.addEventListener('focus',focusRefresh);
  const interval=setInterval(()=>{void sync();},60000);
- window.addEventListener('beforeunload',()=>{clearInterval(interval);clearTimeout(retry);clearTimeout(undoTimer);});
+ window.addEventListener('beforeunload',()=>{clearInterval(interval);clearTimeout(retry);clearTimeout(undoTimer);clearTimeout(focusTimer);window.removeEventListener('focus',focusRefresh);});
  schedule(1000);
  return ()=>void refresh();
 }

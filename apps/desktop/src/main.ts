@@ -1,5 +1,6 @@
 import {mountDiagnostics} from './diagnostics-ui';
 import {mountAuth} from './auth-ui';
+import {mountQueueScroll} from './queue-scroll';
 import {ListeningMeter,type EndReason,type PlaybackSource} from './listening';
 import {mountAutostart} from './autostart-ui';
 import {mountHistory} from './history-ui';
@@ -25,6 +26,7 @@ import {CaptionControls,qualityLabel} from './player-options';
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = appShell;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const queue = new PlaybackQueue();
+let updateQueueScroll=()=>{};
 let refreshFeedback=()=>{};
 let refreshVideoFavorites=()=>{};
 const lastPlayedVideos=new Map<string,string>();
@@ -319,14 +321,19 @@ function renderQueue() {
   refreshVideoFavorites();
   element('track-title').textContent = queue.current?.title ?? 'Выберите музыку';
   element('track-artist').textContent = queue.current?.artist ?? '';
-  element('queue-list').replaceChildren(...queue.snapshot.map(track => {
-    const item=document.createElement('li');item.dataset.ordinal=String(track.ordinal); item.textContent = track.title + ' · ' + track.artist;
+  const epoch=queue.generation,snapshot=queue.snapshot,currentIndex=snapshot.findIndex(track=>track.ordinal===queue.current?.ordinal);
+  const focused=(document.activeElement as HTMLElement|null)?.closest('#queue-list li')?.getAttribute('data-ordinal');
+  element('queue-list').replaceChildren(...snapshot.map((track,index) => {
+    const item=document.createElement('li');item.dataset.ordinal=String(track.ordinal);item.dataset.phase=index<currentIndex?'past':index===currentIndex?'current':'upcoming';
+    const button=document.createElement('button');button.className='queue-play';button.textContent=track.title+' · '+track.artist;button.setAttribute('aria-label','Воспроизвести '+track.title);button.onclick=()=>jumpQueue(track.ordinal,epoch);item.append(button);
     if (track.ordinal === queue.current?.ordinal) item.setAttribute('aria-current','true');
     return item;
   }));
+  if(focused!==null&&focused!==undefined)element('queue-list').querySelector<HTMLButtonElement>('[data-ordinal="'+CSS.escape(focused)+'"] button')?.focus({preventScroll:true});
   element<HTMLButtonElement>('queue-next').disabled = !queue.current;
   element<HTMLButtonElement>('previous').disabled = !queue.current && !playerReady;
   element<HTMLButtonElement>('find-video').disabled = !queue.current;
+  updateQueueScroll();
 }
 let sourceWork:Promise<boolean>|undefined;
 let startingSource=false;
@@ -598,32 +605,42 @@ function prepareAhead(){
   }
   if(!finiteSource&&playIntent&&queue.ahead(10).length<8&&!sourceWork&&!historyWork&&!retryTimer){if(historySource){if(!historyExhausted)void historyFetch(false);}else void sourceFetch(false);}
 }
-let advancing=false;
+let advancing=false,advanceOwner=0,queueNavigation=0;
+function cancelQueueAdvance(){++queueNavigation;++advanceOwner;advancing=false;clearRetry();}
+function jumpQueue(ordinal:number,epoch:number){
+  if(startingSource||historyStarting){report('Очередь обновляется. Выберите трек после загрузки.');return;}
+  if(epoch!==queue.generation)return;
+  if(ordinal===queue.current?.ordinal){cancelQueueAdvance();systemControl('play');return;}
+  if(!queue.select(ordinal,epoch))return;
+  cancelQueueAdvance();sourceNeedsFresh=false;powerPaused=false;playIntent=true;
+  stopPlayer('skip');renderQueue();element<HTMLInputElement>('url').value='';intentUI();
+  if(queue.current?.videoId)void loadVideo(queue.current.videoId,true,!finiteSource);else prepareAhead();
+}
 async function advance(resume:boolean,explicit=false,reason?:EndReason){
   if(networkOffline&&!explicit){holdPlayback(true);report('Нет сети · очередь сохранена, ждём подключения.');return;}
   if(advancing||!queue.current||startingSource)return;
   advancing=true;previousGesture.reset();playIntent=resume&&!powerPaused;
-  const epoch=queue.generation;
+  const epoch=queue.generation,navigation=queueNavigation,owner=++advanceOwner;
   let wrapped=false;
   try{
     if(!queue.hasNext&&finiteSource&&repeatMode==='queue'&&!activeCollection?.hasMore){queue.rewind();wrapped=true;}
     else if(!queue.hasNext){
       if(finiteSource){
         if(!activeCollection?.hasMore){finishRecord(reason??(explicit?'skip':'error'));playIntent=false;player?.pauseVideo();report('Конец выбранного списка.');return;}
-        try{const context=activeCollection,page=await collectionPage(context.entity,context.page+1);if(epoch!==queue.generation)return;queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;player?.pauseVideo();report('Больше треков в списке нет.');return;}}}
-        catch{playIntent=false;report('Не удалось загрузить следующую часть списка. Очередь сохранена.');return;}
+        try{const context=activeCollection,page=await collectionPage(context.entity,context.page+1);if(epoch!==queue.generation)return;queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};if(navigation!==queueNavigation)return;if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;player?.pauseVideo();report('Больше треков в списке нет.');return;}}}
+        catch{if(navigation!==queueNavigation||epoch!==queue.generation)return;playIntent=false;report('Не удалось загрузить следующую часть списка. Очередь сохранена.');return;}
       }else{
         const received=await (historySource?historyFetch(false):sourceFetch(false));
-        if(epoch!==queue.generation)return;
+        if(epoch!==queue.generation||navigation!==queueNavigation)return;
         if(!received){if(historySource&&historyExhausted){playIntent=false;player?.pauseVideo();report('В истории больше нет подходящих клипов.');return;}deferWave('Ждём следующую подборку',()=>void advance(playIntent));return;}
       }
     }
     if(!wrapped&&!queue.next()){if(!finiteSource)deferWave('Ждём следующую подборку',()=>void advance(playIntent));else playIntent=false;return;}
-    stopPlayer(reason??(explicit?'skip':'error'));renderQueue();element<HTMLButtonElement>('pause').disabled=!playIntent;element<HTMLInputElement>('url').value='';
+    stopPlayer(reason??(explicit?'skip':'error'));element<HTMLButtonElement>('pause').disabled=!playIntent;element<HTMLInputElement>('url').value='';
     if(!finiteSource){queue.trimPast(50);const valid=new Set(queue.snapshot.map(track=>queue.generation+':'+track.ordinal));for(const key of choices.keys())if(!valid.has(key))choices.delete(key);for(const key of searchErrors.keys())if(!valid.has(key))searchErrors.delete(key);}
-    if(queue.current.videoId)void loadVideo(queue.current.videoId,playIntent);
+    renderQueue();if(queue.current.videoId)void loadVideo(queue.current.videoId,playIntent);
     else prepareAhead();
-  }finally{advancing=false;intentUI();}
+  }finally{if(owner===advanceOwner){advancing=false;intentUI();}}
 }
 
 let compact=false, topmost=false, changingWindow=false;
@@ -683,6 +700,7 @@ mountDiscovery(selectCatalogue,entity=>{showPanel('search');browseCatalogue(enti
 mountLibrary(selectCatalogue);
 
 element('previous').onclick=()=>{
+  cancelQueueAdvance();
   if(previousGesture.press(performance.now())==='restart'){
     if(playerReady)seekPlayer(0);
     return;
@@ -785,6 +803,7 @@ const updateAccountConnection=mountAuth(()=>window.location.reload());
 mountDiagnostics(state=>{updateAccountConnection(state);if(state==='saved'||state==='connected')scheduleWaveSync();});
 mountAutostart();
 mountShellNavigation();
+updateQueueScroll=mountQueueScroll({eligible:()=>!finiteSource&&!historySource&&!sourceNeedsFresh&&!startingSource&&!!queue.current,generation:()=>queue.generation,count:()=>queue.snapshot.length,ahead:()=>queue.ahead(501).length,load:()=>sourceFetch(false)});
 mountFullscreenControls(document.querySelector<HTMLElement>('.workspace')!,document.querySelector<HTMLElement>('.player-hud')!);
 
 const streamWatchdog=setInterval(()=>{

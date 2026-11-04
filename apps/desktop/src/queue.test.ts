@@ -2,6 +2,15 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PlaybackQueue } from './queue';
 const tracks = ['A','B','C'].map(id => ({id,title:id,artist:'fixture'}));
+
+test('selecting a stable queue entry keeps earlier items, duplicates and the following order',()=>{
+ const queue=new PlaybackQueue();queue.reset([...tracks,tracks[0]]);const epoch=queue.generation;
+ queue.insertNext([{...tracks[1],videoId:'inserted-B'}]);
+ const order=queue.snapshot.map(track=>track.ordinal);
+ assert.equal(queue.select(2,epoch)?.id,'C');assert.equal(queue.next()?.id,'A');assert.equal(queue.select(0,epoch)?.id,'A');assert.equal(queue.next()?.videoId,'inserted-B');assert.equal(queue.next()?.id,'B');
+ assert.deepEqual(queue.snapshot.map(track=>track.ordinal),order);
+ assert.equal(queue.select(999,epoch),undefined);assert.equal(queue.current?.id,'B');queue.reset(tracks);assert.equal(queue.select(2,epoch),undefined);assert.equal(queue.current?.id,'A');
+});
 test('ready C never overtakes pending B; duplicates keep independent ordinal', () => {
   const queue=new PlaybackQueue(); queue.reset(tracks);
   queue.resolve(2,'video-C',queue.generation);

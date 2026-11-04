@@ -514,6 +514,26 @@ try {
   await execute('return document.title');
   assert.equal((await nativeInvoke('desktop_status')).minimized,false);
   console.log('Native single instance guard restores minimized existing window: PASS');
+  if(process.env.ENCORE_QUEUE_SMOKE==='1'){
+    await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));');
+    for(let index=1;index<=3;index++)await store({type:'record',event:{...event,playbackId:fixture+'-queue-'+index,trackId:String(123456780+index),title:fixture+'-queue-'+index}});
+    await execute('document.querySelector("[data-panel=history]").click();document.getElementById("history-query").value=arguments[0];document.getElementById("history-query").dispatchEvent(new Event("input"));',[fixture+'-queue-']);
+    await until('return document.querySelectorAll("#history-list li").length===3');
+    await execute('const row=[...document.querySelectorAll("#history-list li")].find(row=>row.querySelector("strong").textContent===arguments[0]);row.querySelectorAll("button")[0].click();',[fixture+'-queue-3']);
+    await until('return !document.getElementById("play").disabled',30000);
+    for(const index of [2,1])await execute('const row=[...document.querySelectorAll("#history-list li")].find(row=>row.querySelector("strong").textContent===arguments[0]);row.querySelectorAll("button")[2].click();',[fixture+'-queue-'+index]);
+    await execute('document.querySelector("[data-panel=queue]").click();for(let n=0;n<3&&document.getElementById("repeat").getAttribute("aria-pressed")==="true";n++)document.getElementById("repeat").click();document.querySelectorAll("#queue-list button")[1].click();');
+    await until('return document.querySelector("#queue-list li[aria-current=true]")?.dataset.ordinal==="1"&&!document.getElementById("play").disabled',30000);
+    assert.equal(await execute('return document.getElementById("track-title").textContent'),fixture+'-queue-2');
+    await click('queue-next');
+    await until('return document.querySelector("#queue-list li[aria-current=true]")?.dataset.ordinal==="2"&&!document.getElementById("play").disabled',30000);
+    assert.equal(await execute('return document.getElementById("track-title").textContent'),fixture+'-queue-1');
+    assert.equal(await execute('return document.querySelectorAll("#queue-list li").length'),3);
+    await execute('document.querySelectorAll("#queue-list button")[0].click();');
+    await until('return document.querySelector("#queue-list li[aria-current=true]")?.dataset.ordinal==="0"&&!document.getElementById("play").disabled',30000);
+    assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);
+    console.log('Native queue jump/manual Next/back to earlier entry/one cued player: PASS (stream playback not asserted)');
+  }
   if(process.env.ENCORE_LISTENING_EXIT==='1'){
     const exitId=fixture+'-shutdown';
     await store({type:'record',event:{...event,playbackId:exitId}});

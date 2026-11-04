@@ -16,6 +16,11 @@ export class PlaybackQueue {
   trimPast(retain:number){const remove=Math.max(0,this.cursor-retain);if(remove){this.entries.splice(0,remove);this.cursor-=remove;}}
   rewind():QueueEntry|undefined { this.cursor=0;return this.current; }
   get hasNext() { return this.cursor+1<this.entries.length; }
+  select(ordinal:number,generation=this.epoch):QueueEntry|undefined {
+    if(generation!==this.epoch)return undefined;
+    const index=this.entries.findIndex(entry=>entry.ordinal===ordinal);
+    if(index<0)return undefined;this.cursor=index;return this.current;
+  }
   ahead(count=3):readonly QueueEntry[] { return this.entries.slice(this.cursor,this.cursor+count).map(entry=>({...entry})); }
   resolve(ordinal: number, videoId: string, generation: number): boolean {
     if (generation !== this.epoch) return false;
