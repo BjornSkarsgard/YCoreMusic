@@ -32,8 +32,26 @@ let player: YT.Player | undefined;
 let generation = 0;
 let playerReady = false;
 let activeVideo:QueueInput|undefined;
-interface PlayRecord {event:{playbackId:string;trackId:string;title:string;artist:string;videoId:string};recorded:boolean;started:boolean;meter:ListeningMeter;source:PlaybackSource;endReason?:EndReason;durationMs?:number;lastWrite:number;signature?:string;writer?:Promise<void>}
+interface PlayRecord {event:{playbackId:string;trackId:string;title:string;artist:string;videoId:string;waveRef?:string};recorded:boolean;started:boolean;meter:ListeningMeter;source:PlaybackSource;endReason?:EndReason;durationMs?:number;lastWrite:number;signature?:string;writer?:Promise<void>}
 let activeRecord:PlayRecord|undefined;
+let historyWriter:Promise<void>=Promise.resolve();
+let waveSyncTimer:ReturnType<typeof setTimeout>|undefined,waveSyncBusy=false,waveSyncPending=false,waveSyncAttempt=0;
+const waveStatus=document.createElement('p');waveStatus.id='wave-sync-status';waveStatus.setAttribute('role','status');element('source-status').after(waveStatus);
+function scheduleWaveSync(delay=300){
+ waveSyncPending=true;if(waveSyncTimer||waveSyncBusy)return;
+ waveSyncTimer=setTimeout(()=>{
+  waveSyncTimer=undefined;waveSyncBusy=true;waveSyncPending=false;
+  void invoke<{disabled:boolean;pending:number;sent?:number}>('wave_sync').then(value=>{
+   if(!value||typeof value.pending!=='number')throw Error('Invalid Wave acknowledgement');
+   waveSyncAttempt=0;waveSyncPending=value.pending>0;waveStatus.textContent=value.sent&&value.sent>0?'Данные прослушивания отправлены в Яндекс Музыку.':'';
+  }).catch(error=>{
+   waveSyncPending=true;++waveSyncAttempt;
+   waveStatus.textContent=/Authorization|token|credential/i.test(String(error))?'Для синхронизации прослушиваний обновите вход в настройках.':'Прослушивание сохранено на устройстве. Синхронизируем с Яндексом позже.';
+  }).finally(()=>{waveSyncBusy=false;if(waveSyncPending)scheduleWaveSync(Math.min(60000,1000*2**Math.min(waveSyncAttempt,6)));});
+ },delay);
+}
+window.addEventListener('online',()=>{if(waveSyncPending)scheduleWaveSync(0);});
+window.addEventListener('beforeunload',()=>clearTimeout(waveSyncTimer));
 function playbackId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');}
 function observeRecord(playing?:boolean){
  const record=activeRecord;if(!record)return;const position=playerReady?player?.getCurrentTime():undefined;
@@ -43,11 +61,12 @@ function observeRecord(playing?:boolean){
 function persistRecord(record:PlayRecord,force=false){
  if(!isTauri()||!record.started||(!force&&performance.now()-record.lastWrite<5000))return;
  record.lastWrite=performance.now();
- const event={playbackId:record.event.playbackId,source:record.source,listenedMs:record.meter.listenedMs,durationMs:record.durationMs??null,endReason:record.endReason??null};
+ const event={playbackId:record.event.playbackId,source:record.source,listenedMs:record.meter.listenedMs,durationMs:record.durationMs??null,endReason:record.endReason??null,waveRef:record.event.waveRef??null};
  const signature=JSON.stringify(event);if(record.signature===signature)return;record.signature=signature;
- record.writer=(record.writer??Promise.resolve()).then(async()=>{
+ record.writer=historyWriter=historyWriter.then(async()=>{
   if(!record.recorded){await storage({type:'record',event:record.event});record.recorded=true;historyExhausted=false;}
   await storage({type:'progress',event});
+  if(record.event.waveRef)scheduleWaveSync();
  }).catch(()=>{if(record.signature===signature)record.signature=undefined;element('storage-status').textContent='Не удалось сохранить данные прослушивания.';});
 }
 function finishRecord(reason:EndReason){
@@ -180,7 +199,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
   lastKnownPosition=restore?.position??0;
   refreshVideoFavorites();ensureAlternatives();
   mediaPlayback='stopped';publishMedia();
-  const playEvent={playbackId:playbackId(),trackId:trackAtLoad?.id ?? 'manual:'+id,title:trackAtLoad?.title ?? 'YouTube · '+id,artist:trackAtLoad?.artist ?? '',videoId:id};
+  const playEvent={playbackId:playbackId(),trackId:trackAtLoad?.id ?? 'manual:'+id,title:trackAtLoad?.title ?? 'YouTube · '+id,artist:trackAtLoad?.artist ?? '',videoId:id,waveRef:trackAtLoad?.waveRef};
   let record:PlayRecord=restore?.record??{event:playEvent,recorded:false,started:false,meter:new ListeningMeter(),source:trackAtLoad?.playbackSource??(trackAtLoad?(historySource?'smart_history':finiteSource?'catalogue':'my_wave'):'manual'),lastWrite:0};activeRecord=record;
   const current = ++generation;
   enabled(false);
@@ -649,7 +668,7 @@ mountHistory(entry=>{
   stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist,playbackSource:'history'}]);finiteSource=true;historySource=false;activeCollection=undefined;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
   element('source-name').textContent='История';element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
   powerPaused=false;void loadVideo(entry.videoId,true);
-},enqueueHistory);
+},enqueueHistory,()=>historyWriter);
 
 const selectCatalogue:Parameters<typeof mountCatalogue>[0]=selection=>{
   if(!selection.tracks.length)return;
@@ -763,7 +782,7 @@ window.addEventListener('feedback-snapshot',event=>{
 refreshFeedback=mountFeedback(()=>queue.current,()=>void advance(playIntent,true,'dislike'));
 refreshVideoFavorites=mountVideoFavorites(()=>queue.current&&activeVideo?.id===queue.current.id?{trackId:queue.current.id,videoId:activeVideo.videoId,key:queue.generation+':'+queue.current.ordinal}:undefined,id=>void loadVideo(id,playIntent,true),id=>void favoritesChanged(id),id=>choices.get(queue.generation+':'+queue.current?.ordinal)?.items.find(item=>item.id===id)?.title);
 const updateAccountConnection=mountAuth(()=>window.location.reload());
-mountDiagnostics(updateAccountConnection);
+mountDiagnostics(state=>{updateAccountConnection(state);if(state==='saved'||state==='connected')scheduleWaveSync();});
 mountAutostart();
 mountShellNavigation();
 mountFullscreenControls(document.querySelector<HTMLElement>('.workspace')!,document.querySelector<HTMLElement>('.player-hud')!);

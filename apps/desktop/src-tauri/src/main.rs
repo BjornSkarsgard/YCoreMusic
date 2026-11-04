@@ -15,6 +15,7 @@ mod power;
 mod smart_history;
 mod source;
 mod storage;
+mod wave_feedback;
 use tauri::Manager;
 mod window_mode;
 #[allow(dead_code)]
@@ -25,7 +26,7 @@ async fn source_fetch(
     state: tauri::State<'_, source::Source>,
     fresh: bool,
     station: Option<String>,
-) -> Result<Vec<source::Track>, String> {
+) -> Result<Vec<source::Recommendation>, String> {
     if window.label() != "main" {
         return Err("Untrusted window".into());
     }
@@ -156,12 +157,14 @@ fn main() {
             Ok(())
         })
         .manage(source::Source::default())
+        .manage(wave_feedback::Delivery::default())
         .manage(feedback::Feedback::default())
         .manage(auth::Auth::default())
         .manage(matcher::Matcher::default())
         .manage(window_mode::WindowMode::default())
         .invoke_handler(tauri::generate_handler![
             source_fetch,
+            wave_feedback::wave_sync,
             source_stations,
             autostart::autostart_status,
             diagnostics::diagnostics_status,

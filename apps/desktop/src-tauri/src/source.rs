@@ -3,6 +3,7 @@ use reqwest::{blocking::Client, redirect::Policy};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::{
+    collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
     time::Duration,
 };
@@ -15,12 +16,95 @@ pub struct Track {
 }
 struct Session {
     id: String,
+    uid: String,
     seed: String,
     received: Vec<String>,
     last: Vec<String>,
 }
 #[derive(Clone, Default)]
-pub struct Source(Arc<Mutex<Option<Session>>>);
+pub struct Source(Arc<Mutex<Option<Session>>>, Arc<Mutex<Origins>>);
+#[derive(Default)]
+struct Origins {
+    entries: HashMap<String, WaveOrigin>,
+    order: VecDeque<String>,
+}
+#[derive(Clone)]
+pub struct WaveOrigin {
+    pub uid: String,
+    pub session: String,
+    pub batch: Option<String>,
+    pub track: String,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Recommendation {
+    #[serde(flatten)]
+    pub track: Track,
+    pub wave_ref: String,
+}
+impl Source {
+    pub fn origin(&self, reference: &str) -> Option<WaveOrigin> {
+        self.1.lock().ok()?.entries.get(reference).cloned()
+    }
+    fn tag(
+        &self,
+        tracks: Vec<Track>,
+        uid: &str,
+        session: &str,
+        batch: Option<String>,
+    ) -> Result<Vec<Recommendation>, &'static str> {
+        let mut origins = self.1.lock().map_err(|_| "Wave references unavailable")?;
+        tracks
+            .into_iter()
+            .map(|track| {
+                let mut bytes = [0u8; 16];
+                getrandom::fill(&mut bytes).map_err(|_| "Cannot create Wave reference")?;
+                let reference: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
+                origins.entries.insert(
+                    reference.clone(),
+                    WaveOrigin {
+                        uid: uid.into(),
+                        session: session.into(),
+                        batch: batch.clone(),
+                        track: track.id.clone(),
+                    },
+                );
+                origins.order.push_back(reference.clone());
+                while origins.order.len() > 4096 {
+                    if let Some(old) = origins.order.pop_front() {
+                        origins.entries.remove(&old);
+                    }
+                }
+                Ok(Recommendation {
+                    track,
+                    wave_ref: reference,
+                })
+            })
+            .collect()
+    }
+}
+fn batch_id(value: &Value) -> Option<String> {
+    value
+        .pointer("/result/batchId")
+        .and_then(Value::as_str)
+        .filter(|id| {
+            !id.is_empty() && id.len() <= 512 && id.bytes().all(|byte| byte.is_ascii_graphic())
+        })
+        .map(str::to_owned)
+}
+fn account_id(value: &Value) -> Result<String, &'static str> {
+    let value = value
+        .pointer("/result/account/uid")
+        .ok_or("Account unavailable")?;
+    let id = match value {
+        Value::String(id) => id.clone(),
+        Value::Number(id) => id.to_string(),
+        _ => return Err("Account unavailable"),
+    };
+    (id != "0" && crate::library::valid_id(&id))
+        .then_some(id)
+        .ok_or("Account unavailable")
+}
 fn tracks(value: &Value) -> Result<Vec<Track>, &'static str> {
     let ids = yandex::session_batch(value)?;
     let items = value
@@ -51,7 +135,11 @@ fn tracks(value: &Value) -> Result<Vec<Track>, &'static str> {
         })
         .collect())
 }
-pub fn fetch(source: &Source, fresh: bool, seed: &str) -> Result<Vec<Track>, &'static str> {
+pub fn fetch(
+    source: &Source,
+    fresh: bool,
+    seed: &str,
+) -> Result<Vec<Recommendation>, &'static str> {
     validate_seed(seed)?;
     let mut state = source.0.lock().map_err(|_| "Source state unavailable")?;
     let token = credentials::load()?;
@@ -63,6 +151,7 @@ pub fn fetch(source: &Source, fresh: bool, seed: &str) -> Result<Vec<Track>, &'s
         .https_only(true)
         .build()
         .map_err(|_| "Cannot initialize HTTPS")?;
+    let uid = account_id(&yandex::request(&client, "account/status", &auth, None)?)?;
     if fresh {
         let value = yandex::request(
             &client,
@@ -74,14 +163,18 @@ pub fn fetch(source: &Source, fresh: bool, seed: &str) -> Result<Vec<Track>, &'s
         let tracks = tracks(&value)?;
         let received: Vec<_> = tracks.iter().map(|track| track.id.clone()).collect();
         *state = Some(Session {
-            id,
+            id: id.clone(),
+            uid: uid.clone(),
             seed: seed.to_owned(),
             last: received.clone(),
             received,
         });
-        Ok(tracks)
+        source.tag(tracks, &uid, &id, batch_id(&value))
     } else {
         let session = state.as_mut().ok_or("Start a source session first")?;
+        if session.uid != uid {
+            return Err("Authorization changed; start a new session");
+        }
         if session.seed != seed {
             return Err("Station changed; start a new session");
         }
@@ -92,6 +185,7 @@ pub fn fetch(source: &Source, fresh: bool, seed: &str) -> Result<Vec<Track>, &'s
             Some(&json!({"queue": session.received})),
         )?;
         let batch = tracks(&value);
+        let mut batch_reference = batch_id(&value);
         let tracks = if renewal_needed(&value, batch.as_ref().ok(), &session.last) {
             // Transport/auth errors propagate above. Renew only a stale session,
             // carrying recent queue IDs forward without inventing feedback.
@@ -109,6 +203,7 @@ pub fn fetch(source: &Source, fresh: bool, seed: &str) -> Result<Vec<Track>, &'s
                 return Err("Identical batch returned; queue unchanged");
             }
             session.id = id;
+            batch_reference = batch_id(&replacement);
             items
         } else {
             batch?
@@ -119,7 +214,7 @@ pub fn fetch(source: &Source, fresh: bool, seed: &str) -> Result<Vec<Track>, &'s
             session.received.drain(..session.received.len() - 500);
         }
         session.last = ids;
-        Ok(tracks)
+        source.tag(tracks, &uid, &session.id, batch_reference)
     }
 }
 
@@ -139,6 +234,41 @@ fn renewal_needed(value: &Value, batch: Option<&Vec<Track>>, previous: &[String]
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn wave_references_keep_duplicates_and_old_batches_without_exposing_account_or_session() {
+        let source = Source::default();
+        let track = Track {
+            id: "1".into(),
+            title: "Fixture".into(),
+            artist: "Fixture".into(),
+        };
+        let first = source
+            .tag(
+                vec![track.clone(), track.clone()],
+                "123",
+                "old-session",
+                Some("old-batch".into()),
+            )
+            .unwrap();
+        assert_ne!(first[0].wave_ref, first[1].wave_ref);
+        source
+            .tag(vec![track], "456", "new-session", Some("new-batch".into()))
+            .unwrap();
+        let origin = source.origin(&first[0].wave_ref).unwrap();
+        assert_eq!(origin.uid, "123");
+        assert_eq!(origin.session, "old-session");
+        assert_eq!(origin.batch.as_deref(), Some("old-batch"));
+        let value = serde_json::to_value(&first[0]).unwrap();
+        let mut keys = value
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        keys.sort_unstable();
+        assert_eq!(keys, ["artist", "id", "title", "waveRef"]);
+        assert!(account_id(&json!({"result":{"account":{"uid":0}}})).is_err());
+    }
     #[test]
     fn renews_stale_sessions_without_hiding_malformed_responses() {
         let previous = vec!["9".to_owned()];

@@ -3,7 +3,7 @@ import {isTauri} from '@tauri-apps/api/core';
 import {storage,type HistoryEntry} from './storage';
 
 /** History browsing owns no playback cursor; actions go through the coordinator. */
-export function mountHistory(play:(entry:HistoryEntry)=>void,enqueue:(entry:HistoryEntry,next:boolean)=>void){
+export function mountHistory(play:(entry:HistoryEntry)=>void,enqueue:(entry:HistoryEntry,next:boolean)=>void,beforeClear:()=>Promise<void>=async()=>{}){
  const get=<T extends HTMLElement>(id:string)=>document.getElementById(id) as T;
  const input=get<HTMLInputElement>('history-query'),list=get('history-list'),more=get<HTMLButtonElement>('history-more'),status=get('history-status');
  const from=get<HTMLInputElement>('history-from'),until=get<HTMLInputElement>('history-until');
@@ -65,7 +65,7 @@ export function mountHistory(play:(entry:HistoryEntry)=>void,enqueue:(entry:Hist
   const buttons=['clear-confirm','clear-cancel','history-clear','history-refresh','history-period-clear'].map(id=>get<HTMLButtonElement>(id));
   buttons.forEach(button=>button.disabled=true);input.disabled=from.disabled=until.disabled=true;
   try{
-   await storage({type:'clear_history'});entries=[];shownKey='';shownDescription='';hasMore=false;list.replaceChildren();
+   await beforeClear();await storage({type:'clear_history'});entries=[];shownKey='';shownDescription='';hasMore=false;list.replaceChildren();
    get<HTMLDialogElement>('clear-dialog').close();deleting=false;await refresh();
   }catch{status.textContent='Не удалось очистить историю. Существующие записи сохранены.';get('clear-status').textContent=status.textContent;}
   finally{deleting=false;buttons.forEach(button=>button.disabled=false);input.disabled=from.disabled=until.disabled=false;busy(false);}

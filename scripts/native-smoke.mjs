@@ -50,6 +50,7 @@ try {
   const store=async(requestBody)=>request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("storage_command",{request:arguments[0]}).then(done).catch(()=>done({testError:true}));',args:[requestBody]});
   const storageStatus=await store({type:'status'});
   assert.equal(storageStatus.testMode,true,'Refuse storage tests against the personal database');
+  assert.deepEqual(await nativeInvoke('wave_sync'),{disabled:true,pending:0,sent:0},'Isolated tests must never write recommendation events');
   isolated=true;
   await execute('if(document.getElementById("account-welcome")?.open)document.getElementById("account-welcome-later").click();');
   appPid=(await nativeInvoke('desktop_status')).process_id;
@@ -81,6 +82,16 @@ try {
   assert.deepEqual(Object.keys(diagnostics).sort(),['architecture','platform','storageAvailable','version','yandex']);
   if(process.env.ENCORE_LIVE_LIBRARY==='1')assert.equal((await nativeInvoke('diagnostics_status',{checkYandex:true})).yandex,'connected');
   console.log('Native diagnostics health and identity-free response: PASS');
+  if(process.env.ENCORE_LIVE_WAVE_REFS==='if-connected'&&diagnostics.yandex==='missing'){
+    console.log('Native readonly Wave batch references: SKIPPED (account not connected)');
+  }else if(['1','if-connected'].includes(process.env.ENCORE_LIVE_WAVE_REFS)){
+    assert.notEqual(diagnostics.yandex,'missing','Wave metadata probe requires an existing saved account; never supply a token in arguments');
+    const first=await nativeInvoke('source_fetch',{fresh:true,station:'user:onyourwave'});assert(Array.isArray(first)&&first.length);
+    for(const track of first){assert.deepEqual(Object.keys(track).sort(),['artist','id','title','waveRef']);assert.match(track.waveRef,/^[0-9a-f]{32}$/);}
+    const next=await nativeInvoke('source_fetch',{fresh:false,station:'user:onyourwave'});assert(Array.isArray(next)&&next.length);
+    assert.equal(new Set([...first,...next].map(track=>track.waveRef)).size,first.length+next.length);
+    console.log('Native readonly Wave batch references: PASS (session/account identifiers withheld; no feedback sent)');
+  }
   if(process.env.ENCORE_LIVE_GUEST==='1'){
     assert.equal(diagnostics.yandex,'missing','Guest test requires an already signed-out account; never delete user credentials for a test');
     const result=await nativeInvoke('catalogue_search',{query:'Rammstein',page:0});

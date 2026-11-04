@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 #[derive(Clone)]
-pub struct Store(Arc<Mutex<Connection>>);
+pub struct Store(pub(crate) Arc<Mutex<Connection>>);
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FavoriteVideo {
@@ -59,6 +59,7 @@ pub struct PlayProgress {
     pub listened_ms: i64,
     pub duration_ms: Option<i64>,
     pub end_reason: Option<String>,
+    pub wave_ref: Option<String>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,7 +86,7 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|_| "Cannot read database schema; existing file preserved")?;
-    if version > 4 {
+    if version > 5 {
         return Err("Database schema is newer than Encore; existing file preserved");
     }
     if version == 0 {
@@ -143,6 +144,16 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
             .map_err(|_| "Cannot commit listening migration")?;
     }
     connection.prepare("SELECT playback_id,source,listened_ms,duration_ms,end_reason,ended_at FROM play_metrics LIMIT 0").map_err(|_| "Invalid listening schema")?;
+    if version < 5 {
+        let transaction = connection
+            .transaction()
+            .map_err(|_| "Cannot start Wave event migration")?;
+        transaction.execute_batch("CREATE TABLE IF NOT EXISTS wave_events(event_key TEXT PRIMARY KEY,account_id TEXT NOT NULL,session_id TEXT NOT NULL,body_json TEXT NOT NULL,created_at TEXT NOT NULL,status TEXT NOT NULL,attempts INTEGER NOT NULL);CREATE INDEX IF NOT EXISTS wave_events_pending ON wave_events(account_id,status);PRAGMA user_version=5;").map_err(|_|"Cannot migrate Wave events")?;
+        transaction
+            .commit()
+            .map_err(|_| "Cannot commit Wave event migration")?;
+    }
+    connection.prepare("SELECT event_key,account_id,session_id,body_json,created_at,status,attempts FROM wave_events LIMIT 0").map_err(|_|"Invalid Wave event schema")?;
     Ok(())
 }
 impl Store {
@@ -151,7 +162,7 @@ impl Store {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(|_| "Cannot read storage version")?;
-        if (1..4).contains(&version) && path != Path::new(":memory:") {
+        if (1..5).contains(&version) && path != Path::new(":memory:") {
             let backup = path.with_extension(format!(
                 "v{version}-backup-{}.sqlite",
                 chrono::Utc::now().timestamp_millis()
@@ -395,6 +406,9 @@ impl Store {
     pub fn progress(&self, event: &PlayProgress) -> Result<(), &'static str> {
         const MAX_MS: i64 = 366 * 24 * 60 * 60 * 1000;
         if event.playback_id.is_empty()
+            || event.wave_ref.as_ref().is_some_and(|reference| {
+                reference.len() != 32 || !reference.bytes().all(|byte| byte.is_ascii_hexdigit())
+            })
             || event.playback_id.len() > 64
             || !event
                 .playback_id
@@ -431,8 +445,10 @@ impl Store {
         Ok(())
     }
     pub fn finish_open(&self) -> Result<(), &'static str> {
-        self.0.lock().map_err(|_|"Storage unavailable")?.execute("UPDATE play_metrics SET end_reason='shutdown',ended_at=?1 WHERE end_reason IS NULL",[chrono::Utc::now().to_rfc3339()]).map_err(|_|"Cannot finish listening history")?;
-        Ok(())
+        let mut connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let queued = crate::wave_feedback::queue_shutdown(&mut connection);
+        connection.execute("UPDATE play_metrics SET end_reason='shutdown',ended_at=?1 WHERE end_reason IS NULL",[chrono::Utc::now().to_rfc3339()]).map_err(|_|"Cannot finish listening history")?;
+        queued
     }
     pub fn history(
         &self,
@@ -499,7 +515,9 @@ impl Store {
             .transaction()
             .map_err(|_| "Cannot start history clearing")?;
         transaction
-            .execute_batch("DELETE FROM play_metrics;DELETE FROM play_history;")
+            .execute_batch(
+                "DELETE FROM wave_events;DELETE FROM play_metrics;DELETE FROM play_history;",
+            )
             .map_err(|_| "Cannot clear history")?;
         transaction
             .commit()
@@ -574,6 +592,83 @@ impl Store {
 mod tests {
     use super::*;
     #[test]
+    fn v4_wave_upgrade_keeps_listening_and_creates_a_backup_without_fabricating_feedback() {
+        let path = std::env::temp_dir().join(format!(
+            "encore-wave-upgrade-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        {
+            let store = Store::open(&path).unwrap();
+            store
+                .record(&PlayRecord {
+                    playback_id: "v4-play".into(),
+                    track_id: "1".into(),
+                    title: "Fixture".into(),
+                    artist: "Fixture".into(),
+                    video_id: "M7lc1UVf-VE".into(),
+                })
+                .unwrap();
+            store
+                .progress(&PlayProgress {
+                    playback_id: "v4-play".into(),
+                    source: "catalogue".into(),
+                    listened_ms: 4000,
+                    duration_ms: Some(120000),
+                    end_reason: Some("natural".into()),
+                    wave_ref: None,
+                })
+                .unwrap();
+            store
+                .0
+                .lock()
+                .unwrap()
+                .execute_batch("DROP TABLE wave_events;PRAGMA user_version=4;")
+                .unwrap();
+        }
+        {
+            let store = Store::open(&path).unwrap();
+            let row = store.history("", None).unwrap().remove(0);
+            assert_eq!(row.listened_ms, Some(4000));
+            assert_eq!(row.end_reason.as_deref(), Some("natural"));
+            assert_eq!(
+                store
+                    .0
+                    .lock()
+                    .unwrap()
+                    .query_row("SELECT COUNT(*) FROM wave_events", [], |row| row
+                        .get::<_, i64>(0))
+                    .unwrap(),
+                0
+            );
+        }
+        let prefix = format!("{}.v4-backup-", path.file_stem().unwrap().to_string_lossy());
+        let backup = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(&prefix)
+            })
+            .unwrap();
+        assert_eq!(
+            Connection::open(&backup)
+                .unwrap()
+                .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                .unwrap(),
+            4
+        );
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(backup).unwrap();
+    }
+    #[test]
     fn listening_progress_is_monotonic_terminal_and_cannot_resurrect_cleared_history() {
         let store = Store::open(Path::new(":memory:")).unwrap();
         let event = PlayRecord {
@@ -585,6 +680,7 @@ mod tests {
         };
         store.record(&event).unwrap();
         let mut progress = PlayProgress {
+            wave_ref: None,
             playback_id: event.playback_id.clone(),
             source: "my_wave".into(),
             listened_ms: 12000,
@@ -660,6 +756,7 @@ mod tests {
             assert!(rows[0].listened_ms.is_none());
             store
                 .progress(&PlayProgress {
+                    wave_ref: None,
                     playback_id: event.playback_id.clone(),
                     source: "history".into(),
                     listened_ms: 5000,
@@ -682,6 +779,7 @@ mod tests {
                 .unwrap();
             store
                 .progress(&PlayProgress {
+                    wave_ref: None,
                     playback_id: "listen-3".into(),
                     source: "catalogue".into(),
                     listened_ms: 1000,
@@ -1203,6 +1301,7 @@ pub struct StorageState {
 pub async fn storage_command(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, StorageState>,
+    source: tauri::State<'_, crate::source::Source>,
     request: Request,
 ) -> Result<serde_json::Value, String> {
     if window.label() != "main" {
@@ -1211,6 +1310,7 @@ pub async fn storage_command(
     if matches!(request, Request::Status) {
         return Ok(serde_json::json!({"available":state.store.is_ok(),"testMode":state.test_mode}));
     }
+    let source = source.inner().clone();
     let store = state
         .store
         .as_ref()
@@ -1234,7 +1334,10 @@ pub async fn storage_command(
             }
             Request::RemoveVideo { track_id } => store.remove_video(&track_id)?,
             Request::Record { event } => store.record(&event)?,
-            Request::Progress { event } => store.progress(&event)?,
+            Request::Progress { event } => {
+                store.progress(&event)?;
+                crate::wave_feedback::enqueue(&store, &source, &event)?;
+            }
             Request::History {
                 query,
                 before_id,
