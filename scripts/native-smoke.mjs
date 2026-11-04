@@ -1,5 +1,5 @@
 // Opt-in Windows / Linux X11 desktop integration test. No credentials or API bodies are logged.
-import { spawn } from 'node:child_process';
+import { spawn,execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import {existsSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
@@ -459,6 +459,17 @@ try {
   await execute('return document.title');
   assert.equal((await nativeInvoke('desktop_status')).minimized,false);
   console.log('Native single instance guard restores minimized existing window: PASS');
+ } catch(error) {
+  if(process.platform==='linux'&&isolated){
+    const details=[];
+    for(const args of [['-root','_NET_SUPPORTING_WM_CHECK'],['-name','Encore · нативная проверка','_NET_WM_STATE','_NET_WM_WINDOW_TYPE']]){
+      try{details.push(execFileSync('xprop',args,{encoding:'utf8',timeout:3000}));}catch{details.push('X11 property read unavailable');}
+    }
+    details.push(JSON.stringify(await nativeInvoke('desktop_status').catch(()=>null)));
+    details.push('topmost='+JSON.stringify(await nativeInvoke('window_topmost_state').catch(()=>null)));
+    writeFileSync(resolve(root,'.tools/native-linux-error.txt'),details.join('\n'));console.log(details.join('\n'));
+  }
+  throw error;
 } finally {
   if(isolated&&session&&networkEmulated)await network(false).catch(()=>{});
   if(isolated && session && volumeCaptured) await execute('if(arguments[0]===null)localStorage.removeItem("encore.volume.v1");else localStorage.setItem("encore.volume.v1",arguments[0]);',[originalVolume]).catch(()=>{});
