@@ -51,6 +51,7 @@ try {
   const storageStatus=await store({type:'status'});
   assert.equal(storageStatus.testMode,true,'Refuse storage tests against the personal database');
   isolated=true;
+  await execute('if(document.getElementById("account-welcome")?.open)document.getElementById("account-welcome-later").click();');
   appPid=(await nativeInvoke('desktop_status')).process_id;
   assert(Number.isInteger(appPid),'Native test process identity unavailable');
   if(process.env.ENCORE_AUTH_SMOKE==='1'){
@@ -101,11 +102,20 @@ try {
   await store({type:'record',event});await store({type:'record',event});
   const history=await store({type:'history',query:fixture});
   assert.equal(history.length,1);
+  const progressEvent={playbackId:fixture,source:'my_wave',listenedMs:7000,durationMs:120000,endReason:null};
+  await store({type:'progress',event:progressEvent});await store({type:'progress',event:{...progressEvent,listenedMs:1000}});
+  await store({type:'progress',event:{...progressEvent,endReason:'natural'}});
+  await store({type:'progress',event:{...progressEvent,endReason:'error'}});
+  const measured=(await store({type:'history',query:fixture}))[0];assert.equal(measured.listenedMs,7000);assert.equal(measured.source,'my_wave');assert.equal(measured.endReason,'natural');assert(measured.endedAt);
+  await execute('document.querySelector("[data-panel=history]").click();document.getElementById("history-query").value=arguments[0];document.getElementById("history-query").dispatchEvent(new Event("input"));',[fixture]);
+  await until('return document.querySelector(".history-listening")?.textContent.includes("Прослушано 0:07")');
   await store({type:'clear_history'});
+  await store({type:'progress',event:progressEvent});assert.equal((await store({type:'history',query:fixture})).length,0);
   assert.equal(await store({type:'get_video',trackId:'123456789'}),'M7lc1UVf-VE');
   await store({type:'remove_video',trackId:'123456789'});
   assert.equal(await store({type:'get_video',trackId:'123456789'}),null);
   console.log('Native isolated SQLite override/history/idempotency/clear: PASS');
+  console.log('Native listening/source/terminal reason/history UI and late checkpoint after clear: PASS');
   // Exercise the real storage bridge and history UI only after testMode confirmation.
   for(let i=0;i<105;i++)await store({type:'record',event:{...event,playbackId:fixture+'-page-'+i}});
   await execute('document.querySelector("[data-panel=history]").click();document.getElementById("history-query").value=arguments[0];document.getElementById("history-query").dispatchEvent(new Event("input"));',[fixture]);
@@ -351,6 +361,16 @@ try {
     }
     assert(recorded,'Actual Play did not persist a history entry');
     console.log('Native actual Play -> SQLite history: PASS');
+    let listening;
+    for(let attempt=0;attempt<20;attempt++){
+      listening=(await store({type:'history',query:''})).find(entry=>entry.videoId==='M7lc1UVf-VE');
+      if(listening?.listenedMs>=1000)break;await sleep(100);
+    }
+    assert(listening?.listenedMs>=1000,'Real playback did not accumulate observed listening');assert(listening.durationMs>0);assert(['manual','my_wave'].includes(listening.source));
+    const listenedBeforePause=listening.listenedMs;await sleep(1500);
+    const afterPause=(await store({type:'history',query:''})).find(entry=>entry.id===listening.id);
+    assert(Math.abs(afterPause.listenedMs-listenedBeforePause)<500,'Paused timeline or seek added listening');
+    console.log('Native actual YouTube -> listening duration/source; pause and seek excluded: PASS');
     const beforeHistoryQueue=await execute('return document.querySelectorAll("#queue-list li").length');
     const currentHistoryTitle=await execute('return document.getElementById("track-title").textContent');
     await execute('document.getElementById("history-panel").open=true;document.getElementById("history-refresh").click()');
@@ -483,6 +503,17 @@ try {
   await execute('return document.title');
   assert.equal((await nativeInvoke('desktop_status')).minimized,false);
   console.log('Native single instance guard restores minimized existing window: PASS');
+  if(process.env.ENCORE_LISTENING_EXIT==='1'){
+    const exitId=fixture+'-shutdown';
+    await store({type:'record',event:{...event,playbackId:exitId}});
+    await store({type:'progress',event:{playbackId:exitId,source:'manual',listenedMs:1000,durationMs:null,endReason:null}});
+    const quitting=nativeInvoke('desktop_action',{action:'quit'}).catch(()=>null);
+    let stopped=false;for(let attempt=0;attempt<50;attempt++){try{process.kill(appPid,0);}catch{stopped=true;break;}await sleep(100);}
+    assert(stopped,'Normal native Quit did not exit the isolated application');await quitting;
+    const {DatabaseSync}=await import('node:sqlite');const db=new DatabaseSync(resolve(nativeEnvironment.ENCORE_TEST_DATA_DIR,'encore.sqlite'),{readOnly:true});
+    try{const finished=db.prepare('SELECT listened_ms,end_reason,ended_at FROM play_metrics WHERE playback_id=?').get(exitId);assert.equal(finished.listened_ms,1000);assert.equal(finished.end_reason,'shutdown');assert(finished.ended_at);}finally{db.close();}
+    console.log('Native normal Quit finalizes persisted listening before process exit: PASS');
+  }
  } catch(error) {
   if(process.platform==='linux'&&isolated){
     const details=[];

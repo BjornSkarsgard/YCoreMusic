@@ -1,5 +1,6 @@
 import {mountDiagnostics} from './diagnostics-ui';
 import {mountAuth} from './auth-ui';
+import {ListeningMeter,type EndReason,type PlaybackSource} from './listening';
 import {mountAutostart} from './autostart-ui';
 import {mountHistory} from './history-ui';
 import {mountDiscovery} from './discovery-ui';
@@ -31,8 +32,30 @@ let player: YT.Player | undefined;
 let generation = 0;
 let playerReady = false;
 let activeVideo:QueueInput|undefined;
-interface PlayRecord {event:{playbackId:string;trackId:string;title:string;artist:string;videoId:string};recorded:boolean;pending:boolean}
+interface PlayRecord {event:{playbackId:string;trackId:string;title:string;artist:string;videoId:string};recorded:boolean;started:boolean;meter:ListeningMeter;source:PlaybackSource;endReason?:EndReason;durationMs?:number;lastWrite:number;signature?:string;writer?:Promise<void>}
 let activeRecord:PlayRecord|undefined;
+function playbackId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');}
+function observeRecord(playing?:boolean){
+ const record=activeRecord;if(!record)return;const position=playerReady?player?.getCurrentTime():undefined;
+ if(playing===undefined)record.meter.sample(position);else record.meter.state(playing,position);
+ const duration=playerReady?player?.getDuration():undefined;if(duration&&Number.isFinite(duration)&&duration>0)record.durationMs=Math.round(duration*1000);
+}
+function persistRecord(record:PlayRecord,force=false){
+ if(!isTauri()||!record.started||(!force&&performance.now()-record.lastWrite<5000))return;
+ record.lastWrite=performance.now();
+ const event={playbackId:record.event.playbackId,source:record.source,listenedMs:record.meter.listenedMs,durationMs:record.durationMs??null,endReason:record.endReason??null};
+ const signature=JSON.stringify(event);if(record.signature===signature)return;record.signature=signature;
+ record.writer=(record.writer??Promise.resolve()).then(async()=>{
+  if(!record.recorded){await storage({type:'record',event:record.event});record.recorded=true;historyExhausted=false;}
+  await storage({type:'progress',event});
+ }).catch(()=>{if(record.signature===signature)record.signature=undefined;element('storage-status').textContent='Не удалось сохранить данные прослушивания.';});
+}
+function finishRecord(reason:EndReason){
+ const record=activeRecord;if(!record||record.endReason)return;observeRecord(false);record.endReason=reason;persistRecord(record,true);
+}
+function seekPlayer(position:number){
+ observeRecord();activeRecord?.meter.seek(position);lastKnownPosition=position;if(playbackRecovery)playbackRecovery.position=position;player?.seekTo(position,true);
+}
 let lastKnownPosition=0,networkOffline=!navigator.onLine;
 let playbackRecovery: {id:string;position:number;record?:PlayRecord;attempts:number;ended:boolean}|undefined;
 let playbackRetry:ReturnType<typeof setTimeout>|undefined;
@@ -134,6 +157,7 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
   void loadVideo(id);
 });
 async function loadVideo(id:string,resume=false,automatic=false,restore?:{position:number;record?:PlayRecord;recovery?:boolean}) {
+  if(restore?.record===activeRecord&&activeRecord){observeRecord(false);persistRecord(activeRecord,true);}else finishRecord('video_change');
   if(!restore?.recovery)cancelPlaybackRecovery();
   previousGesture.reset();
   element<HTMLButtonElement>('previous').disabled=false;
@@ -156,8 +180,8 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
   lastKnownPosition=restore?.position??0;
   refreshVideoFavorites();ensureAlternatives();
   mediaPlayback='stopped';publishMedia();
-  const playEvent={playbackId:Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join(''),trackId:trackAtLoad?.id ?? 'manual:'+id,title:trackAtLoad?.title ?? 'YouTube · '+id,artist:trackAtLoad?.artist ?? '',videoId:id};
-  const record=restore?.record??{event:playEvent,recorded:false,pending:false};activeRecord=record;
+  const playEvent={playbackId:playbackId(),trackId:trackAtLoad?.id ?? 'manual:'+id,title:trackAtLoad?.title ?? 'YouTube · '+id,artist:trackAtLoad?.artist ?? '',videoId:id};
+  let record:PlayRecord=restore?.record??{event:playEvent,recorded:false,started:false,meter:new ListeningMeter(),source:trackAtLoad?.playbackSource??(trackAtLoad?(historySource?'smart_history':finiteSource?'catalogue':'my_wave'):'manual'),lastWrite:0};activeRecord=record;
   const current = ++generation;
   enabled(false);
   intentUI();
@@ -192,26 +216,25 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
         },
         onStateChange: event => {
           if (current !== generation) return;
+          if(event.data!==1){observeRecord(false);persistRecord(record,true);}
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
           intentUI();
           report(states[event.data] ?? `Состояние ${event.data}`);
           if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); captionControls.refresh(event.target);if(playIntent&&!powerPaused){if(networkOffline){holdPlayback();report('Нет сети · клип подготовлен, ждём подключения.');}else event.target.playVideo();} }
           if(event.data===1) {
             if(powerPaused||(!playIntent&&!youtubeControls)){event.target.pauseVideo();return;}
+            if(record.endReason){record={event:{...record.event,playbackId:playbackId()},recorded:false,started:false,meter:new ListeningMeter(),source:record.source,lastWrite:0};activeRecord=record;}
+            record.started=true;observeRecord(true);persistRecord(record,true);
             playIntent=true;cancelPlaybackRecovery();clearRetry();skipStreak=0;retryAttempt=0;bufferingSince=0;loadStarted=0;intentUI();
             if(trackAtLoad)lastPlayedVideos.set(trackAtLoad.id,id);
             if(trackAtLoad)unavailableHistoryTracks.delete(trackAtLoad.id);
             captionControls.refresh(event.target,true);
-            if(isTauri() && !record.recorded && !record.pending) {
-              record.pending=true;
-              void storage({type:'record',event:record.event}).then(()=>{record.recorded=true;historyExhausted=false;}).catch(()=>{element('storage-status').textContent='Не удалось записать прослушивание в историю.';}).finally(()=>{record.pending=false;});
-            }
           }
           if(event.data===2){if(youtubeControls)playIntent=false;else if(playIntent&&!bufferingSince)bufferingSince=Date.now();intentUI();}
           if(event.data===3&&playIntent){if(!bufferingSince)bufferingSince=Date.now();if(networkOffline){holdPlayback();report('Нет сети · сохраняем трек и позицию, ждём подключения.');}}
           if(event.data===5||event.data===0)bufferingSince=0;
           if([0,1,2,5].includes(event.data)){mediaPlayback=event.data===1?'playing':event.data===0?'stopped':'paused';publishMedia();}
-          if(event.data===0 && !powerPaused){if(networkOffline&&playIntent){holdPlayback(true);report('Клип завершён · ждём сеть перед следующим.');return;}if(repeatMode==='one')void repeatVideo(id,automatic);else if(queue.current)void advance(playIntent);}
+          if(event.data===0){finishRecord('natural');if(!powerPaused){if(networkOffline&&playIntent){holdPlayback(true);report('Клип завершён · ждём сеть перед следующим.');return;}if(repeatMode==='one')void repeatVideo(id,automatic);else if(queue.current)void advance(playIntent);}}
         },
         onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); if(networkOffline){holdPlayback();recoverPlayback();return;}if(restore?.recovery&&event.data===5){recoverPlayback();return;}report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(isTauri()&&trackAtLoad&&/^\d+$/.test(trackAtLoad.id)&&[2,100,101,150].includes(event.data))void storage({type:'video_failed',trackId:trackAtLoad.id,videoId:id}).then(refreshVideoFavorites).catch(()=>{}); if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); } },
         onApiChange:event=>{if(current===generation)captionControls.refresh(event.target);},
@@ -223,7 +246,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
 }
 element('play').onclick = () => systemControl('play');
 element('pause').onclick = () => systemControl('pause');
-function seek(delta: number) { previousGesture.reset(); if(playerReady&&player){lastKnownPosition=Math.max(0,Math.min(player.getDuration(),player.getCurrentTime()+delta));if(playbackRecovery)playbackRecovery.position=lastKnownPosition;player.seekTo(lastKnownPosition,true);} }
+function seek(delta: number) { previousGesture.reset(); if(playerReady&&player)seekPlayer(Math.max(0,Math.min(player.getDuration(),player.getCurrentTime()+delta))); }
 element('back').onclick = () => seek(-5);
 element('forward').onclick = () => seek(5);
 function updateVolume(){
@@ -243,11 +266,12 @@ function clock(seconds: number): string {
 const seekInput = element<HTMLInputElement>('seek');
 let dragging = false;
 seekInput.oninput = () => { dragging = true; element('elapsed').textContent = clock(Number(seekInput.value)); seekInput.title = clock(Number(seekInput.value)); };
-seekInput.onchange = () => { previousGesture.reset(); if(playerReady){lastKnownPosition=Number(seekInput.value);if(playbackRecovery)playbackRecovery.position=lastKnownPosition;player?.seekTo(lastKnownPosition,true);} dragging = false; };
+seekInput.onchange = () => { previousGesture.reset(); if(playerReady)seekPlayer(Number(seekInput.value)); dragging = false; };
 const positionTimer = setInterval(() => {
   if (!playerReady || !player) { seekInput.disabled = true; return; }
   const duration = player.getDuration();
   const position = player.getCurrentTime();
+  observeRecord();if(activeRecord)persistRecord(activeRecord);
   if(Number.isFinite(position)&&position>=0&&(position>0||mediaPlayback==='playing'))lastKnownPosition=position;
   if(Date.now()-lastMediaPublish>=2000)publishMedia();
   seekInput.disabled = duration <= 0;
@@ -255,9 +279,10 @@ const positionTimer = setInterval(() => {
   element('duration').textContent = clock(duration);
   if (!dragging) { seekInput.value = String(position); element('elapsed').textContent = clock(position); }
 }, 500);
-window.addEventListener('beforeunload', () => { clearInterval(positionTimer); player?.destroy(); });
+window.addEventListener('beforeunload', () => { finishRecord('shutdown');clearInterval(positionTimer); player?.destroy(); });
 
-function stopPlayer() {
+function stopPlayer(reason:EndReason='source_change') {
+  finishRecord(reason);
   cancelPlaybackRecovery();
   element('video-alternatives').hidden=true;
   activeVideo=undefined;activeRecord=undefined;captionControls.reset();
@@ -485,6 +510,7 @@ function tryAlternative(epoch:number,ordinal:number|undefined){
   queueMicrotask(()=>{
     if(epoch!==queue.generation||ordinal!==queue.current?.ordinal)return;
     if(networkOffline){holdPlayback();report('Нет сети · сохраняем трек и позицию, ждём подключения.');return;}
+    finishRecord('error');
     queue.clearVideo(ordinal!);const key=epoch+':'+ordinal,entry=choices.get(key);
     if(entry){
       ++entry.index;
@@ -554,7 +580,7 @@ function prepareAhead(){
   if(!finiteSource&&playIntent&&queue.ahead(10).length<8&&!sourceWork&&!historyWork&&!retryTimer){if(historySource){if(!historyExhausted)void historyFetch(false);}else void sourceFetch(false);}
 }
 let advancing=false;
-async function advance(resume:boolean,explicit=false){
+async function advance(resume:boolean,explicit=false,reason?:EndReason){
   if(networkOffline&&!explicit){holdPlayback(true);report('Нет сети · очередь сохранена, ждём подключения.');return;}
   if(advancing||!queue.current||startingSource)return;
   advancing=true;previousGesture.reset();playIntent=resume&&!powerPaused;
@@ -564,7 +590,7 @@ async function advance(resume:boolean,explicit=false){
     if(!queue.hasNext&&finiteSource&&repeatMode==='queue'&&!activeCollection?.hasMore){queue.rewind();wrapped=true;}
     else if(!queue.hasNext){
       if(finiteSource){
-        if(!activeCollection?.hasMore){playIntent=false;player?.pauseVideo();report('Конец выбранного списка.');return;}
+        if(!activeCollection?.hasMore){finishRecord(reason??(explicit?'skip':'error'));playIntent=false;player?.pauseVideo();report('Конец выбранного списка.');return;}
         try{const context=activeCollection,page=await collectionPage(context.entity,context.page+1);if(epoch!==queue.generation)return;queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;player?.pauseVideo();report('Больше треков в списке нет.');return;}}}
         catch{playIntent=false;report('Не удалось загрузить следующую часть списка. Очередь сохранена.');return;}
       }else{
@@ -574,7 +600,7 @@ async function advance(resume:boolean,explicit=false){
       }
     }
     if(!wrapped&&!queue.next()){if(!finiteSource)deferWave('Ждём следующую подборку',()=>void advance(playIntent));else playIntent=false;return;}
-    stopPlayer();renderQueue();element<HTMLButtonElement>('pause').disabled=!playIntent;element<HTMLInputElement>('url').value='';
+    stopPlayer(reason??(explicit?'skip':'error'));renderQueue();element<HTMLButtonElement>('pause').disabled=!playIntent;element<HTMLInputElement>('url').value='';
     if(!finiteSource){queue.trimPast(50);const valid=new Set(queue.snapshot.map(track=>queue.generation+':'+track.ordinal));for(const key of choices.keys())if(!valid.has(key))choices.delete(key);for(const key of searchErrors.keys())if(!valid.has(key))searchErrors.delete(key);}
     if(queue.current.videoId)void loadVideo(queue.current.videoId,playIntent);
     else prepareAhead();
@@ -611,7 +637,7 @@ function enqueueHistory(entry:HistoryEntry,next:boolean){
     queue.reset(activeVideo?[activeVideo]:[]);choices.clear();bypassSaved.clear();
     if(!activeVideo)playIntent=false;
   }
-  const track={id:entry.trackId,title:entry.title,artist:entry.artist,videoId:entry.videoId};
+  const track:QueueInput={id:entry.trackId,title:entry.title,artist:entry.artist,videoId:entry.videoId,playbackSource:'history'};
   if(next)queue.insertNext([track]);else queue.append([track]);
   renderQueue();
   element<HTMLButtonElement>('source-more').disabled=finiteSource;
@@ -620,7 +646,7 @@ function enqueueHistory(entry:HistoryEntry,next:boolean){
   else prepareAhead();
 }
 mountHistory(entry=>{
-  stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist}]);finiteSource=true;historySource=false;activeCollection=undefined;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
+  stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist,playbackSource:'history'}]);finiteSource=true;historySource=false;activeCollection=undefined;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
   element('source-name').textContent='История';element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
   powerPaused=false;void loadVideo(entry.videoId,true);
 },enqueueHistory);
@@ -639,7 +665,7 @@ mountLibrary(selectCatalogue);
 
 element('previous').onclick=()=>{
   if(previousGesture.press(performance.now())==='restart'){
-    if(playerReady)player?.seekTo(0,true);
+    if(playerReady)seekPlayer(0);
     return;
   }
   if(!queue.previous())return;
@@ -660,10 +686,11 @@ function systemControl(action:string){
   intentUI();
 }
 function powerPause(resume:boolean){
+  observeRecord(false);if(activeRecord)persistRecord(activeRecord,true);
   powerPaused=true;historyStarting=false;playIntent=false;cancelPlaybackRecovery(false);clearRetry();intentUI();
   if(!resume)suspendPosition=playerReady?player?.getCurrentTime():undefined;
   player?.pauseVideo();
-  if(resume && suspendPosition!==undefined && playerReady)player?.seekTo(suspendPosition,true);
+  if(resume && suspendPosition!==undefined && playerReady)seekPlayer(suspendPosition);
   if(resume)suspendPosition=undefined;
   mediaPlayback='paused';publishMedia();
   report(resume?'После сна · пауза. Нажмите Play, чтобы продолжить.':'Переход в сон · пауза.');
@@ -674,7 +701,7 @@ if(isTauri()){
   void listen<{action:string,value:number}>('encore-media',event=>{
     const {action,value}=event.payload;
     if(action==='seek')seek(value);
-    else if(action==='position' && playerReady){previousGesture.reset();player?.seekTo(Math.max(0,Math.min(player.getDuration(),value)),true);}
+    else if(action==='position' && playerReady&&player){previousGesture.reset();seekPlayer(Math.max(0,Math.min(player.getDuration(),value)));}
     else if(action==='volume'){volume.set(Math.round(value*100));updateVolume();}
     else systemControl(action);
   }).catch(()=>{});
@@ -733,7 +760,7 @@ window.addEventListener('feedback-snapshot',event=>{
   for(const [id,state] of pendingReactionStates){if(state===-1)excludedTracks.add(id);else excludedTracks.delete(id);}
   historyExhausted=false;if(!finiteSource)prepareAhead();
 });
-refreshFeedback=mountFeedback(()=>queue.current,()=>void advance(playIntent,true));
+refreshFeedback=mountFeedback(()=>queue.current,()=>void advance(playIntent,true,'dislike'));
 refreshVideoFavorites=mountVideoFavorites(()=>queue.current&&activeVideo?.id===queue.current.id?{trackId:queue.current.id,videoId:activeVideo.videoId,key:queue.generation+':'+queue.current.ordinal}:undefined,id=>void loadVideo(id,playIntent,true),id=>void favoritesChanged(id),id=>choices.get(queue.generation+':'+queue.current?.ordinal)?.items.find(item=>item.id===id)?.title);
 const updateAccountConnection=mountAuth(()=>window.location.reload());
 mountDiagnostics(updateAccountConnection);

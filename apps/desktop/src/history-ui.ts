@@ -17,6 +17,12 @@ export function mountHistory(play:(entry:HistoryEntry)=>void,enqueue:(entry:Hist
  function row(entry:HistoryEntry){
   const item=document.createElement('li'),text=document.createElement('span'),title=document.createElement('strong'),artist=document.createElement('small'),date=document.createElement('time');
   title.textContent=entry.title;artist.textContent=entry.artist;date.dateTime=entry.startedAt;date.textContent=new Date(entry.startedAt).toLocaleString('ru-RU');text.append(title,artist,date);
+  if(typeof entry.listenedMs==='number'){
+   const details=document.createElement('small'),seconds=Math.floor(entry.listenedMs/1000);
+   const sources:Record<string,string>={my_wave:'Моя волна',smart_history:'Умная история',catalogue:'Каталог',history:'История',manual:'Свой клип'};
+   const reasons:Record<string,string>={natural:'Завершён',skip:'Пропущен',dislike:'Дизлайк',error:'Ошибка видео',source_change:'Смена источника',video_change:'Другая версия',shutdown:'Выход из Encore',interrupted:'Прерван'};
+   details.className='history-listening';details.textContent=[sources[entry.source??''],`Прослушано ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`,reasons[entry.endReason??'']].filter(Boolean).join(' · ');text.append(details);
+  }
   const now=document.createElement('button'),next=document.createElement('button'),append=document.createElement('button');
   now.textContent='Воспроизвести';now.onclick=()=>play(entry);
   next.textContent='Следом';next.onclick=()=>enqueue(entry,true);

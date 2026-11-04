@@ -184,6 +184,13 @@ fn main() {
             window_mode::window_topmost,
             window_mode::window_topmost_state
         ])
-        .run(context)
-        .expect("failed to run Encore");
+        .build(context)
+        .expect("failed to build Encore")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Ok(store) = &app.state::<storage::StorageState>().store {
+                    let _ = store.finish_open();
+                }
+            }
+        });
 }

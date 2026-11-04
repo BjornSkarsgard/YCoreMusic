@@ -1,6 +1,6 @@
 export interface Track { id: string; title: string; artist: string }
-export interface QueueEntry extends Track { ordinal: number; videoId?: string;historyVideoId?:string }
-export type QueueInput = Track & { videoId?: string;historyVideoId?:string };
+export interface QueueEntry extends Track { ordinal: number; videoId?: string;historyVideoId?:string;playbackSource?:import('./listening').PlaybackSource }
+export type QueueInput = Track & { videoId?: string;historyVideoId?:string;playbackSource?:import('./listening').PlaybackSource };
 /** The sole queue cursor. Source adapter bookkeeping is not a playback queue. */
 export class PlaybackQueue {
   private entries: QueueEntry[] = [];

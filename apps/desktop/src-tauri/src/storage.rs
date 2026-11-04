@@ -45,6 +45,20 @@ pub struct HistoryEntry {
     pub artist: String,
     pub video_id: String,
     pub started_at: String,
+    pub source: Option<String>,
+    pub listened_ms: Option<i64>,
+    pub duration_ms: Option<i64>,
+    pub end_reason: Option<String>,
+    pub ended_at: Option<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayProgress {
+    pub playback_id: String,
+    pub source: String,
+    pub listened_ms: i64,
+    pub duration_ms: Option<i64>,
+    pub end_reason: Option<String>,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -71,7 +85,7 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|_| "Cannot read database schema; existing file preserved")?;
-    if version > 3 {
+    if version > 4 {
         return Err("Database schema is newer than Encore; existing file preserved");
     }
     if version == 0 {
@@ -119,6 +133,16 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
     connection
         .prepare("SELECT track_id,video_id FROM video_play_state LIMIT 0")
         .map_err(|_| "Invalid video state schema")?;
+    if version < 4 {
+        let transaction = connection
+            .transaction()
+            .map_err(|_| "Cannot start listening migration")?;
+        transaction.execute_batch("CREATE TABLE IF NOT EXISTS play_metrics(playback_id TEXT PRIMARY KEY,source TEXT NOT NULL,listened_ms INTEGER NOT NULL CHECK(listened_ms>=0),duration_ms INTEGER,end_reason TEXT,ended_at TEXT);PRAGMA user_version=4;").map_err(|_| "Cannot migrate listening history")?;
+        transaction
+            .commit()
+            .map_err(|_| "Cannot commit listening migration")?;
+    }
+    connection.prepare("SELECT playback_id,source,listened_ms,duration_ms,end_reason,ended_at FROM play_metrics LIMIT 0").map_err(|_| "Invalid listening schema")?;
     Ok(())
 }
 impl Store {
@@ -127,7 +151,7 @@ impl Store {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(|_| "Cannot read storage version")?;
-        if version == 1 || version == 2 {
+        if (1..4).contains(&version) && path != Path::new(":memory:") {
             let backup = path.with_extension(format!(
                 "v{version}-backup-{}.sqlite",
                 chrono::Utc::now().timestamp_millis()
@@ -137,6 +161,7 @@ impl Store {
                 .map_err(|_| "Cannot back up database before migration")?;
         }
         migrate(&mut connection)?;
+        connection.execute("UPDATE play_metrics SET end_reason='interrupted',ended_at=?1 WHERE end_reason IS NULL",[chrono::Utc::now().to_rfc3339()]).map_err(|_| "Cannot recover unfinished history")?;
         Ok(Self(Arc::new(Mutex::new(connection))))
     }
     pub fn reaction(&self, uid: &str, track: &str) -> Result<Option<Reaction>, &'static str> {
@@ -367,6 +392,48 @@ impl Store {
         }
         Ok(())
     }
+    pub fn progress(&self, event: &PlayProgress) -> Result<(), &'static str> {
+        const MAX_MS: i64 = 366 * 24 * 60 * 60 * 1000;
+        if event.playback_id.is_empty()
+            || event.playback_id.len() > 64
+            || !event
+                .playback_id
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || c == b'-')
+            || !(0..=MAX_MS).contains(&event.listened_ms)
+            || event
+                .duration_ms
+                .is_some_and(|ms| !(1..=MAX_MS).contains(&ms))
+            || !matches!(
+                event.source.as_str(),
+                "my_wave" | "smart_history" | "catalogue" | "history" | "manual"
+            )
+            || event.end_reason.as_deref().is_some_and(|reason| {
+                !matches!(
+                    reason,
+                    "natural"
+                        | "skip"
+                        | "dislike"
+                        | "error"
+                        | "source_change"
+                        | "video_change"
+                        | "shutdown"
+                )
+            })
+        {
+            return Err("Invalid listening event");
+        }
+        let ended_at = event
+            .end_reason
+            .as_ref()
+            .map(|_| chrono::Utc::now().to_rfc3339());
+        self.0.lock().map_err(|_|"Storage unavailable")?.execute("INSERT INTO play_metrics(playback_id,source,listened_ms,duration_ms,end_reason,ended_at) SELECT ?1,?2,?3,?4,?5,?6 FROM play_history WHERE playback_id=?1 ON CONFLICT(playback_id) DO UPDATE SET listened_ms=MAX(play_metrics.listened_ms,excluded.listened_ms),duration_ms=COALESCE(excluded.duration_ms,play_metrics.duration_ms),end_reason=COALESCE(play_metrics.end_reason,excluded.end_reason),ended_at=COALESCE(play_metrics.ended_at,excluded.ended_at)",params![event.playback_id,event.source,event.listened_ms,event.duration_ms,event.end_reason,ended_at]).map_err(|_|"Cannot save listening progress")?;
+        Ok(())
+    }
+    pub fn finish_open(&self) -> Result<(), &'static str> {
+        self.0.lock().map_err(|_|"Storage unavailable")?.execute("UPDATE play_metrics SET end_reason='shutdown',ended_at=?1 WHERE end_reason IS NULL",[chrono::Utc::now().to_rfc3339()]).map_err(|_|"Cannot finish listening history")?;
+        Ok(())
+    }
     pub fn history(
         &self,
         query: &str,
@@ -402,7 +469,7 @@ impl Store {
             return Err("Search query too long");
         }
         let connection = self.0.lock().map_err(|_| "Storage unavailable")?;
-        let mut statement=connection.prepare("SELECT id,track_id,title,artist,video_id,started_at FROM play_history WHERE instr(search_text,?1)>0 AND (?2 IS NULL OR id<?2) AND (?3 IS NULL OR substr(started_at,1,19)>=?3) AND (?4 IS NULL OR substr(started_at,1,19)<?4) ORDER BY id DESC LIMIT 100").map_err(|_|"Cannot query history")?;
+        let mut statement=connection.prepare("SELECT h.id,h.track_id,h.title,h.artist,h.video_id,h.started_at,m.source,m.listened_ms,m.duration_ms,m.end_reason,m.ended_at FROM play_history h LEFT JOIN play_metrics m ON m.playback_id=h.playback_id WHERE instr(h.search_text,?1)>0 AND (?2 IS NULL OR h.id<?2) AND (?3 IS NULL OR substr(h.started_at,1,19)>=?3) AND (?4 IS NULL OR substr(h.started_at,1,19)<?4) ORDER BY h.id DESC LIMIT 100").map_err(|_|"Cannot query history")?;
         let rows = statement
             .query_map(
                 params![query.to_lowercase(), before_id, from, until],
@@ -414,6 +481,11 @@ impl Store {
                         artist: row.get(3)?,
                         video_id: row.get(4)?,
                         started_at: row.get(5)?,
+                        source: row.get(6)?,
+                        listened_ms: row.get(7)?,
+                        duration_ms: row.get(8)?,
+                        end_reason: row.get(9)?,
+                        ended_at: row.get(10)?,
                     })
                 },
             )
@@ -422,11 +494,16 @@ impl Store {
             .map_err(|_| "Invalid history data")
     }
     pub fn clear_history(&self) -> Result<(), &'static str> {
-        self.0
-            .lock()
-            .map_err(|_| "Storage unavailable")?
-            .execute("DELETE FROM play_history", [])
+        let mut connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let transaction = connection
+            .transaction()
+            .map_err(|_| "Cannot start history clearing")?;
+        transaction
+            .execute_batch("DELETE FROM play_metrics;DELETE FROM play_history;")
             .map_err(|_| "Cannot clear history")?;
+        transaction
+            .commit()
+            .map_err(|_| "Cannot commit history clearing")?;
         Ok(())
     }
     pub fn smart_history(
@@ -496,6 +573,151 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn listening_progress_is_monotonic_terminal_and_cannot_resurrect_cleared_history() {
+        let store = Store::open(Path::new(":memory:")).unwrap();
+        let event = PlayRecord {
+            playback_id: "listen-1".into(),
+            track_id: "1".into(),
+            title: "One".into(),
+            artist: "Fixture".into(),
+            video_id: "M7lc1UVf-VE".into(),
+        };
+        store.record(&event).unwrap();
+        let mut progress = PlayProgress {
+            playback_id: event.playback_id.clone(),
+            source: "my_wave".into(),
+            listened_ms: 12000,
+            duration_ms: Some(180000),
+            end_reason: None,
+        };
+        store.progress(&progress).unwrap();
+        progress.listened_ms = 3000;
+        store.progress(&progress).unwrap();
+        progress.listened_ms = 14000;
+        progress.end_reason = Some("natural".into());
+        store.progress(&progress).unwrap();
+        progress.end_reason = Some("error".into());
+        progress.listened_ms = 4000;
+        store.progress(&progress).unwrap();
+        let rows = store.history("", None).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].listened_ms, Some(14000));
+        assert_eq!(rows[0].source.as_deref(), Some("my_wave"));
+        assert_eq!(rows[0].end_reason.as_deref(), Some("natural"));
+        assert!(rows[0].ended_at.is_some());
+        progress.listened_ms = -1;
+        assert!(store.progress(&progress).is_err());
+        progress.listened_ms = 10;
+        progress.source = "invalid".into();
+        assert!(store.progress(&progress).is_err());
+        progress.source = "my_wave".into();
+        store.clear_history().unwrap();
+        store.progress(&progress).unwrap();
+        assert!(store.history("", None).unwrap().is_empty());
+        assert_eq!(
+            store
+                .0
+                .lock()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM play_metrics", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+    #[test]
+    fn v3_upgrade_preserves_history_and_backups_then_recovers_interrupted_listening() {
+        let path = std::env::temp_dir().join(format!(
+            "encore-listening-{}-{}.sqlite",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let event = PlayRecord {
+            playback_id: "listen-2".into(),
+            track_id: "2".into(),
+            title: "Old history".into(),
+            artist: "Fixture".into(),
+            video_id: "M7lc1UVf-VE".into(),
+        };
+        {
+            let store = Store::open(&path).unwrap();
+            store.record(&event).unwrap();
+            store
+                .0
+                .lock()
+                .unwrap()
+                .execute_batch("DROP TABLE play_metrics;PRAGMA user_version=3;")
+                .unwrap();
+        }
+        {
+            let store = Store::open(&path).unwrap();
+            let rows = store.history("", None).unwrap();
+            assert_eq!(rows.len(), 1);
+            assert!(rows[0].listened_ms.is_none());
+            store
+                .progress(&PlayProgress {
+                    playback_id: event.playback_id.clone(),
+                    source: "history".into(),
+                    listened_ms: 5000,
+                    duration_ms: None,
+                    end_reason: None,
+                })
+                .unwrap();
+        }
+        {
+            let store = Store::open(&path).unwrap();
+            assert_eq!(
+                store.history("", None).unwrap()[0].end_reason.as_deref(),
+                Some("interrupted")
+            );
+            store
+                .record(&PlayRecord {
+                    playback_id: "listen-3".into(),
+                    ..event
+                })
+                .unwrap();
+            store
+                .progress(&PlayProgress {
+                    playback_id: "listen-3".into(),
+                    source: "catalogue".into(),
+                    listened_ms: 1000,
+                    duration_ms: None,
+                    end_reason: None,
+                })
+                .unwrap();
+            store.finish_open().unwrap();
+            assert_eq!(
+                store.history("", None).unwrap()[0].end_reason.as_deref(),
+                Some("shutdown")
+            );
+        }
+        let prefix = format!("{}.v3-backup-", path.file_stem().unwrap().to_string_lossy());
+        let backup = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(&prefix)
+            })
+            .unwrap();
+        assert_eq!(
+            Connection::open(&backup)
+                .unwrap()
+                .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                .unwrap(),
+            3
+        );
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(backup).unwrap();
+    }
     #[test]
     fn smart_history_deduplicates_weights_and_excludes_local_and_remote_dislikes() {
         let store = memory();
@@ -962,6 +1184,9 @@ pub enum Request {
     Record {
         event: PlayRecord,
     },
+    Progress {
+        event: PlayProgress,
+    },
     History {
         query: String,
         before_id: Option<i64>,
@@ -1009,6 +1234,7 @@ pub async fn storage_command(
             }
             Request::RemoveVideo { track_id } => store.remove_video(&track_id)?,
             Request::Record { event } => store.record(&event)?,
+            Request::Progress { event } => store.progress(&event)?,
             Request::History {
                 query,
                 before_id,
