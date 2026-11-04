@@ -357,14 +357,21 @@ impl Store {
         }
         Ok(())
     }
-    pub fn history(&self, query: &str) -> Result<Vec<HistoryEntry>, &'static str> {
+    pub fn history(
+        &self,
+        query: &str,
+        before_id: Option<i64>,
+    ) -> Result<Vec<HistoryEntry>, &'static str> {
+        if before_id.is_some_and(|id| id <= 0) {
+            return Err("Invalid history cursor");
+        }
         if query.len() > 512 {
             return Err("Search query too long");
         }
         let connection = self.0.lock().map_err(|_| "Storage unavailable")?;
-        let mut statement=connection.prepare("SELECT id,track_id,title,artist,video_id,started_at FROM play_history WHERE instr(search_text,?1)>0 ORDER BY id DESC LIMIT 100").map_err(|_|"Cannot query history")?;
+        let mut statement=connection.prepare("SELECT id,track_id,title,artist,video_id,started_at FROM play_history WHERE instr(search_text,?1)>0 AND (?2 IS NULL OR id<?2) ORDER BY id DESC LIMIT 100").map_err(|_|"Cannot query history")?;
         let rows = statement
-            .query_map([query.to_lowercase()], |row| {
+            .query_map(params![query.to_lowercase(), before_id], |row| {
                 Ok(HistoryEntry {
                     id: row.get(0)?,
                     track_id: row.get(1)?,
@@ -605,7 +612,7 @@ mod tests {
             assert!(!videos.videos.iter().any(|v| v.unavailable));
             store.remove_favorite("123", "Aaaaaaaaaaa").unwrap();
             assert_eq!(store.saved_videos("123").unwrap().videos.len(), 1);
-            assert_eq!(store.history("").unwrap().len(), 1);
+            assert_eq!(store.history("", None).unwrap().len(), 1);
         }
         std::fs::remove_file(path).unwrap();
     }
@@ -652,7 +659,7 @@ mod tests {
                 store.saved_video("123").unwrap().as_deref(),
                 Some("M7lc1UVf-VE")
             );
-            assert_eq!(store.history("").unwrap().len(), 1);
+            assert_eq!(store.history("", None).unwrap().len(), 1);
             assert_eq!(
                 store.saved_videos("123").unwrap().videos[0].video_id,
                 "M7lc1UVf-VE"
@@ -707,14 +714,76 @@ mod tests {
         };
         store.record(&event).unwrap();
         store.record(&event).unwrap();
-        assert_eq!(store.history("ГРУППА").unwrap().len(), 1);
+        assert_eq!(store.history("ГРУППА", None).unwrap().len(), 1);
         event.playback_id = "event-2".into();
         store.record(&event).unwrap();
-        assert_eq!(store.history("").unwrap().len(), 2);
+        assert_eq!(store.history("", None).unwrap().len(), 2);
         store.save_video("123", "M7lc1UVf-VE").unwrap();
         store.clear_history().unwrap();
-        assert!(store.history("").unwrap().is_empty());
+        assert!(store.history("", None).unwrap().is_empty());
         assert!(store.saved_video("123").unwrap().is_some());
+    }
+    #[test]
+    fn history_cursor_preserves_order_and_repeats_when_new_events_arrive() {
+        let store = memory();
+        for i in 0..205 {
+            store
+                .record(&PlayRecord {
+                    playback_id: format!("event-{i}"),
+                    track_id: "123".into(),
+                    title: "Группа крови".into(),
+                    artist: "Кино".into(),
+                    video_id: "M7lc1UVf-VE".into(),
+                })
+                .unwrap();
+        }
+        let first = store.history("КИНО", None).unwrap();
+        assert_eq!(first.len(), 100);
+        store
+            .record(&PlayRecord {
+                playback_id: "new-event".into(),
+                track_id: "456".into(),
+                title: "Новая песня".into(),
+                artist: "Кино".into(),
+                video_id: "M7lc1UVf-VE".into(),
+            })
+            .unwrap();
+        let second = store
+            .history("кино", Some(first.last().unwrap().id))
+            .unwrap();
+        let third = store
+            .history("кино", Some(second.last().unwrap().id))
+            .unwrap();
+        assert_eq!(second.len(), 100);
+        assert_eq!(third.len(), 5);
+        let ids: Vec<_> = first
+            .iter()
+            .chain(&second)
+            .chain(&third)
+            .map(|entry| entry.id)
+            .collect();
+        assert_eq!(ids, (1..=205).rev().collect::<Vec<_>>());
+        assert!(store.history("кино", Some(1)).unwrap().is_empty());
+        assert!(store.history("", Some(0)).is_err());
+        assert!(store.history("", Some(-1)).is_err());
+        assert_eq!(store.history("новая", None).unwrap().len(), 1);
+        let request: Request =
+            serde_json::from_str(r#"{"type":"history","query":"кино","beforeId":106}"#).unwrap();
+        assert!(matches!(
+            request,
+            Request::History {
+                before_id: Some(106),
+                ..
+            }
+        ));
+        let legacy: Request = serde_json::from_str(r#"{"type":"history","query":"кино"}"#).unwrap();
+        assert!(matches!(
+            legacy,
+            Request::History {
+                before_id: None,
+                ..
+            }
+        ));
     }
     #[test]
     fn manual_override_survives_reopen_and_rejects_invalid_values() {
@@ -768,14 +837,34 @@ mod tests {
 )]
 pub enum Request {
     Status,
-    SaveVideo { track_id: String, video_id: String },
-    GetVideo { track_id: String },
-    GetVideos { track_id: String },
-    RemoveFavorite { track_id: String, video_id: String },
-    VideoFailed { track_id: String, video_id: String },
-    RemoveVideo { track_id: String },
-    Record { event: PlayRecord },
-    History { query: String },
+    SaveVideo {
+        track_id: String,
+        video_id: String,
+    },
+    GetVideo {
+        track_id: String,
+    },
+    GetVideos {
+        track_id: String,
+    },
+    RemoveFavorite {
+        track_id: String,
+        video_id: String,
+    },
+    VideoFailed {
+        track_id: String,
+        video_id: String,
+    },
+    RemoveVideo {
+        track_id: String,
+    },
+    Record {
+        event: PlayRecord,
+    },
+    History {
+        query: String,
+        before_id: Option<i64>,
+    },
     ClearHistory,
 }
 pub struct StorageState {
@@ -817,8 +906,8 @@ pub async fn storage_command(
             }
             Request::RemoveVideo { track_id } => store.remove_video(&track_id)?,
             Request::Record { event } => store.record(&event)?,
-            Request::History { query } => {
-                return serde_json::to_value(store.history(&query)?)
+            Request::History { query, before_id } => {
+                return serde_json::to_value(store.history(&query, before_id)?)
                     .map_err(|_| "Cannot serialize history")
             }
             Request::ClearHistory => store.clear_history()?,

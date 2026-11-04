@@ -26,3 +26,5 @@
 #video-alternatives[hidden]{display:block!important;visibility:hidden}
 
 #catalogue-results[aria-busy="true"]{opacity:.5}
+
+#history-list[aria-busy="true"]{opacity:.5}#history-list li>span{display:flex;flex-direction:column;gap:3px}#history-list strong{font-weight:600;color:#e5dfed}#history-list small,#history-list time{font-size:11px;color:#a79bad}#history-more{width:100%;margin-top:16px;font-size:12px}

@@ -58,6 +58,22 @@ try {
   await store({type:'remove_video',trackId:'123456789'});
   assert.equal(await store({type:'get_video',trackId:'123456789'}),null);
   console.log('Native isolated SQLite override/history/idempotency/clear: PASS');
+  // Exercise the real storage bridge and history UI only after testMode confirmation.
+  for(let i=0;i<105;i++)await store({type:'record',event:{...event,playbackId:fixture+'-page-'+i}});
+  await execute('document.querySelector("[data-panel=history]").click();document.getElementById("history-query").value=arguments[0];document.getElementById("history-query").dispatchEvent(new Event("input"));',[fixture]);
+  await until('return document.querySelectorAll("#history-list li").length===100&&!document.getElementById("history-more").hidden');
+  const newestPage=await store({type:'history',query:fixture});
+  await store({type:'record',event:{...event,playbackId:fixture+'-after-page'}});
+  const olderPage=await store({type:'history',query:fixture,beforeId:newestPage.at(-1).id});
+  assert.equal(olderPage.length,5);assert(olderPage.every(row=>row.id<newestPage.at(-1).id));
+  await click('history-more');
+  await until('return document.querySelectorAll("#history-list li").length===105&&document.getElementById("history-more").hidden');
+  assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
+  await click('history-clear');await click('clear-confirm');
+  await until('return !document.getElementById("clear-dialog").open&&document.querySelectorAll("#history-list li").length===0');
+  assert.equal((await store({type:'history',query:fixture})).length,0);
+  await execute('document.getElementById("history-query").value="";document.getElementById("history-query").dispatchEvent(new Event("input"));');
+  console.log('Native history cursor pagination, concurrent new play, inert browsing and confirmed clear: PASS');
   if(process.env.ENCORE_LIVE_YANDEX==='1') {
     await until('return document.querySelectorAll("#queue-list li").length>0');
     const count=await execute('return document.querySelectorAll("#queue-list li").length');

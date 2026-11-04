@@ -1,3 +1,4 @@
+import {mountHistory} from './history-ui';
 import {mountDiscovery} from './discovery-ui';
 import {mountVideoFavorites} from './favorite-ui';
 import {savedVideos} from './favorite-store';
@@ -578,40 +579,11 @@ function enqueueHistory(entry:HistoryEntry,next:boolean){
   if(detached&&!activeVideo)void loadVideo(entry.videoId,false);
   else prepareAhead();
 }
-let historyRevision=0;
-async function refreshHistory(){
- const revision=++historyRevision;
- if(!isTauri()){element('history-status').textContent='История доступна в desktop-версии.';return;}
- try {
-   const entries=await storage<HistoryEntry[]>({type:'history',query:element<HTMLInputElement>('history-query').value});
-   if(revision!==historyRevision)return;
-   if(!Array.isArray(entries))return;
-   element('history-list').replaceChildren(...entries.map(entry=>{
-     const item=document.createElement('li'),title=document.createElement('span'),button=document.createElement('button');
-     title.textContent=entry.title+' · '+entry.artist+' · '+new Date(entry.startedAt).toLocaleString();
-     button.textContent='Воспроизвести';button.onclick=()=>{
-       stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist}]);finiteSource=true;historySource=false;activeCollection=undefined;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
-       element('source-name').textContent='История';element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
-       powerPaused=false;void loadVideo(entry.videoId,true);
-     };
-     const next=document.createElement('button'),append=document.createElement('button');
-     next.textContent='Следом';next.onclick=()=>enqueueHistory(entry,true);
-     append.textContent='В конец';append.onclick=()=>enqueueHistory(entry,false);
-     item.append(title,button,next,append);return item;
-   }));
-   element('history-status').textContent=entries.length?'Последние '+entries.length+' записей':'История пока пуста.';
- }catch {element('history-status').textContent='Не удалось прочитать историю. Существующая база не удалялась.';}
-}
-let historyTimer:ReturnType<typeof setTimeout>|undefined;
-element('history-query').oninput=()=>{clearTimeout(historyTimer);historyTimer=setTimeout(()=>void refreshHistory(),200);};
-element('history-refresh').onclick=()=>void refreshHistory();
-element('history-panel').ontoggle=()=>{if(element<HTMLDetailsElement>('history-panel').open)void refreshHistory();};
-element('history-clear').onclick=()=>element<HTMLDialogElement>('clear-dialog').showModal();
-element('clear-cancel').onclick=()=>element<HTMLDialogElement>('clear-dialog').close();
-element('clear-confirm').onclick=async()=>{
- try {await storage({type:'clear_history'});element<HTMLDialogElement>('clear-dialog').close();await refreshHistory();}
- catch {element('history-status').textContent='Не удалось очистить историю.';}
-};
+mountHistory(entry=>{
+  stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist}]);finiteSource=true;historySource=false;activeCollection=undefined;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
+  element('source-name').textContent='История';element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
+  powerPaused=false;void loadVideo(entry.videoId,true);
+},enqueueHistory);
 
 const selectCatalogue:Parameters<typeof mountCatalogue>[0]=selection=>{
   if(!selection.tracks.length)return;
