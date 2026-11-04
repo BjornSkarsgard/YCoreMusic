@@ -257,3 +257,15 @@ TypeScript/build PASS; renderer 45 PASS +1 opt-in skipped, включая stale 
 Подготовлен дополнительный native сценарий CDP outage только собственного WebView, без изменения системной сети. Он ещё не запускался; не объявлять PASS. Native profile занят60минWave baseline025ab78. После завершения пересобрать с новым recovery/autostart, выполнить ENCORE_AUTOSTART_SMOKE/ENCORE_LIVE_RECOVERY и обычный native YouTube smoke. Autostart enable/disable текущего пользователя и настоящий login не выполнялись.
 
 Повторный полный renderer для autostart:58PASS+1opt-in skipped; TypeScript/buildPASS. Native runtime всё ещё ожидается после часового прогона.
+
+## 2026-11-04: завершён часовой непрерывный Wave прогон; остановка по просьбе пользователя
+
+Настоящий неускоренный Windows native Wave прогон завершился с exit0:60минут,16автоматических смен,712playingSamples,7waitingSamples,maxFrames1. Самая долгая замеченная пауза около5сек при дискретном опросе5сек. Окно скрыто,volume0, без seek/Next/ручной помощи. Результат .tools/wave-soak-result.json, тестовая база .tools/native-soak-60min-20261104. После прогона mini/restore/topmost/maximized/single-instance PASS; собственный тестовый экземпляр завершён. Проверялся baseline025ab78, до новых recovery/autostart/feedback изменений. Это ограниченная Windows проверка, не100% гарантия внешних сервисов и не Linux/macOS runtime.
+
+По явной последней инструкции пользователя дальнейшая разработка и новые тесты остановлены. Recovery7634ff4 и autostartecfe73c: renderer58PASS+1skipped, native приёмка новых сценариев ещё НЕ выполнялась. Незакоммиченный refactor feedback.rs/feedback-ui.ts и новый feedback.spec.ts:4целевых Rust и2целевых rendererPASS, полного регрессионного/native прогона после него нет. Не объявлять срез полностью готовым. Настоящие preference writes и OSautostart enable не выполнялись. ПК не выключать: текущая инструкция — записать результат и остановиться.
+
+## 2026-11-04: продолжение после команды «работай», реакции
+
+Последняя команда пользователя возобновила работу. Завершён refactor реакций: network вне cache lock, отдельная последовательная доставка, generation guards, overlay всех pending (проверено60), доступные известные кнопки во время refresh, rollback ошибки. ADR-024. Полный renderer60PASS+1opt-in skipped; Rust35app+5probePASS,9ignored;Clippy иfrontendbuildPASS.
+
+Native свежей сборки: запуск --encore-autostart в tray/без autoplay/Open PASS; OS setting read +testMode mutationguard PASS без записи startup; реальные personal library/chart/feedbackGET snapshot PASS. WebView CDP outage запустился, сохраняет track/history и уважает Pause, но проверка восстановленной позиции FAILED; расследуется, не объявлять этот recovery nativePASS. Системная сеть не менялась. CIecfe73c Windows/LinuxPASS, macIntel/macARMCANCELLED: annotations сообщают отсутствие hosted runner/capacity, failedsteps отсутствуют.

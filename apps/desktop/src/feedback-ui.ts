@@ -4,15 +4,16 @@ export function mountFeedback(current:()=>{id:string}|undefined,next:()=>void){
  const like=document.getElementById('like') as HTMLButtonElement,dislike=document.getElementById('dislike') as HTMLButtonElement;
  const notice=document.getElementById('feedback-notice')!;
  let knownGeneration=0;
+ const saving=new Set<string>();
  let epoch=0,record:Reaction|undefined,syncing=false,attempt=0,needsSync=false;
  let retry:ReturnType<typeof setTimeout>|undefined,undoTimer:ReturnType<typeof setTimeout>|undefined;
  const notify=(trackId:string,state:number,pending=false)=>window.dispatchEvent(new CustomEvent('feedback-changed',{detail:{trackId,state,pending}}));
  const call=<T>(request:object)=>invoke<T>('feedback_command',{request});
  function paint(){like.textContent=record?.state===1?'♥':'♡';like.setAttribute('aria-pressed',String(record?.state===1));dislike.setAttribute('aria-pressed',String(record?.state===-1));like.title=record?.state===1?'Убрать из любимого':'Добавить в любимое';}
  async function refresh(){
-  const revision=++epoch,id=current()?.id;record=undefined;like.disabled=dislike.disabled=true;paint();
+  const revision=++epoch,id=current()?.id;if(record?.trackId!==id)record=undefined;like.disabled=dislike.disabled=!record||!!id&&saving.has(id);paint();
   if(!isTauri()||!id||!/^\d+$/.test(id))return;
-  try{const value=await call<Reaction>({type:'get',trackId:id});if(revision!==epoch||!value)return;if((value.generation??knownGeneration)<knownGeneration){void refresh();return;}knownGeneration=value.generation??knownGeneration;if(Array.isArray(value.excludedTrackIds))window.dispatchEvent(new CustomEvent('feedback-snapshot',{detail:{excluded:value.excludedTrackIds}}));window.dispatchEvent(new CustomEvent('feedback-observed',{detail:{trackId:id,state:value.state}}));record=value;like.disabled=dislike.disabled=false;paint();}
+  try{const value=await call<Reaction>({type:'get',trackId:id});if(revision!==epoch||!value)return;if((value.generation??knownGeneration)<knownGeneration){void refresh();return;}knownGeneration=value.generation??knownGeneration;if(Array.isArray(value.excludedTrackIds))window.dispatchEvent(new CustomEvent('feedback-snapshot',{detail:{excluded:value.excludedTrackIds}}));window.dispatchEvent(new CustomEvent('feedback-observed',{detail:{trackId:id,state:value.state}}));record=value;like.disabled=dislike.disabled=saving.has(id);paint();}
   catch{if(revision===epoch){like.title=dislike.title='Реакции недоступны: проверьте подключение Яндекса';}}
  }
  function schedule(delay:number){clearTimeout(retry);retry=setTimeout(()=>void sync(),delay);}
@@ -23,9 +24,9 @@ export function mountFeedback(current:()=>{id:string}|undefined,next:()=>void){
   finally{syncing=false;}
  }
  function set(disliked:boolean){
-  const previous=record;if(!previous)return;
+  const previous=record;if(!previous||saving.has(previous.trackId))return;
   const id=previous.trackId,state=disliked?-1:previous.state===1?0:1;
-  const revision=epoch;like.disabled=dislike.disabled=true;record={...previous,state,pending:true};paint();
+  saving.add(id);like.disabled=dislike.disabled=true;record={...previous,state,pending:true};paint();
   clearTimeout(undoTimer);delete notice.dataset.action;notice.replaceChildren();
   const promise=call<Reaction>({type:'set',trackId:id,state});notify(id,state,true);
   if(disliked){
@@ -35,10 +36,10 @@ export function mountFeedback(current:()=>{id:string}|undefined,next:()=>void){
    notice.append(message,undo);undoTimer=setTimeout(()=>{undo.remove();},5000);next();
   }else notice.textContent=state===1?'Добавляем в любимое…':'Убираем из любимого…';
   void promise.then(saved=>{
-   knownGeneration=Math.max(knownGeneration,saved.generation??0);needsSync=true;if(revision===epoch){record=saved;like.disabled=dislike.disabled=false;paint();}
+   saving.delete(id);const accepted=(saved.generation??knownGeneration)>=knownGeneration;knownGeneration=Math.max(knownGeneration,saved.generation??0);needsSync=true;if(current()?.id===id){if(accepted)record=saved;like.disabled=dislike.disabled=!record;paint();}
    if(!disliked)notice.textContent='Реакция сохранена. Синхронизируем с Яндексом…';
    notify(id,state);void sync();
-  }).catch(()=>{notify(id,previous.state);notice.textContent='Не удалось сохранить реакцию. Проверьте подключение аккаунта и локальное хранилище.';if(revision===epoch)void refresh();});
+  }).catch(()=>{saving.delete(id);notify(id,previous.state);notice.textContent='Не удалось сохранить реакцию. Проверьте подключение аккаунта и локальное хранилище.';if(current()?.id===id){if((record?.generation??0)<=(previous.generation??0))record=previous;void refresh();}});
  }
  like.onclick=()=>set(false);dislike.onclick=()=>set(true);
  window.addEventListener('online',()=>{attempt=0;void sync();});

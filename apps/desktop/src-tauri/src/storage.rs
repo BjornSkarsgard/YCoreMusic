@@ -194,10 +194,20 @@ impl Store {
         self.reaction(uid, track)?.ok_or("Feedback unavailable")
     }
     pub fn pending_reactions(&self, uid: &str) -> Result<Vec<Reaction>, &'static str> {
+        self.pending_reactions_limit(uid, 25)
+    }
+    pub fn pending_profile_reactions(&self, uid: &str) -> Result<Vec<Reaction>, &'static str> {
+        self.pending_reactions_limit(uid, -1)
+    }
+    fn pending_reactions_limit(
+        &self,
+        uid: &str,
+        limit: i64,
+    ) -> Result<Vec<Reaction>, &'static str> {
         let connection = self.0.lock().map_err(|_| "Storage unavailable")?;
-        let mut statement=connection.prepare("SELECT track_id,state,revision FROM track_feedback WHERE account_id=?1 AND pending=1 ORDER BY updated_at LIMIT 25").map_err(|_|"Cannot read outbox")?;
+        let mut statement=connection.prepare("SELECT track_id,state,revision FROM track_feedback WHERE account_id=?1 AND pending=1 ORDER BY updated_at LIMIT ?2").map_err(|_|"Cannot read outbox")?;
         let rows = statement
-            .query_map([uid], |row| {
+            .query_map(params![uid, limit], |row| {
                 Ok(Reaction {
                     track_id: row.get(0)?,
                     state: row.get(1)?,
