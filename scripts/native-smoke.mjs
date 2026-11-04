@@ -330,21 +330,23 @@ try {
     if(soakMinutes>0){
       assert(Number.isFinite(soakMinutes)&&soakMinutes<=120,'Soak must be at most two hours');
       const started=Date.now(),deadline=started+soakMinutes*60000;
-      let transitions=0,previous='',waitingSince=0,longestWaitMs=0,lastReport=0;
+      let transitions=0,previous='',waitingSince=0,longestWaitMs=0,lastReport=0,playingSamples=0,waitingSamples=0,maxFrames=0;
       await nativeInvoke('desktop_close');
       while(Date.now()<deadline){
         const sample=await execute('return {title:document.getElementById("track-title").textContent,status:document.getElementById("status").textContent,frames:document.querySelectorAll("iframe").length}');
-        assert(sample.frames<=1,'Soak found multiple IFrames');
+        assert(sample.frames<=1,'Soak found multiple IFrames');maxFrames=Math.max(maxFrames,sample.frames);
+        if(sample.status==='Воспроизведение')playingSamples++;else waitingSamples++;
         if(previous&&sample.title!==previous)transitions++;previous=sample.title;
         if(sample.status==='Воспроизведение'){if(waitingSince)longestWaitMs=Math.max(longestWaitMs,Date.now()-waitingSince);waitingSince=0;}else if(!waitingSince)waitingSince=Date.now();
         if(Date.now()-lastReport>=60000){
-          lastReport=Date.now();const result={elapsedMinutes:Math.floor((Date.now()-started)/60000),transitions,longestWaitSeconds:Math.round(longestWaitMs/1000),hidden:true,muted:true};
+          lastReport=Date.now();const result={elapsedMinutes:Math.floor((Date.now()-started)/60000),transitions,longestWaitSeconds:Math.round(Math.max(longestWaitMs,waitingSince?Date.now()-waitingSince:0)/1000),playingSamples,waitingSamples,maxFrames,hidden:true,muted:true};
           writeFileSync(resolve(root,'.tools/wave-soak-progress.json'),JSON.stringify(result,null,2));console.log('Native Wave soak: '+JSON.stringify(result));
         }
         await sleep(5000);
       }
       if(waitingSince)longestWaitMs=Math.max(longestWaitMs,Date.now()-waitingSince);
-      const result={minutes:soakMinutes,transitions,longestWaitSeconds:Math.round(longestWaitMs/1000),hidden:true,muted:true,completed:true};
+      assert(playingSamples>0,'Soak never observed playback');
+      const result={minutes:soakMinutes,transitions,longestWaitSeconds:Math.round(longestWaitMs/1000),playingSamples,waitingSamples,maxFrames,hidden:true,muted:true,completed:true};
       writeFileSync(resolve(root,'.tools/wave-soak-result.json'),JSON.stringify(result,null,2));
       await nativeInvoke('desktop_action',{action:'open'});
       console.log('Native unaccelerated Wave soak complete: '+JSON.stringify(result));

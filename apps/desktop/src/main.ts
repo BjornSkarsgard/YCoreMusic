@@ -30,6 +30,35 @@ let playerReady = false;
 let activeVideo:QueueInput|undefined;
 interface PlayRecord {event:{playbackId:string;trackId:string;title:string;artist:string;videoId:string};recorded:boolean;pending:boolean}
 let activeRecord:PlayRecord|undefined;
+let lastKnownPosition=0,networkOffline=!navigator.onLine;
+let playbackRecovery: {id:string;position:number;record?:PlayRecord;attempts:number;ended:boolean}|undefined;
+let playbackRetry:ReturnType<typeof setTimeout>|undefined;
+function cancelPlaybackRecovery(reset=true){clearTimeout(playbackRetry);playbackRetry=undefined;if(reset)playbackRecovery=undefined;}
+function holdPlayback(ended=false){
+  if(!activeVideo?.videoId)return;
+  const position=playerReady?player?.getCurrentTime():undefined;if(position!==undefined&&Number.isFinite(position)&&position>0)lastKnownPosition=position;
+  playbackRecovery??={id:activeVideo.videoId,position:lastKnownPosition,record:activeRecord,attempts:0,ended:false};
+  playbackRecovery.ended ||= ended;
+}
+function recoverPlayback(immediate=false){
+  if(!playIntent||powerPaused||!activeVideo?.videoId)return;
+  holdPlayback();const recovery=playbackRecovery!;
+  if(networkOffline){report('Нет сети · сохраняем трек и позицию, ждём подключения.');return;}
+  if(playbackRetry)return;
+  if(recovery.attempts>=2&&canSkip()){
+    cancelPlaybackRecovery();trackDeadline=Date.now()+24000;tryAlternative(queue.generation,queue.current?.ordinal);return;
+  }
+  const current=generation,epoch=queue.generation,revision=sourceRevision,intent=intentRevision;
+  const delay=immediate?0:Math.min(30000,2000*2**Math.min(recovery.attempts,4));
+  report('Восстанавливаем текущий клип'+(delay?' · повтор через '+delay/1000+' с':''));
+  playbackRetry=setTimeout(()=>{
+    playbackRetry=undefined;
+    if(!playIntent||powerPaused||networkOffline||current!==generation||epoch!==queue.generation||revision!==sourceRevision||intent!==intentRevision||playbackRecovery!==recovery)return;
+    if(recovery.ended){cancelPlaybackRecovery();if(repeatMode==='one')void repeatVideo(recovery.id,activeAutomatic);else void advance(playIntent);return;}
+    recovery.attempts++;
+    void loadVideo(recovery.id,true,activeAutomatic,{position:recovery.position,record:recovery.record,recovery:true});
+  },delay);
+}
 let activeAutomatic=false;
 let youtubeControls=false;
 const captionControls=new CaptionControls(element<HTMLSelectElement>('captions'),element<HTMLSelectElement>('caption-size'),element('player-options-status'));
@@ -101,7 +130,8 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
   element<HTMLDialogElement>('video-dialog').close();
   void loadVideo(id);
 });
-async function loadVideo(id:string,resume=false,automatic=false,restore?:{position:number;record?:PlayRecord}) {
+async function loadVideo(id:string,resume=false,automatic=false,restore?:{position:number;record?:PlayRecord;recovery?:boolean}) {
+  if(!restore?.recovery)cancelPlaybackRecovery();
   previousGesture.reset();
   element<HTMLButtonElement>('previous').disabled=false;
   const sourceGeneration=queue.generation, ordinal=queue.current?.ordinal;
@@ -120,6 +150,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
   mediaTitle=trackAtLoad?.title??'YouTube · '+id;mediaArtist=trackAtLoad?.artist??'';
   if(!trackAtLoad){element('track-title').textContent=mediaTitle;element('track-artist').textContent='';element('source-name').textContent='Свой клип';}
   activeVideo={id:trackAtLoad?.id??'manual:'+id,title:mediaTitle,artist:mediaArtist,videoId:id};
+  lastKnownPosition=restore?.position??0;
   refreshVideoFavorites();ensureAlternatives();
   mediaPlayback='stopped';publishMedia();
   const playEvent={playbackId:Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join(''),trackId:trackAtLoad?.id ?? 'manual:'+id,title:trackAtLoad?.title ?? 'YouTube · '+id,artist:trackAtLoad?.artist ?? '',videoId:id};
@@ -139,7 +170,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
     if (current !== generation) return;
     let ready = false;
     const timer = setTimeout(() => {
-      if (current === generation && !ready) { ++generation; enabled(false); playerReady = false; player?.destroy(); player = undefined; report('Видео не подготовилось вовремя. Проверьте сеть и повторите загрузку.'); if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); }
+      if (current === generation && !ready) { ++generation; enabled(false); playerReady = false; player?.destroy(); player = undefined; report('Видео не подготовилось вовремя. Проверьте сеть и повторите загрузку.'); if(networkOffline||restore?.recovery)recoverPlayback();else if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); }
     }, automatic?12000:20000);
     if (!document.getElementById('player')) { const mount = document.createElement('div'); mount.id = 'player'; document.querySelector('.screen')!.prepend(mount); }
     player = new YT.Player('player', {
@@ -161,10 +192,10 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
           intentUI();
           report(states[event.data] ?? `Состояние ${event.data}`);
-          if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); captionControls.refresh(event.target);if(playIntent&&!powerPaused) event.target.playVideo(); }
+          if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); captionControls.refresh(event.target);if(playIntent&&!powerPaused){if(networkOffline){holdPlayback();report('Нет сети · клип подготовлен, ждём подключения.');}else event.target.playVideo();} }
           if(event.data===1) {
             if(powerPaused||(!playIntent&&!youtubeControls)){event.target.pauseVideo();return;}
-            playIntent=true;clearRetry();skipStreak=0;retryAttempt=0;bufferingSince=0;loadStarted=0;intentUI();
+            playIntent=true;cancelPlaybackRecovery();clearRetry();skipStreak=0;retryAttempt=0;bufferingSince=0;loadStarted=0;intentUI();
             if(trackAtLoad)lastPlayedVideos.set(trackAtLoad.id,id);
             if(trackAtLoad)unavailableHistoryTracks.delete(trackAtLoad.id);
             captionControls.refresh(event.target,true);
@@ -174,22 +205,22 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
             }
           }
           if(event.data===2){if(youtubeControls)playIntent=false;else if(playIntent&&!bufferingSince)bufferingSince=Date.now();intentUI();}
-          if(event.data===3&&playIntent&&!bufferingSince)bufferingSince=Date.now();
+          if(event.data===3&&playIntent){if(!bufferingSince)bufferingSince=Date.now();if(networkOffline){holdPlayback();report('Нет сети · сохраняем трек и позицию, ждём подключения.');}}
           if(event.data===5||event.data===0)bufferingSince=0;
           if([0,1,2,5].includes(event.data)){mediaPlayback=event.data===1?'playing':event.data===0?'stopped':'paused';publishMedia();}
-          if(event.data===0 && !powerPaused){if(repeatMode==='one')void repeatVideo(id,automatic);else if(queue.current)void advance(playIntent);}
+          if(event.data===0 && !powerPaused){if(networkOffline&&playIntent){holdPlayback(true);report('Клип завершён · ждём сеть перед следующим.');return;}if(repeatMode==='one')void repeatVideo(id,automatic);else if(queue.current)void advance(playIntent);}
         },
-        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(isTauri()&&trackAtLoad&&/^\d+$/.test(trackAtLoad.id)&&[2,100,101,150].includes(event.data))void storage({type:'video_failed',trackId:trackAtLoad.id,videoId:id}).then(refreshVideoFavorites).catch(()=>{}); if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); } },
+        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); if(networkOffline){holdPlayback();recoverPlayback();return;}if(restore?.recovery&&event.data===5){recoverPlayback();return;}report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(isTauri()&&trackAtLoad&&/^\d+$/.test(trackAtLoad.id)&&[2,100,101,150].includes(event.data))void storage({type:'video_failed',trackId:trackAtLoad.id,videoId:id}).then(refreshVideoFavorites).catch(()=>{}); if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); } },
         onApiChange:event=>{if(current===generation)captionControls.refresh(event.target);},
         onPlaybackQualityChange:event=>{if(current===generation)element('video-quality').textContent='Качество: '+qualityLabel(event.data);},
         onAutoplayBlocked: () => { if (current === generation) report('YouTube заблокировал Play. Откройте панель YouTube и нажмите Play на видео.'); },
       },
     });
-  } catch (error) { if (current === generation){report(error instanceof Error ? error.message : 'Ошибка загрузки');if(automatic&&playIntent)deferWave('Ждём YouTube',()=>void loadVideo(id,playIntent,true),5000);} }
+  } catch (error) { if (current === generation){report(error instanceof Error ? error.message : 'Ошибка загрузки');if(networkOffline||restore?.recovery){recoverPlayback();return;}if(automatic&&playIntent)deferWave('Ждём YouTube',()=>void loadVideo(id,playIntent,true),5000);} }
 }
 element('play').onclick = () => systemControl('play');
 element('pause').onclick = () => systemControl('pause');
-function seek(delta: number) { previousGesture.reset(); if (player) player.seekTo(Math.max(0, Math.min(player.getDuration(), player.getCurrentTime() + delta)), true); }
+function seek(delta: number) { previousGesture.reset(); if(playerReady&&player){lastKnownPosition=Math.max(0,Math.min(player.getDuration(),player.getCurrentTime()+delta));if(playbackRecovery)playbackRecovery.position=lastKnownPosition;player.seekTo(lastKnownPosition,true);} }
 element('back').onclick = () => seek(-5);
 element('forward').onclick = () => seek(5);
 function updateVolume(){
@@ -209,11 +240,12 @@ function clock(seconds: number): string {
 const seekInput = element<HTMLInputElement>('seek');
 let dragging = false;
 seekInput.oninput = () => { dragging = true; element('elapsed').textContent = clock(Number(seekInput.value)); seekInput.title = clock(Number(seekInput.value)); };
-seekInput.onchange = () => { previousGesture.reset(); if (playerReady) player?.seekTo(Number(seekInput.value), true); dragging = false; };
+seekInput.onchange = () => { previousGesture.reset(); if(playerReady){lastKnownPosition=Number(seekInput.value);if(playbackRecovery)playbackRecovery.position=lastKnownPosition;player?.seekTo(lastKnownPosition,true);} dragging = false; };
 const positionTimer = setInterval(() => {
   if (!playerReady || !player) { seekInput.disabled = true; return; }
   const duration = player.getDuration();
   const position = player.getCurrentTime();
+  if(Number.isFinite(position)&&position>=0&&(position>0||mediaPlayback==='playing'))lastKnownPosition=position;
   if(Date.now()-lastMediaPublish>=2000)publishMedia();
   seekInput.disabled = duration <= 0;
   seekInput.max = String(duration);
@@ -223,6 +255,7 @@ const positionTimer = setInterval(() => {
 window.addEventListener('beforeunload', () => { clearInterval(positionTimer); player?.destroy(); });
 
 function stopPlayer() {
+  cancelPlaybackRecovery();
   element('video-alternatives').hidden=true;
   activeVideo=undefined;activeRecord=undefined;captionControls.reset();
   refreshVideoFavorites();
@@ -269,6 +302,7 @@ function deferWave(message:string,action:()=>void=()=>prepareAhead(),minimum=100
 function canSkip(){return playIntent&&!powerPaused&&(!finiteSource||!!document.fullscreenElement);}
 let skipQueued=false;
 function skipUnavailable(message:string){
+  if(networkOffline){report('Нет сети · очередь сохранена, ждём подключения.');return;}
   if(skipQueued||(!finiteSource&&retryTimer))return;
   if(!canSkip()) {if(finiteSource)playIntent=false;intentUI();report(message+' · можно выбрать другой клип');element<HTMLButtonElement>('play').disabled=false;return;}
   if(historySource&&queue.current&&!excludedTracks.has(queue.current.id))unavailableHistoryTracks.add(queue.current.id);
@@ -355,7 +389,7 @@ function historyFetch(fresh:boolean,autoplay=playIntent,quiet=false):Promise<boo
   })();return historyWork;
 }
 element('history-smart').onclick=()=>{powerPaused=false;unavailableHistoryTracks.clear();void historyFetch(true,true);};
-element('queue-next').onclick=()=>void advance(playIntent);
+element('queue-next').onclick=()=>void advance(playIntent,true);
 element('find-video').onclick=()=>{
   if(!queue.current)return;
   const track=queue.current,epoch=queue.generation,ordinal=track.ordinal;
@@ -446,6 +480,7 @@ function ensureAlternatives(){
 function tryAlternative(epoch:number,ordinal:number|undefined){
   queueMicrotask(()=>{
     if(epoch!==queue.generation||ordinal!==queue.current?.ordinal)return;
+    if(networkOffline){holdPlayback();report('Нет сети · сохраняем трек и позицию, ждём подключения.');return;}
     queue.clearVideo(ordinal!);const key=epoch+':'+ordinal,entry=choices.get(key);
     if(entry){
       ++entry.index;
@@ -465,7 +500,7 @@ const searchErrors=new Map<string,number>();
 const matchJobs=new Map<string,Promise<Candidate[]>>();
 function prepareAhead(){
   intentUI();
-  if(!isTauri()||startingSource||sourceNeedsFresh||!queue.current)return;
+  if(!isTauri()||startingSource||sourceNeedsFresh||!queue.current||networkOffline)return;
   if(!finiteSource&&playIntent&&(excludedTracks.has(queue.current.id)||(historySource&&unavailableHistoryTracks.has(queue.current.id)))){skipUnavailable('Трек сейчас недоступен для этой подборки');return;}
   const epoch=queue.generation;
   ensureAlternatives();
@@ -515,7 +550,8 @@ function prepareAhead(){
   if(!finiteSource&&playIntent&&queue.ahead(10).length<8&&!sourceWork&&!historyWork&&!retryTimer){if(historySource){if(!historyExhausted)void historyFetch(false);}else void sourceFetch(false);}
 }
 let advancing=false;
-async function advance(resume:boolean){
+async function advance(resume:boolean,explicit=false){
+  if(networkOffline&&!explicit){holdPlayback(true);report('Нет сети · очередь сохранена, ждём подключения.');return;}
   if(advancing||!queue.current||startingSource)return;
   advancing=true;previousGesture.reset();playIntent=resume&&!powerPaused;
   const epoch=queue.generation;
@@ -612,15 +648,15 @@ function systemControl(action:string){
   if(action==='play'||action==='pause')intentRevision++;
   switch(action){
     case 'toggle':systemControl(playIntent?'pause':'play');break;
-    case 'play':powerPaused=false;playIntent=true;clearRetry();if(!finiteSource&&queue.current&&excludedTracks.has(queue.current.id)){prepareAhead();break;}if(sourceNeedsFresh)void sourceFetch(true,true);else if(playerReady)player?.playVideo();else if(activeVideo?.videoId&&queue.current?.videoId)void loadVideo(activeVideo.videoId,true,activeAutomatic);else{element<HTMLButtonElement>('pause').disabled=false;prepareAhead();}break;
-    case 'pause':historyStarting=false;playIntent=false;clearRetry();player?.pauseVideo();if(queue.current)element<HTMLButtonElement>('play').disabled=false;break;
-    case 'next':void advance(playIntent);break;
+    case 'play':powerPaused=false;playIntent=true;cancelPlaybackRecovery(false);clearRetry();if(playbackRecovery){recoverPlayback(true);break;}if(!finiteSource&&queue.current&&excludedTracks.has(queue.current.id)){prepareAhead();break;}if(sourceNeedsFresh)void sourceFetch(true,true);else if(playerReady)player?.playVideo();else if(activeVideo?.videoId&&queue.current?.videoId)void loadVideo(activeVideo.videoId,true,activeAutomatic);else{element<HTMLButtonElement>('pause').disabled=false;prepareAhead();}break;
+    case 'pause':historyStarting=false;playIntent=false;cancelPlaybackRecovery(false);clearRetry();player?.pauseVideo();if(queue.current)element<HTMLButtonElement>('play').disabled=false;break;
+    case 'next':void advance(playIntent,true);break;
     case 'previous':element('previous').click();break;
   }
   intentUI();
 }
 function powerPause(resume:boolean){
-  powerPaused=true;historyStarting=false;playIntent=false;clearRetry();intentUI();
+  powerPaused=true;historyStarting=false;playIntent=false;cancelPlaybackRecovery(false);clearRetry();intentUI();
   if(!resume)suspendPosition=playerReady?player?.getCurrentTime():undefined;
   player?.pauseVideo();
   if(resume && suspendPosition!==undefined && playerReady)player?.seekTo(suspendPosition,true);
@@ -693,18 +729,27 @@ window.addEventListener('feedback-snapshot',event=>{
   for(const [id,state] of pendingReactionStates){if(state===-1)excludedTracks.add(id);else excludedTracks.delete(id);}
   historyExhausted=false;if(!finiteSource)prepareAhead();
 });
-refreshFeedback=mountFeedback(()=>queue.current,()=>void advance(playIntent));
+refreshFeedback=mountFeedback(()=>queue.current,()=>void advance(playIntent,true));
 refreshVideoFavorites=mountVideoFavorites(()=>queue.current&&activeVideo?.id===queue.current.id?{trackId:queue.current.id,videoId:activeVideo.videoId,key:queue.generation+':'+queue.current.ordinal}:undefined,id=>void loadVideo(id,playIntent,true),id=>void favoritesChanged(id),id=>choices.get(queue.generation+':'+queue.current?.ordinal)?.items.find(item=>item.id===id)?.title);
 mountShellNavigation();
 mountFullscreenControls(document.querySelector<HTMLElement>('.workspace')!,document.querySelector<HTMLElement>('.player-hud')!);
 
 const streamWatchdog=setInterval(()=>{
  if(!playIntent||powerPaused||!activeVideo)return;
+ if(networkOffline)return;
+ if(playbackRetry)return;
  if(canSkip() && playerReady && loadStarted && Date.now()-loadStarted>15000){loadStarted=0;tryAlternative(queue.generation,queue.current?.ordinal);return;}
- if(bufferingSince && Date.now()-bufferingSince>45000){bufferingSince=0;tryAlternative(queue.generation,queue.current?.ordinal);}
+ if(bufferingSince && Date.now()-bufferingSince>15000){bufferingSince=0;recoverPlayback();}
  if(!finiteSource&&!startingSource)prepareAhead();
 },1000);
-window.addEventListener('beforeunload',()=>{clearInterval(streamWatchdog);clearRetry();});
+window.addEventListener('offline',()=>{networkOffline=true;cancelPlaybackRecovery(false);clearRetry();if(bufferingSince||(!playerReady&&activeVideo))holdPlayback();});
+window.addEventListener('online',()=>{
+  networkOffline=false;
+  if(!playIntent||powerPaused)return;
+  if(playbackRecovery){recoverPlayback(true);return;}
+  if(!activeVideo){searchErrors.delete(queue.generation+':'+queue.current?.ordinal);prepareAhead();}
+});
+window.addEventListener('beforeunload',()=>{clearInterval(streamWatchdog);cancelPlaybackRecovery();clearRetry();});
 if(isTauri())void invoke<{id:string,title:string}[]>('source_stations').then(stations=>{
  if(!Array.isArray(stations))return;const select=element<HTMLSelectElement>('station-select');
  for(const station of stations){const option=new Option(station.title,station.id);select.append(option);}
