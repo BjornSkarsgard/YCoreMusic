@@ -85,3 +85,25 @@ REQ-006: native history accepts optional beforeId and returns100 ordered events,
 ## Возобновлено по команде «работай», 2026-11-04
 
 Реакции сохранены в40c3702:35app+5probeRust,60UIpass+1skipped,Clippy,allpending60+parallelSet/refresh/syncPASS. Новая диагностика и nativeexpectationfix завершены:36app+5probe,61UIpass+1skipped,9TSunit,Clippy/buildPASS. Настоящие native autostart argument/duplicate guard, library/readfeedbackGET, fullYT/CC/fullscreen/quality/tray/media/history/repeat/mini/topmost/maximizedPASS. OSautostart enable не выполнялся. WebViewCDP20сoutagePASS, target940held958after959, latestbufferposition preserved,record/cursorstable,Pause respected. Старое native failure было сравнением с940 вместо958; исправлен testoracle. Native-test свободен, обычныйdebugexeобновлён. MacCI cancellations объяснены нехваткой hostedrunner, не failedstep. Далее подготовка installer artifacts, без установки на пользовательский ПК.
+
+## Остановка по лимиту — 2026-11-04, источник истины для следующего продолжения
+
+Последняя команда пользователя «работай» возобновила самостоятельную работу. Сейчас осталось9%пятичасового лимита; новые функции не начинать. ПК не выключать по старой ночной инструкции. Последний commitc4b5c88, mainпушнут, рабочее дерево до этой записи чистое.
+
+Что закончено в этом продолжении:
+-40c3702:network-free cachecriticalsection реакций, отдельные refresh/syncguards, generation, allpending60, UIknownreaction usability. Реальные preferenceswrites в тестах запрещены.
+-428a444:диагностика version/platform/storage/Yandexenum без token/UID/login; explicitreadonlyaccountcheck. RealWindowsRecoveryCDP20секPASS:target940,bufferheld958,after959,record/cursorstable,Pause respected. FullnativeYT/CC/fullscreen/quality/tray/media/history/repeat/keys/mini/topmost/maximized/instancePASS.
+-d9b2f0d и5e97b75:opt-in packagingconfig/commands/workflow, актуальныйREADME вместо старого«Этап0нетфункций». WindowsreleaseNSISсобран,не установлен/неподписан/не опубликован. Текущийфайл target/release/bundle/nsis/Encore_0.0.1_x64-setup.exe;SHA25608171F4801A5C1648FD571B291F1F9F6B26FF0F662B6E26BCD5BFF00216F7603,manifest.tools/windows-package-result.json sourcec4b5c88. Debugexe тожеобновлён. Linuxpackage41867671860PASS:DEB/AppImageв.tools/linux-packages-41867671860,hash/controlmetadata.tools/linux-package-result.json. ЭтиLinuxпакетыстарее1460115(нетновогофильтрадат);не считать их текущимполнымsnapshot.
+-1460115:historydatescollapsed/inclusivelocalcalendar/DST25h/nativeUTCsecondbounds+keyset,cleardialogвсяистория.37app+5probeRustPASS/9ignored,Clippy/check/buildPASS;62rendererPASS+1skipped;Windowsnativebasicдаты/пагинация/очистка/миниPASS.
+-014bd55:общаяthumbnailfixtureвmocktests,livebrowserYouTubeпочиненподdialog/rangeinputиPASS (cue/explicitmutePlay/Pause/seek). Productionmockсетьнеиспользуеткартинки.
+-c4b5c88:summary/rolebuttonSpaceguard;3targetedkeyboardPASS,debug+releasepackagePASS. Native-testбинарникещёдоэтогооднострочногоguard;передновымnativeпрогономпересобратьfront+native-test.
+
+Linux runtime расследование (НЕ объявлять готовым):
+-41871384767 и41872740067:настоящийGTKstartup/noautoplay/autostartarg/diag/SQLite/history/datesPASS;topmostfalseдажепосле5сек.
+-TaoLinuxsetterотправляетWindowRequest;getterчитаетABOVEпоWindowStateevent. Простоожиданиенеисправилопроблему.
+-8758ad0: XvfbпередDBus,Openboxreadycheck,xpropдиагностика;41873691768тожеtopmostfalse. Fixedtitle«Encore·нативнаяпроверка»не найден;возможноWebKitменяетtitle. Root_NET_SUPPORTING_WM_CHECKесть,processstatusvisibletrue.
+-9ff16da:newdiagnosticenumerates_NET_CLIENT_LISTиоставляеттолькоPIDappPid;читаетсяEWMHstateсвоихокон. Это должно показатьреальныйmanagedwindow/ABOVEбезлоговчужихокон. Run41874314737зависнаAPT/WebKitGTKустановке>18мин,доappнедошёл. Обычныйcancelзапрошен,затемforcecancelпередэтойзаписью. Проверитьитог/логи;покарезультатPIDдиагностикиНЕполучен.
+-Workflow.native-linux.ymlиспользуетDBus+Xvfb+Openbox,WEBKIT_DISABLE_DMABUF_RENDERER/LIBGL_ALWAYS_SOFTWAREтольковCI. НЕWayland/неplayback/неSecretServiceреальногоаккаунта. Rustcacheдобавлен397f887в3workflow,cache-on-failuretrue.
+-MacARMpackage41870661876cancelled:hostedrunnercapacity/неполученrunner,неcodefailedstep. Macruntime не проверен. Не тратитьresetcredits,2свободныхне использовались.
+
+Следующее после явного продолжения: проверить завершение/логи41874314737,при необходимостиограничитьAPTconnecttimeoutsиDEBIAN_FRONTENDnoninteractive,получитьPID/EWMHдиагностикуLinuxиразобратьсясtopmost/WM. ЕслиABOVEреальноесть,аTaogetterfalse —исследоватьGTKcachedstate;еслинет —проверитьmapped/managedwindowиWebKitautomation. Не подменятьрезультатфальшивымPASS. ЗатемноваяLinuxупаковкатекущегокода,Macпри доступностиrunner. ОстаютсяUIOAuthвход,liveuserfeedbackwrites,listen-duration/quickskip(Q06неодобрен),physicalsleep/lock,multi-monitor/visualizer/remote. Ни installer,ниOSautostart на пользовательском ПК не запускались; пользовательские данные не удалялись.
