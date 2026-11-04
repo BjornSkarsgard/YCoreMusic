@@ -1,5 +1,32 @@
 import { test, expect } from './fixtures';
 
+test('guest can search, browse public collections and play chart clips while personal features require login',async({page})=>{
+ await page.addInitScript(()=>{
+  const w=window as any;w.isTauri=true;w.guestPrivate=false;w.guestWrites=0;
+  const tracks=[{id:'2',title:'Guest song',artist:'Fixture'},{id:'3',title:'Guest second',artist:'Fixture'}];
+  w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
+   if(command==='diagnostics_status')return {version:'0.0.1',platform:'windows',architecture:'x86_64',storageAvailable:true,yandex:'missing'};
+   if(command==='source_fetch'||command==='library_overview')throw 'No saved token. Connect Yandex Music in Settings.';
+   if(command==='feedback_command'){if(args.request.type==='set')w.guestWrites++;throw 'No saved token';}
+   if(command==='catalogue_search')return {artists:[{kind:'artist',id:'1',title:'Guest artist',subtitle:''}],albums:[{kind:'album',id:'3',title:'Guest album',subtitle:''}],playlists:[{kind:'playlist',id:'4',owner:'5',title:'Guest playlist',subtitle:''}],tracks,page:0};
+   if(command==='catalogue_collection'){if(w.guestPrivate)throw 'Authorization denied';return {title:'Public collection',tracks,hasMore:false,page:0};}
+   if(command==='discovery_fetch')return {title:'Guest chart',tracks,playlists:[],playlistsAvailable:false};
+   if(command==='search_videos')return [{id:'Aaaaaaaaaaa',title:args.title,score:100,reason:'fixture'}];
+  }};
+ });
+ await mockAutomaticPlayer(page);await page.goto('/');await page.locator('#account-welcome-later').click();
+ await page.locator('#catalogue-query').fill('Guest');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+ await expect(page.locator('#catalogue-results h3')).toHaveText(['Исполнители','Треки','Альбомы','Плейлисты']);
+ for(const title of ['Guest artist','Guest album','Guest playlist']){
+  await page.locator('.catalogue-card').filter({hasText:title}).click();await expect(page.locator('#catalogue-collection .catalogue-track')).toHaveCount(2);expect(await page.evaluate(()=>(window as any).played??[])).toEqual([]);await page.locator('#catalogue-back').click();
+ }
+ await page.locator('.catalogue-card').filter({hasText:'Guest playlist'}).click();await page.locator('#catalogue-play-all').click();await expect.poll(()=>page.evaluate(()=>(window as any).played[0])).toBe('Aaaaaaaaaaa');
+ await expect(page.locator('#like')).toBeDisabled();await expect(page.locator('#dislike')).toBeDisabled();
+ await page.locator('[data-panel=discovery]').click();await expect(page.locator('#discovery-content .discovery-track')).toHaveCount(2);await expect(page.locator('#discovery-status')).toContainText('Публичные плейлисты');await page.getByRole('button',{name:'▶ Включить чарт'}).click();await expect(page.locator('#source-name')).toHaveText('Guest chart');await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBe(2);await expect(page.locator('#player')).toHaveCount(1);
+ await page.locator('[data-panel=library]').click();await expect(page.locator('#library-status')).toContainText('Поиск и чарт доступны без входа');expect(await page.evaluate(()=>(window as any).guestWrites)).toBe(0);
+ await page.locator('[data-panel=search]').click();await page.locator('#catalogue-back').click();await page.evaluate(()=>(window as any).guestPrivate=true);await page.locator('.catalogue-card').filter({hasText:'Guest playlist'}).click();await expect(page.locator('#catalogue-status')).toContainText('нужен вход или доступ владельца');await expect(page.locator('#source-name')).toHaveText('Guest chart');
+});
+
 test('confirmed logout removes Wave and never substitutes local history for an authenticated source',async({page})=>{
  await page.addInitScript(()=>{
   const w=window as any;w.isTauri=true;w.smartCalls=0;

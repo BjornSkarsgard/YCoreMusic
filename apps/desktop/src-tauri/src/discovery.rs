@@ -1,16 +1,20 @@
 use crate::{
     catalogue::{self, Entity, Kind},
-    library,
+    credentials, library,
     source::Track,
     yandex,
 };
+use reqwest::{blocking::Client, redirect::Policy};
 use serde::Serialize;
 use serde_json::Value;
+use std::time::Duration;
 #[derive(Serialize)]
 pub struct Discovery {
     pub title: String,
     pub tracks: Vec<Track>,
     pub playlists: Vec<Entity>,
+    #[serde(rename = "playlistsAvailable")]
+    pub playlists_available: bool,
 }
 fn parse(chart: &Value, landing: &Value) -> Result<Discovery, &'static str> {
     let chart = chart
@@ -71,6 +75,9 @@ fn parse(chart: &Value, landing: &Value) -> Result<Discovery, &'static str> {
         }
     }
     Ok(Discovery {
+        playlists_available: landing
+            .pointer("/result/blocks")
+            .is_some_and(Value::is_array),
         title: chart
             .get("title")
             .and_then(Value::as_str)
@@ -89,15 +96,30 @@ fn number_id(value: &Value) -> Option<String> {
     library::valid_id(&id).then_some(id)
 }
 pub fn fetch() -> Result<Discovery, &'static str> {
-    let (client, auth, _) = library::context()?;
-    let chart = yandex::request_limited(&client, "landing3/chart", &auth, None, 16_000_000)?;
-    let landing = yandex::request_limited(
-        &client,
-        "landing3?blocks=playlists,new-playlists",
-        &auth,
-        None,
-        16_000_000,
-    )?;
+    let client = Client::builder()
+        .https_only(true)
+        .redirect(Policy::none())
+        .timeout(Duration::from_secs(20))
+        .connect_timeout(Duration::from_secs(8))
+        .build()
+        .map_err(|_| "Cannot initialize discovery client")?;
+    let auth = credentials::load()
+        .ok()
+        .and_then(|token| yandex::authorization(&token).ok());
+    let chart = yandex::public_request(&client, "landing3/chart", auth.as_ref(), 16_000_000)?;
+    // Guest landing currently rejects this request. It must not hide the public chart.
+    let landing = if let Some(auth) = auth.as_ref() {
+        yandex::request_limited(
+            &client,
+            "landing3?blocks=playlists,new-playlists",
+            auth,
+            None,
+            16_000_000,
+        )
+        .unwrap_or(Value::Null)
+    } else {
+        Value::Null
+    };
     parse(&chart, &landing)
 }
 #[tauri::command]
@@ -113,6 +135,20 @@ pub async fn discovery_fetch(window: tauri::WebviewWindow) -> Result<Discovery, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn unavailable_editorial_landing_does_not_hide_public_chart_or_reorder_tracks() {
+        let value = parse(&serde_json::json!({"result":{"chart":{"title":"Public chart","tracks":[{"track":{"id":"2","title":"Two","artists":[]}},{"track":{"id":"1","title":"One","artists":[]}}]}}}), &Value::Null).unwrap();
+        assert_eq!(
+            value
+                .tracks
+                .iter()
+                .map(|track| track.id.as_str())
+                .collect::<Vec<_>>(),
+            ["2", "1"]
+        );
+        assert!(!value.playlists_available);
+        assert!(value.playlists.is_empty());
+    }
     #[test]
     #[ignore = "Read-only live chart and editorial playlist probe"]
     fn live_discovery() {

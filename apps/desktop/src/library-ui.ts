@@ -19,7 +19,7 @@ export function mountLibrary(select:(selection:CatalogueSelection)=>void){
   if(!isTauri()){status.textContent='Подключите Яндекс в desktop-версии Encore.';return;}
   const epoch=++revision;status.textContent='Загрузка твоей музыки…';
   try{const value=await invoke<Overview>('library_overview');if(epoch!==revision)return;overview=value;stale=false;loadedAt=Date.now();home();status.textContent='Твои плейлисты и любимые треки из Яндекс Музыки.';}
-  catch{if(epoch===revision)status.textContent='Не удалось загрузить медиатеку. Проверьте сеть и подключение Яндекса.';}
+  catch(error){if(epoch===revision)status.textContent=/Authorization|credential|token/i.test(String(error))?'Для личных плейлистов и любимых треков войдите: Настройки → Яндекс Музыка. Поиск и чарт доступны без входа.':'Не удалось загрузить медиатеку. Проверьте сеть и подключение Яндекса.';}
  }
  async function open(entity:CatalogueEntity){
   const epoch=++revision;let tracks:Track[]=[],page=0,hasMore=false,busy=false;

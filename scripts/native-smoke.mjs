@@ -80,6 +80,18 @@ try {
   assert.deepEqual(Object.keys(diagnostics).sort(),['architecture','platform','storageAvailable','version','yandex']);
   if(process.env.ENCORE_LIVE_LIBRARY==='1')assert.equal((await nativeInvoke('diagnostics_status',{checkYandex:true})).yandex,'connected');
   console.log('Native diagnostics health and identity-free response: PASS');
+  if(process.env.ENCORE_LIVE_GUEST==='1'){
+    assert.equal(diagnostics.yandex,'missing','Guest test requires an already signed-out account; never delete user credentials for a test');
+    const result=await nativeInvoke('catalogue_search',{query:'Rammstein',page:0});
+    assert(result?.tracks.length&&result?.artists.length&&result?.albums.length&&result?.playlists.length);
+    for(const entity of [result.artists[0],result.albums[0],result.playlists[0]]){
+      const collection=await nativeInvoke('catalogue_collection',{kind:entity.kind,id:entity.id,owner:entity.owner??null,page:0});assert(collection?.tracks.length);
+    }
+    const chart=await nativeInvoke('discovery_fetch');assert(chart?.tracks.length);assert.equal(chart.playlistsAvailable,false);
+    assert.equal(await nativeInvoke('source_fetch',{fresh:true,station:'user:onyourwave'}),null);
+    assert.equal(await nativeInvoke('library_overview'),null);
+    console.log('Native signed-out search/public collections/chart PASS; personal Wave/library remain unavailable');
+  }
 
 
   const fixture='native-fixture-'+Date.now();

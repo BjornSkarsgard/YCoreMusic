@@ -93,7 +93,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
      if(revision!==collectionRevision)return;
      opened={entity,tracks:append&&opened?[...opened.tracks,...response.tracks]:response.tracks,page:requestedPage,hasMore:response.hasMore};
      renderCollection();get('catalogue-status').textContent=opened.tracks.length?'Список загружен. Текущее воспроизведение не менялось.':'В этом списке нет доступных записей.';
-   }catch{if(revision===collectionRevision)get('catalogue-status').textContent='Не удалось открыть список. Проверьте доступ или повторите.';}
+   }catch(error){if(revision===collectionRevision)get('catalogue-status').textContent=/Authorization|credential|token/i.test(String(error))?'Для этого списка нужен вход или доступ владельца. Войти можно в Настройки → Яндекс Музыка.':'Не удалось открыть список. Проверьте доступ или повторите.';}
  }
  async function search(append:boolean){
    clearTimeout(timer);
@@ -101,7 +101,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    const revision=++searchRevision;
    get('catalogue-clear').hidden=!get<HTMLInputElement>('catalogue-query').value;
    if(text.length<2){clearResults();get('catalogue-status').textContent='Введите хотя бы два символа.';return;}
-   if(!isTauri()){setBusy(false);get('catalogue-status').textContent='Каталог Яндекса доступен в desktop-версии после подключения аккаунта.';return;}
+   if(!isTauri()){setBusy(false);get('catalogue-status').textContent='Каталог Яндекса доступен в приложении Encore, в том числе без входа.';return;}
    const requestedPage=append?page+1:0;
    get('catalogue-status').textContent='Поиск в Яндекс Музыке…';setBusy(true);
    if(!append){++collectionRevision;opened=undefined;collectionView(false);}
@@ -112,7 +112,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
      if(append&&query===text){results={...response,artists:[...results.artists,...response.artists],tracks:[...results.tracks,...response.tracks],albums:[...results.albums,...response.albums],playlists:[...results.playlists,...response.playlists]};}else results=response;
      page=requestedPage;query=text;render();hasSearchMore=count>0;get('catalogue-more').hidden=browsingCollection||!hasSearchMore;
      get('catalogue-status').textContent=count?(response.corrected?'Результаты Яндекса для «'+response.corrected+'».':'Результаты Яндекс Музыки.'):append?'Больше результатов нет.':'Ничего не найдено.';
-   }catch{if(revision===searchRevision)get('catalogue-status').textContent='Поиск недоступен. Проверьте сеть и подключение аккаунта.'+(query?' Показаны предыдущие результаты для «'+query+'».':'');}
+   }catch{if(revision===searchRevision)get('catalogue-status').textContent='Поиск недоступен. Проверьте сеть и повторите.'+(query?' Показаны предыдущие результаты для «'+query+'».':'');}
    finally{if(revision===searchRevision)setBusy(false);}
  }
  get<HTMLFormElement>('catalogue-search').onsubmit=event=>{event.preventDefault();void search(false);};

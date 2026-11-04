@@ -160,8 +160,9 @@ fn parse_results(value: &Value, page: u32) -> Result<Results, &'static str> {
     })
 }
 fn request(path: &str, params: &[(&str, String)]) -> Result<Value, &'static str> {
-    let token = credentials::load()?;
-    let auth = yandex::authorization(&token)?;
+    let auth = credentials::load()
+        .ok()
+        .and_then(|token| yandex::authorization(&token).ok());
     let client = Client::builder()
         .timeout(Duration::from_secs(20))
         .connect_timeout(Duration::from_secs(8))
@@ -177,7 +178,7 @@ fn request(path: &str, params: &[(&str, String)]) -> Result<Value, &'static str>
         .as_str()
         .strip_prefix("https://api.music.yandex.net/")
         .ok_or("Invalid catalogue origin")?;
-    yandex::request(&client, relative, &auth, None)
+    yandex::public_request(&client, relative, auth.as_ref(), 2_000_000)
 }
 pub fn search(query: &str, page: u32) -> Result<Results, &'static str> {
     if query.trim().chars().count() < 2 || query.len() > 512 || page > 1000 {
@@ -282,6 +283,48 @@ pub fn collection(
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    #[ignore = "Explicit read-only anonymous catalogue API probe; never reads credentials"]
+    fn live_guest_catalogue() {
+        let client = Client::builder()
+            .https_only(true)
+            .redirect(Policy::none())
+            .timeout(Duration::from_secs(20))
+            .build()
+            .unwrap();
+        let value = yandex::public_request(
+            &client,
+            "search?text=Rammstein&type=all&page=0",
+            None,
+            2_000_000,
+        )
+        .unwrap();
+        let result = parse_results(&value, 0).unwrap();
+        assert!(
+            !result.tracks.is_empty()
+                && !result.artists.is_empty()
+                && !result.albums.is_empty()
+                && !result.playlists.is_empty()
+        );
+        for entity in [&result.artists[0], &result.albums[0], &result.playlists[0]] {
+            let path = match entity.kind {
+                Kind::Artist => format!("artists/{}/tracks?page=0&page-size=50", entity.id),
+                Kind::Album => format!("albums/{}/with-tracks", entity.id),
+                Kind::Playlist => format!(
+                    "users/{}/playlists/{}",
+                    entity.owner.as_ref().unwrap(),
+                    entity.id
+                ),
+                Kind::Likes => unreachable!(),
+            };
+            let value = yandex::public_request(&client, &path, None, 2_000_000).unwrap();
+            assert!(!parse_collection(&value, entity.kind, 0)
+                .unwrap()
+                .tracks
+                .is_empty());
+        }
+        println!("Anonymous search/artist/album/public playlist: PASS (no credentials read)");
+    }
     #[test]
     fn all_sections_keep_ids_owner_and_server_order() {
         let value = json!({"result":{"misspellResult":"Rammstein","artists":{"results":[{"id":1,"name":"Rammstein"}]},"tracks":{"results":[{"id":2,"title":"Du hast","artists":[{"name":"Rammstein"}]}]},"albums":{"results":[{"id":3,"title":"Sehnsucht"}]},"playlists":{"results":[{"kind":4,"owner":{"uid":5},"title":"Playlist"}]}}});

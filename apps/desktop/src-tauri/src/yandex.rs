@@ -28,15 +28,54 @@ pub fn request_limited(
     body: Option<&Value>,
     limit: u64,
 ) -> Result<Value, &'static str> {
+    request_optional(client, path, Some(auth), body, limit)
+}
+/// Only for public catalogue reads; personal/session/write endpoints stay strict.
+pub fn public_request(
+    client: &Client,
+    path: &str,
+    auth: Option<&HeaderValue>,
+    limit: u64,
+) -> Result<Value, &'static str> {
+    if !public_read_path(path) {
+        return Err("Not a public catalogue endpoint");
+    }
+    match request_optional(client, path, auth, None, limit) {
+        Err("Authorization denied") if auth.is_some() => {
+            request_optional(client, path, None, None, limit)
+        }
+        result => result,
+    }
+}
+fn public_read_path(path: &str) -> bool {
+    let path = path.split('?').next().unwrap_or_default();
+    let id = |text: &str| {
+        !text.is_empty() && text.len() <= 64 && text.bytes().all(|byte| byte.is_ascii_digit())
+    };
+    match path.split('/').collect::<Vec<_>>().as_slice() {
+        ["search"] | ["landing3", "chart"] => true,
+        ["artists", value, "tracks"] | ["albums", value, "with-tracks"] => id(value),
+        ["users", owner, "playlists", kind] => id(owner) && id(kind),
+        _ => false,
+    }
+}
+fn request_optional(
+    client: &Client,
+    path: &str,
+    auth: Option<&HeaderValue>,
+    body: Option<&Value>,
+    limit: u64,
+) -> Result<Value, &'static str> {
     let url = format!("https://api.music.yandex.net/{path}");
     let builder = match body {
         Some(body) => client.post(&url).json(body),
         None => client.get(&url),
     };
-    let response = builder
-        .header("Authorization", auth.clone())
-        .send()
-        .map_err(|_| "Network/TLS error")?;
+    let builder = match auth {
+        Some(auth) => builder.header("Authorization", auth.clone()),
+        None => builder,
+    };
+    let response = builder.send().map_err(|_| "Network/TLS error")?;
     decode_response(response, limit)
 }
 pub fn request_form(
@@ -178,6 +217,33 @@ pub fn session_probe(client: &Client, auth: &HeaderValue) -> Result<(), &'static
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn guest_access_is_limited_to_public_read_endpoints() {
+        for path in [
+            "search?text=test",
+            "landing3/chart",
+            "artists/123/tracks?page=0",
+            "albums/123/with-tracks",
+            "users/123/playlists/456",
+        ] {
+            assert!(public_read_path(path));
+        }
+        for path in [
+            "account/status",
+            "rotor/session/new",
+            "users/123/likes/tracks",
+            "users/123/playlists",
+            "users/123/playlists/456/remove",
+            "artists/../tracks",
+            "users/not-an-id/playlists/1",
+        ] {
+            assert!(!public_read_path(path));
+        }
+        assert_eq!(
+            public_request(&Client::new(), "account/status", None, 100).unwrap_err(),
+            "Not a public catalogue endpoint"
+        );
+    }
     use serde_json::json;
     #[test]
     fn keeps_server_order_and_duplicates() {

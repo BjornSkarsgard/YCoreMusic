@@ -1,13 +1,13 @@
 import {invoke,isTauri} from '@tauri-apps/api/core';
 import type {CatalogueEntity,CatalogueSelection} from './catalogue-ui';
 import type {Track} from './queue';
-interface Discovery {title:string;tracks:Track[];playlists:CatalogueEntity[]}
+interface Discovery {title:string;tracks:Track[];playlists:CatalogueEntity[];playlistsAvailable?:boolean}
 export function mountDiscovery(select:(selection:CatalogueSelection)=>void,browse:(entity:CatalogueEntity)=>void){
  const root=document.getElementById('discovery')!;
  root.innerHTML='<div class="library-heading"><h2>Обзор</h2><button id="discovery-refresh">Обновить</button></div><p id="discovery-status" role="status"></p><div id="discovery-content"></div>';
  const status=document.getElementById('discovery-status')!,content=document.getElementById('discovery-content')!;let loaded=false,revision=0;
  async function refresh(){
-  if(!isTauri()){status.textContent='Чарты доступны после подключения Яндекса в desktop-версии.';return;}
+  if(!isTauri()){status.textContent='Чарты доступны в приложении Encore, в том числе без входа.';return;}
   const epoch=++revision;status.textContent='Загрузка актуального чарта…';
   try{const value=await invoke<Discovery>('discovery_fetch');if(epoch!==revision)return;loaded=true;content.replaceChildren();
    const heading=document.createElement('h3');heading.textContent=value.title;
@@ -19,6 +19,7 @@ export function mountDiscovery(select:(selection:CatalogueSelection)=>void,brows
    }
    if(value.playlists.length){const h=document.createElement('h3');h.textContent='Подборки Яндекс Музыки';content.append(h);for(const entity of value.playlists){const b=document.createElement('button');b.className='catalogue-card library-playlist';const title=document.createElement('strong');title.textContent=entity.title;b.append(title);b.onclick=()=>browse(entity);content.append(b);}}
    status.textContent='Обновлено в '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})+' · порядок Яндекс Музыки';
+   if(value.playlistsAvailable===false)status.textContent+=' · Подборки сейчас недоступны. Публичные плейлисты можно найти через поиск.';
   }catch{if(epoch===revision)status.textContent='Не удалось обновить чарт. Проверьте сеть и повторите.';}
  }
  root.addEventListener('discovery-open',()=>{if(!loaded)void refresh();});document.getElementById('discovery-refresh')!.onclick=()=>void refresh();
