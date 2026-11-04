@@ -98,6 +98,9 @@ try {
     await until('return document.querySelectorAll(".discovery-track").length>0');
     assert.equal(await execute('return document.getElementById("track-title").textContent'),before);
     assert.equal(await nativeInvoke('feedback_command',{request:{type:'sync'}}),null,'Test mode must block live feedback writes');
+    const reaction=await nativeInvoke('feedback_command',{request:{type:'get',trackId:'56806178'}});
+    assert(reaction&&[-1,0,1].includes(reaction.state)&&Number.isInteger(reaction.generation),'Native reaction read unavailable');
+    assert(Array.isArray(reaction.excludedTrackIds),'Native confirmed reaction snapshot unavailable');
     writeFileSync(resolve(root,'.tools/native-discovery.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
     console.log('Native personal library, likes metadata and current chart browsing: PASS; live feedback writes blocked');
   }
@@ -151,6 +154,17 @@ try {
     await until('return !document.getElementById("play").disabled',30000);
     assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
     console.log('Native known search fixture -> matching candidate -> real IFrame cue: PASS');
+  }
+  if(process.env.ENCORE_LIVE_SMART_HISTORY==='1'){
+    await store({type:'clear_history'});
+    await store({type:'record',event:{playbackId:'native-smart-seed',trackId:'manual:M7lc1UVf-VE',title:'Native history fixture',artist:'',videoId:'M7lc1UVf-VE'}});
+    const pool=await nativeInvoke('smart_history_fetch');assert(pool.length>0&&pool.every(track=>track.weight>0));
+    await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.querySelector("[data-panel=history]").click();document.getElementById("history-smart").click()');
+    await until('return document.getElementById("source-name").textContent==="Умная история" && document.getElementById("status").textContent==="Воспроизведение"',45000);
+    await execute('window.smartOrdinal=document.querySelector("#queue-list li[aria-current=true]").dataset.ordinal;const seek=document.getElementById("seek");seek.value=String(Number(seek.max)-1);seek.dispatchEvent(new Event("input"));seek.dispatchEvent(new Event("change"));');
+    await until('return document.querySelector("#queue-list li[aria-current=true]").dataset.ordinal!==window.smartOrdinal && document.getElementById("status").textContent==="Воспроизведение"',45000);
+    assert.equal(await execute('return document.getElementById("source-name").textContent'),'Умная история');assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);await click('pause');
+    console.log('Native local Smart History: known clip, explicit Play, real END continuation, one IFrame and sticky source: PASS');
   }
   if(process.env.ENCORE_LIVE_YOUTUBE==='1') {
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="M7lc1UVf-VE";document.getElementById("load").requestSubmit();');
@@ -361,13 +375,13 @@ try {
   assert.equal((await nativeInvoke('desktop_status')).minimized,false);
   console.log('Native single instance guard restores minimized existing window: PASS');
 } finally {
-  if(session && volumeCaptured) await execute('if(arguments[0]===null)localStorage.removeItem("encore.volume.v1");else localStorage.setItem("encore.volume.v1",arguments[0]);',[originalVolume]).catch(()=>{});
-  if(session) await nativeInvoke('desktop_action',{action:'quit'}).catch(()=>{});
-  if(session) await request('/session/'+session,undefined,'DELETE').catch(()=>{});
+  if(isolated && session && volumeCaptured) await execute('if(arguments[0]===null)localStorage.removeItem("encore.volume.v1");else localStorage.setItem("encore.volume.v1",arguments[0]);',[originalVolume]).catch(()=>{});
+  if(isolated && session) await nativeInvoke('desktop_action',{action:'quit'}).catch(()=>{});
+  if(isolated && session) await request('/session/'+session,undefined,'DELETE').catch(()=>{});
   if(isolated&&Number.isInteger(appPid)){
     let alive=true;
     for(let count=0;count<30;count++){try{process.kill(appPid,0);}catch{alive=false;break;}await sleep(100);}
     if(alive)try{process.kill(appPid);}catch{}
   }
-  if(process.platform==='win32') { await new Promise(resolve=>{const cleanup=spawn('taskkill',['/PID',String(driver.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});cleanup.on('close',resolve);cleanup.on('error',resolve);}); } else driver.kill();
+  if(process.platform==='win32'&&isolated) { await new Promise(resolve=>{const cleanup=spawn('taskkill',['/PID',String(driver.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});cleanup.on('close',resolve);cleanup.on('error',resolve);}); } else driver.kill();
 }

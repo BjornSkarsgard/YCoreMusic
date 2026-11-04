@@ -219,3 +219,13 @@ CI d306f82: Windows/Linux/macOS ARM PASS; macOS Intel остановился н�
 ## 2026-11-04: стабильная высота обзора при смене клипа
 
 По прямому замечанию пользователя область альтернатив получает постоянную адаптивную высоту, включая время загрузки/скрытое состояние. Scroll-область боковой панели занимает оставшееся место. При выборе трека обзор не растягивается и не меняет scrollTop. Отдельный renderer regression с 200 треками и управляемой задержкой YouTube matching PASS: размеры и прокрутка проверены до, во время и после загрузки.
+
+## 2026-11-04: Smart History и snapshots реакций
+
+Добавлен локальный бесконечный источник с весами по like/частоте/давности и исключением известных dislikes. При недоступности Wave сначала заканчивается загруженная очередь, затем включается история. Возврат к Wave — явный. Startup без autoplay, Pause отменяет pending start. Известные video IDs играют без зависимости от поиска; при исчерпании вариантов трек обходится, без музыкального negative feedback.
+
+Реакции получают generations и полный подтверждённый snapshot исключений при пустом outbox. Старое чтение не отменяет новый Set; pending intents защищены; снятый в Яндексе dislike снова допускается. Личная медиатека обновляется после синхронизации и по TTL при открытии.
+
+Проверки: TypeScript/build,9unit PASS; renderer44 PASS+1opt-in skipped; Rust28 app+5probe PASS,9ignored;Clippy PASS. Windows native local Smart source + известный клип + реальный END + sticky source +1iframe PASS. Полный native YouTube/CC/fullscreen/tray/media/simulated power/mini/topmost PASS. Реальный current-token feedback GET и exclusions snapshot PASS, реальные feedback writes остаются заблокированы в тестах и не объявляются проверенными. Native cleanup меняет/закрывает приложение только после подтверждения testMode.
+
+Quick-skip threshold и listened-duration classification пока не реализованы (Q06 открыт). Linux/macOS runtime, физические media/sleep/lock hardware tests остаются неподтверждёнными.

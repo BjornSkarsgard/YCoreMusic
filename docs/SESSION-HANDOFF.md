@@ -1,44 +1,60 @@
-# Активная работа Encore — 2026-11-04
+# Encore — активный контекст, 2026-11-04
 
-Проект C:\Users\Skar\Documents\Encore, remote BjornSkarsgard/encore, main.
+Проект C:\Users\Skar\Documents\Encore, remote https://github.com/BjornSkarsgard/encore.git, main. Пользователь разрешил работать самостоятельно без участия и следовать документации. Не ждать очередного «дальше» после законченного этапа. Не использовать subagents без отдельного разрешения. Токен сохранён в OS credential store; никогда не читать/выводить в чат.
 
-Пользователь вернулся после ночи и разрешил работать самостоятельно без участия, следуя документации. Выбран макет «Сцена». Ранее разрешено следить за пятичасовым лимитом: если после этапа остаётся >10%, сделать ещё несколько лёгких задач; при очень малом остатке завершить безопасный срез, сохранить контекст и выключить ПК. Сбросы лимита без запроса не расходовать. Ночью shutdown /s /t 0 уже был успешно принят ОС; сейчас идёт новая рабочая сессия.
+Пользователь просил следить за 5-часовым лимитом (tool get_usage_limits). Если осталось >10% после этапа — ещё несколько лёгких задач; при очень малом остатке закончить безопасный срез, сохранить контекст и выключить ПК обычным shutdown без /f. Reset credits без запроса не расходовать. Ночной shutdown /s /t0 уже выполнялся; сейчас новая рабочая сессия, пользователь задаёт дополнительные задачи. Последний лимит:72%used/28%remaining, weekly65%used. Перед завершением снова проверить. Новых вопросов/подтверждений не требуется.
 
-## Последние завершённые этапы
+## Последнее замечание пользователя
 
-- f97bff5: «Сцена», жанры, непрерывная Wave, bounded prefetch/skip/backoff/session renewal. CI всех четырёх платформ PASS.
-- 1354fde: транспорт по центру; fullscreen HUD при движении мыши, скрытие через 3 секунды, hover/drag/клавиатурный фокус сохраняют видимость. Каталог: отдельная коллекция, Back/scroll/focus, пустые фильтры. Полный Windows native PASS.
-- Текущий этап: личная медиатека, реакции/outbox/Undo, актуальные чарт/подборки, видимые альтернативные видео. Подробности в ADR-017/018 и IMPLEMENTATION-STATUS.md.
+В Обзоре Play трека скрывал альтернативные видео на время загрузки и увеличивал высоту списка. Исправлено c516ff3: постоянный адаптивный слот160–220px (26vh), visibility:hidden при отсутствии вариантов, panel-scroll flex1. Regression с200 треками проверяет высоту/scrollTop до, во время и после delayed matching. Normal debug exe уже собран с этим исправлением и текущей SmartHistory.
 
-## Поведение текущего этапа
+## История готовых этапов
 
-Моя музыка: свои + сохранённые плейлисты, любимые ID и metadata по 100, запуск списка/с места. Обзор: текущий чарт 100, редакционные подборки, Refresh; не выдавать редакционные подборки за ранжированный popular list. Просмотр не меняет плеер.
+- f97bff5: Scene layout, жанры, unattended Wave/prefetch/skip/backoff/renewal. CI4OS PASS.
+- 1354fde: транспорт по центру; fullscreen mouse HUD/idle; отдельная коллекция/Back. CI4OS PASS.
+- 26bb9ee: личные собственные/сохранённые плейлисты, liked tracks, reactions/outbox/Undo, живой chart и editorial playlists, альтернативные клипы. CI4OS PASS.
+- 3e39b5f: локальные Up/Down volume и F11; runner длинного hidden Wave soak.
+- d306f82: SQLitev3 несколько favourites, actual last video, random/no-immediate-repeat/repeat-one, unavailable без удаления. Windows/Linux/macARM CI PASS; macIntel renderer timeout в fullscreen recovery.
+- 6a64a3b: late fullscreenchange guard, quality-panel HUD stays accessible, manual clip heading, native PID cleanup. CI всех4OS PASS, исправлен вышеупомянутый timeout.
+- c516ff3: фикс высоты Обзора, CI ещё шёл на последней проверке.
+- Текущий рабочий этап SmartHistory завершает commit/push сейчас.
 
-Like/unlike/dislike: account-scoped SQLite v2 с pending outbox, последнее желаемое состояние, revision guard на ACK/Undo; retry и refresh внешних состояний. Дизлайк немедленно Next; Undo 5 секунд не возвращает композицию. Перед миграцией v1 — VACUUM INTO snapshot backup рядом с БД. Токен только нативно OS store. Реальные feedback-записи в native-test запрещены; доставка реальным токеном в сервис ещё не проверена. Не менять предпочтения пользователя тестами.
+## Что реализовано
 
-Другие видео: постоянно внизу боковой панели, превью i.ytimg.com, исходное название, просмотры, durationSeconds; неизвестные поля подписаны. Выбор меняет клип той же песни, сохраняет pause/play и cursor, один IFrame. Сохраняется пока одна manual override. Сохранённый клип не ждёт фонового поиска альтернатив. Следующее из REQ-014: несколько favourites/random/no-repeat, включая repeat-one.
+«Сцена» выбрана пользователем: большое видео слева, отдельная прокрутка справа; поиск сверху, фильтры результатов, коллекции с возвратом/scroll/focus, история. Видео/транспорт всегда видны. Полноэкранные controls снизу по центру по движению мыши, hide3s; hover/drag/keyboard focus удерживают. При явно открытой interactive YouTube quality panel HUD остаётся доступным (iframe захватывает mousemove). Controls=0 по умолчанию, свои CC/font/seek/volume; manual quality только через временную панель, setPlaybackQuality no-op. Mandatory pause/load branding не обещать убрать.
 
-## Проверки текущего этапа
+Wave: реальные жанры (161 в probe), новые сессии без autoplay; явная CTA запускает. Metadata ahead8, максимум3 поиска, duplicates/order/stale guards. Нет уверенного видео/ошибка/таймаут — bounded alternatives then skip. Network retry backoff. Pause/wake отменяют автоматическое продолжение. Очередь хранит ограниченный past; server received queue500, expired/empty/repeated sessions renew once. ОС управляет audio output.
 
-- TS/Vite, 7 unit PASS; renderer 32 PASS + 1 opt-in skipped. Последний точечный regression после текста реакций — проверить вывод текущей команды.
-- Rust 25 app + 5 probe PASS, 9 opt-in ignored; Clippy all-targets -D warnings PASS.
-- Live read-only: 43 плейлиста, 900 likes, metadata первой страницы 100; chart 100 + 4 editorial playlists; duration 5/5 video candidates.
-- Full Windows native PASS с реальным Яндексом/каталогом/медиатекой/чартом/YouTube, CC/fullscreen/tray/media/simulated power/mini/topmost/single instance. После входа в fullscreen тест отводит мышь от HUD перед ожиданием скрытия: hover согласованно удерживает кнопки.
-- Отдельный live native alternative switch PASS: настоящие Oasis Wonderwall варианты/превью, сохранён текущий трек и play intent, один IFrame, volume=0.
-- Текущий normal debug executable собран; после последнего небольшого изменения текста reaction UI запущена повторная сборка.
-- Native helper завершает только свой PID после доказанного testMode; однажды предыдущий isolated binary остался жить и блокировал линковку, он убран по проверенному пути native-test. Обычный пользовательский экземпляр не закрывался принудительно.
+Моя музыка: own+saved playlists, liked IDs/metadata по100, порядок сохраняется. Обзор: current chart100 и editorial playlists4 в live probe, Refresh, запуск/просмотр без смены текущей музыки до явного Play. Не называть editorial playlists ранжированным popular list.
 
-## Оставшееся по документации
+Реакции: state -1/0/1, account-scoped persistent pending outbox SQLitev2, coalescing/revision ACK, Undo5s не возвращает старый клип. Native v3 добавляет favourites и actual last video. Backup через VACUUM INTO перед v1/v2 upgrade; данные сохранены. Несколько favourites выбираются случайно без immediate repeat, включая repeat-one. Удаление текущего не прерывает звук. Метка unavailable снимается после успешного PLAYING/явного retry. Автоподбор на этот раз не удаляет набор. Альтернативы рядом: thumbnail/title/views/duration, клик сохраняет play/pause и cursor, один IFrame.
 
-1. Проверить статус нового CI после push и субъективный UX, когда пользователь вернётся. Работа не требует ждать его.
-2. REQ-014 несколько favourites, миграция с сохранением старых manual links, random/no-repeat/repeat-one.
-3. Длительный Wave soak, скрытое окно/fullscreen/сетевые сбои; два ускоренных реальных END-перехода ночного smoke не доказывают многочасовую устойчивость.
-4. Недостающие локальные shortcuts из REQ-037 (Up/Down volume, F11) — небольшой следующий срез; текстовые поля/элементы управления сохраняют ввод, глобальных keyboard hooks нет.
-5. Smart History/listened_ms, liked/disliked weighting, fallback; затем другие этапы roadmap. Не имитировать Yandex audio/FFT/mobile/multimonitor.
+## Текущий Smart History срез
 
-Linux/macOS runtime, физический sleep/wake, аппаратные media keys, слышимость и реальные feedback writes ещё не подтверждены. YouTube mandatory branding/load/pause overlays остаются; программное quality API no-op, ручное качество через временную панель YouTube.
+Локальные500 уникальных кандидатов, последние clip IDs, likes/frequency/age weights, известные dislikes/pending intents исключаются. Единственный TS queue coordinator выбирает взвешенно без предыдущего track при>=2. Wave доигрывает буфер при API failure, затем SmartHistory; не переключается обратно сам. Есть явная кнопка в истории. Startup без autoplay, pending start имеет Pause, intent/generation guards. Известный history video не ждёт public metadata. Unsearchable manual clip после ошибки пропускается. Исчерпанные варианты локально исключаются до нового ручного запуска/успешной проверки, не пишут negative feedback.
 
-## Воспроизведение
+Native feedback GET передаёт generation и полный snapshot exclusions только когда pending outbox пуст. Старое чтение не отменяет новый Set; frontend pending overlay и snapshot восстанавливают внешнее снятие dislikes. Личная медиатека refreshed при sync/TTL открытии. Никаких реальных feedback writes в тестах; testMode блокирует доставку. Реальный токен GET likes/dislikes + confirmed snapshot проверен.
+
+Ограничения: cold-offline новая реакция требует identity аккаунта, ранее определённой в текущем запуске; старый outbox переживает restart и доставляется после соединения. Listened_ms/end_reason/quick-skip classification пока нет, Q06 threshold не утверждён, не вводить молча. Технические skips Wave не являются dislike. Linux/macOS runtime и физические sleep/lock/media keys не доказаны CI. Полноценный S1 provider feedback lifecycle и Yandex audio/FFT/mobile/multimonitor не объявлялись готовыми.
+
+## Проверки
+
+Текущий срез: TS/build,9unit PASS; полный renderer44PASS+1opt-in skipped (45 tests), .last-run.json status passed. Rust28 app+5probe PASS,9ignored;Clippy all-targets -D warnings PASS.
+
+Windows native SmartHistory actual clip/END/sticky source/1iframe + full YouTube/CC/fullscreen/interactive-quality/tray/media/simulated power/mini/topmost/single instance PASS. Native real personal library/current chart/feedback read snapshot PASS. Предыдущий native favourites real Oasis END alternating + deletion-without-stop PASS.
+
+20-minute unaccelerated hidden Wave soak (pre-Smart binary):5 transitions, max sampled wait5sec at5sec polling, volume0,1iframe, no manual seek/Next. Result .tools/wave-soak-result.json completed:true. Это не1час и не гарантия100% external availability. Новый soak после Smart engine изменений имеет смысл, но не начинать новый большой код при малом лимите.
+
+Normal debug executable apps/desktop/src-tauri/target/debug/encore.exe уже обновлён с layoutfix и SmartHistory. Native test sessions завершены, профиль свободен. Последний Get-Cim encore процессов не обнаружил. Не закрывать пользовательский экземпляр принудительно; тестовый PID получаем из native desktop_status после testMode verification. Cleanup mutates/quits только подтверждённый test profile.
+
+## Следующие небольшие задачи / перед завершением
+
+1. Commit/push текущего SmartHistory этапа и проверить CI. Не завершать с грязной рабочей папкой.
+2. Небольшая полировка: HTML title всё ещё Encore · лаборатория (config уже Encore), label жанров ошибочно «Настроение музыки». Можно поправить без отдельного теста. Поиск: ясная кнопка очистки/защита старых карточек во время нового запроса — полезный лёгкий срез.
+3. Не начинать новую большую migration/telemetry при низком лимите. Будущий приоритет: listened_ms/end_reason, cold offline account identity keyed by safe credential fingerprint, дальнейший roadmap. Реальные feedback write только по явным пользовательским нажатиям, тестами не менять вкус аккаунта.
+4. Проверить лимит, сохранить фактическое состояние/CI/сборку и завершить по инструкции пользователя.
+
+## Команды
 
 npm.cmd run build --prefix apps/desktop
 npm.cmd test --prefix apps/desktop
@@ -46,20 +62,6 @@ npm.cmd run test:ui --prefix apps/desktop
 cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --features yandex-probe
 cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --features yandex-probe -- -D warnings
 
-Native-test: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol --bin encore; node scripts/native-smoke.mjs. Флаги ENCORE_LIVE_YANDEX/CATALOGUE/YOUTUBE/LIBRARY=1 для полного read-only набора; ENCORE_LIVE_ALTERNATIVES=1 — реальное переключение, ENCORE_LIVE_WAVE=1 — 2 END-перехода. Перед сборкой дождаться завершения своего native теста. Скриншоты .tools/native-alternatives.png, native-discovery.png, fullscreen-controls.png (ignored). Не запускать старый pending-update/apply.ps1: там pinned предыдущий executable.
+Native: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol --bin encore; node scripts/native-smoke.mjs. ENCORE_LIVE_LIBRARY/YOUTUBE/CATALOGUE/YANDEX/SMART_HISTORY/FAVORITES=1 по нужным сценариям; все на volume0, isolated DB/profile. ENCORE_WAVE_SOAK_MINUTES и ENCORE_NATIVE_TEST_DATA_DIR — длинный прогон с чистым test data dir. Дождаться завершения своего теста перед пересборкой native-test.
 
-## Незавершённый следующий срез REQ-014
-
-3e39b5f локально закоммичен (ещё не pushed): Up/Down и F11, целевой renderer PASS, runner 20-min hidden soak. 26bb9ee CI полностью PASS.
-
-В рабочей папке сейчас SQLite v3 + favorite-store/ui/video-favorites modules: перенос старых manual links, несколько video IDs, метка unavailable без удаления, сохранение фактически сыгранного ID, random/no-immediate-repeat (включая repeat-one), звезда текущего клипа и список в диалоге. Renderer старые 33 PASS + 1 skipped, новые 2 favorite scenarios PASS. Rust26 app+5 probe PASS; v2→v3 backup/pending preservation targeted PASS. После последней правки fallback index и добавления нативного favorite test полный renderer ещё повторить. Native v3 ещё не собирался/не проверялся: профиль native-test занят 20-минутной Wave проверкой бинарника v2, session70835. Последний progress elapsed16min, 4 transitions, longest sampled wait5sec; .tools/wave-soak-result.json появится по завершении. Не пересобирать native-test до завершения! Затем native smoke ENCORE_LIVE_FAVORITES=1 проверит реальный repeat-one двух Oasis клипов и удаление без прерывания (только изолированная БД). Новые файлы ещё не committed. Обычный debug exe пока26bb9ee; после завершения всех проверок обновить.
-
-## Последний завершённый срез — REQ-014
-
-Рабочая реализация v3 проверена: renderer35 PASS+1skipped,8unit,Rust27+5,Clippy; полный native LIVE_FAVORITES/YOUTUBE/CATALOGUE/LIBRARY PASS. Настоящие два Oasis клипа чередуются по END, снятие звезды не прерывает звук. Миграцииv1/v2 сохраняют ссылки/историю/outbox. Файлы ещё ждут commit/push и normal debug build (команды завершаются сейчас).
-
-20-min hidden Wave soak завершён PASS:5transition,longest sampledwait5sec,volume0,1iframe,без ускорения. Session70835 завершена; native-test профиль свободен. .tools/wave-soak-result.json содержит completed:true. Последний полныйnative v3session22041 завершёнуспешно, renderer42554 тоже.
-
-CI26bb9ee PASSна4платформах. Следующий небольшой фикс: временная interactive YouTube quality-panel в fullscreen перехватывает mousemove (cross-origin iframe), поэтому собственный HUD должен оставаться доступным, пока эта панель явно открыта; нужен маленький regression. Остальной roadmap после checkpoint: SmartHistory/listening durations и безопасное восстановление, затем другие пункты.
-
-Обновление: d306f82 committed+pushed, normal debug exe обновлён. Следующий HUD/manual-title/native PID fix проверен Windows native и renderer (36 PASS+1skipped), сейчас готовитсяcommit. CI d306f82 три платформы PASS, macIntel renderer fullscreen timeout; следующийfix включает late fullscreenchange guard/regression. Дальше по docs планируется SmartHistory: local weighted/negative-exclusion source и автоматический переход при исчерпании Wave во время отказа Яндекса; не возвращаться самопроизвольно при восстановленииAPI. Quick-skip threshold Q06 не утверждён, не вводить его молча.
+Rust PATH C:\Users\Skar\.cargo\bin. Shell PowerShell. Рабочий cwd всегда Encore (старый VideoYandexTube не существует). Не запускать старый .tools/pending-update/apply.ps1: там pinned старый executable. Скриншоты .tools/native-favorites.png, native-alternatives.png, native-discovery.png, fullscreen-controls.png, ignored. Токен не печатать и не читать файлами.

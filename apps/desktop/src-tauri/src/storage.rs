@@ -46,6 +46,15 @@ pub struct HistoryEntry {
     pub video_id: String,
     pub started_at: String,
 }
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SmartCandidate {
+    pub id: String,
+    pub title: String,
+    pub artist: String,
+    pub history_video_id: String,
+    pub weight: f64,
+}
 fn video_id(value: &str) -> bool {
     value.len() == 11
         && value
@@ -377,10 +386,122 @@ impl Store {
             .map_err(|_| "Cannot clear history")?;
         Ok(())
     }
+    pub fn smart_history(
+        &self,
+        profile: Option<&crate::feedback::Profile>,
+    ) -> Result<Vec<SmartCandidate>, &'static str> {
+        let connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let uid = profile.map(|p| p.uid.as_str());
+        let mut statement=connection.prepare("WITH latest AS (SELECT track_id,MAX(id) AS last_id,COUNT(*) AS plays FROM play_history GROUP BY track_id) SELECT e.track_id,e.title,e.artist,e.video_id,e.started_at,l.plays,(SELECT MIN(f.state) FROM track_feedback f WHERE f.track_id=e.track_id AND (?1 IS NULL OR f.account_id=?1)),(SELECT MAX(f.pending) FROM track_feedback f WHERE f.track_id=e.track_id AND (?1 IS NULL OR f.account_id=?1)) FROM latest l JOIN play_history e ON e.id=l.last_id ORDER BY e.id DESC LIMIT 500").map_err(|_|"Cannot query smart history")?;
+        let rows = statement
+            .query_map([uid], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, Option<i8>>(6)?,
+                    row.get::<_, Option<bool>>(7)?,
+                ))
+            })
+            .map_err(|_| "Cannot read smart history")?;
+        let mut candidates = Vec::new();
+        for row in rows {
+            let (id, title, artist, video, started, plays, local, pending) =
+                row.map_err(|_| "Invalid history row")?;
+            let reaction = if pending == Some(true) {
+                local.unwrap_or(0)
+            } else if let Some(profile) = profile {
+                if profile.disliked.contains(&id) {
+                    -1
+                } else {
+                    i8::from(profile.liked.contains(&id))
+                }
+            } else if local == Some(-1) {
+                -1
+            } else {
+                0
+            };
+            if reaction == -1 || !video_id(&video) {
+                continue;
+            }
+            let age = chrono::DateTime::parse_from_rfc3339(&started)
+                .map(|at| {
+                    (chrono::Utc::now() - at.with_timezone(&chrono::Utc))
+                        .num_seconds()
+                        .max(0) as f64
+                        / 86400.0
+                })
+                .unwrap_or(365.0);
+            let weight = 1.0
+                + (plays as f64).ln_1p()
+                + if reaction == 1 { 4.0 } else { 0.0 }
+                + 2.0 / (1.0 + age / 7.0);
+            candidates.push(SmartCandidate {
+                id,
+                title,
+                artist,
+                history_video_id: video,
+                weight,
+            });
+        }
+        Ok(candidates)
+    }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn smart_history_deduplicates_weights_and_excludes_local_and_remote_dislikes() {
+        let store = memory();
+        for (index, id) in ["1", "1", "1", "1", "2", "3", "4", "5"].iter().enumerate() {
+            store
+                .record(&PlayRecord {
+                    playback_id: format!("smart-{index}"),
+                    track_id: id.to_string(),
+                    title: format!("Track {id}"),
+                    artist: "Artist".into(),
+                    video_id: "M7lc1UVf-VE".into(),
+                })
+                .unwrap();
+        }
+        store
+            .0
+            .lock()
+            .unwrap()
+            .execute(
+                "UPDATE play_history SET started_at='2020-01-01T00:00:00Z' WHERE track_id='2'",
+                [],
+            )
+            .unwrap();
+        store.set_reaction("1", "3", -1, None).unwrap();
+        store.set_reaction("1", "5", 1, None).unwrap();
+        let profile = crate::feedback::Profile {
+            uid: "1".into(),
+            liked: ["1".into()].into_iter().collect(),
+            disliked: ["4".into(), "5".into()].into_iter().collect(),
+        };
+        let pool = store.smart_history(Some(&profile)).unwrap();
+        assert_eq!(pool.len(), 3);
+        assert!(!pool.iter().any(|t| t.id == "3" || t.id == "4"));
+        assert!(
+            pool.iter().find(|t| t.id == "1").unwrap().weight
+                > pool.iter().find(|t| t.id == "2").unwrap().weight
+        );
+        assert!(
+            pool.iter().find(|t| t.id == "5").unwrap().weight
+                > pool.iter().find(|t| t.id == "2").unwrap().weight
+        );
+        assert!(!store
+            .smart_history(None)
+            .unwrap()
+            .iter()
+            .any(|t| t.id == "3"));
+        store.clear_history().unwrap();
+        assert!(store.smart_history(Some(&profile)).unwrap().is_empty());
+    }
     #[test]
     fn v2_upgrade_keeps_pending_feedback_and_imports_the_old_manual_binding() {
         let path = std::env::temp_dir().join(format!(

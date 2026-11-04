@@ -6,7 +6,7 @@ export function mountLibrary(select:(selection:CatalogueSelection)=>void){
  const root=document.getElementById('library')!;
  root.innerHTML='<div class="library-heading"><h2>Моя музыка</h2><button id="library-refresh">Обновить</button></div><p id="library-status" role="status"></p><div id="library-content"></div>';
  const status=document.getElementById('library-status')!,content=document.getElementById('library-content')!;
- let overview:Overview|undefined,revision=0,stale=false;
+ let overview:Overview|undefined,revision=0,stale=false,loadedAt=0;
  function button(text:string,action:()=>void){const b=document.createElement('button');b.textContent=text;b.onclick=action;return b;}
  function home(){
   ++revision;if(!overview)return;content.replaceChildren();
@@ -18,7 +18,7 @@ export function mountLibrary(select:(selection:CatalogueSelection)=>void){
  async function refresh(){
   if(!isTauri()){status.textContent='Подключите Яндекс в desktop-версии Encore.';return;}
   const epoch=++revision;status.textContent='Загрузка твоей музыки…';
-  try{const value=await invoke<Overview>('library_overview');if(epoch!==revision)return;overview=value;stale=false;home();status.textContent='Твои плейлисты и любимые треки из Яндекс Музыки.';}
+  try{const value=await invoke<Overview>('library_overview');if(epoch!==revision)return;overview=value;stale=false;loadedAt=Date.now();home();status.textContent='Твои плейлисты и любимые треки из Яндекс Музыки.';}
   catch{if(epoch===revision)status.textContent='Не удалось загрузить медиатеку. Проверьте сеть и подключение Яндекса.';}
  }
  async function open(entity:CatalogueEntity){
@@ -40,5 +40,5 @@ export function mountLibrary(select:(selection:CatalogueSelection)=>void){
  }
  document.getElementById('library-refresh')!.onclick=()=>void refresh();
  window.addEventListener('feedback-changed',()=>{stale=true;});
- root.addEventListener('library-open',()=>{if(!overview||stale)void refresh();});
+ root.addEventListener('library-open',()=>{if(!overview||stale||Date.now()-loadedAt>60000)void refresh();});
 }

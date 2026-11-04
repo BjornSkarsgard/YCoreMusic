@@ -9,6 +9,7 @@ mod library;
 mod matcher;
 mod media;
 mod power;
+mod smart_history;
 mod source;
 mod storage;
 use tauri::Manager;
@@ -144,6 +145,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             source_fetch,
             source_stations,
+            smart_history::smart_history_fetch,
             media::media_update,
             media::media_status,
             desktop::desktop_action,

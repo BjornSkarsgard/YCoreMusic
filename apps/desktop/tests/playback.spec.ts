@@ -738,3 +738,92 @@ test('fullscreen keeps the close-panel controls accessible while the interactive
  await page.mouse.move(150,100);await page.clock.fastForward(5000);await expect(page.locator('.player-hud')).toHaveCSS('opacity','1');await expect(page.locator('#youtube-settings')).toHaveText('Скрыть панель YouTube');
  await page.locator('#youtube-settings').click();await expect(page.locator('.screen')).not.toHaveClass(/interactive/);await page.mouse.move(180,100);await page.clock.fastForward(4000);await expect(page.locator('.player-hud')).toHaveCSS('opacity','0');
 });
+
+test('Wave drains its ordered buffer before Smart History and stays there after Yandex recovers',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.recovered=false;w.sourceCalls=0;w.smartCalls=0;w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+  if(cmd==='source_fetch'){w.sourceCalls++;if(!args.fresh&&!w.recovered)throw 'Network/TLS error';return [{id:'1',title:'A',artist:'Fixture'},{id:'2',title:'B',artist:'Fixture'}];}
+  if(cmd==='smart_history_fetch'){w.smartCalls++;return [{id:'90',title:'History C',artist:'Fixture',historyVideoId:'Ccccccccccc',weight:1},{id:'91',title:'History D',artist:'Fixture',historyVideoId:'Ddddddddddd',weight:1}];}
+  if(cmd==='search_videos')return [{id:args.title==='B'?'Bbbbbbbbbbb':'Aaaaaaaaaaa',title:args.title,score:100,reason:'fixture'}];
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await page.locator('#source-start').click();await expect.poll(()=>page.evaluate(()=>(window as any).played[0])).toBe('Aaaaaaaaaaa');
+ await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe('Bbbbbbbbbbb');await expect(page.locator('#source-name')).toHaveText('Моя волна');expect(await page.evaluate(()=>(window as any).smartCalls)).toBe(0);
+ await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));await expect(page.locator('#source-name')).toHaveText('Умная история');await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBe(3);
+ const calls=await page.evaluate(()=>(window as any).sourceCalls);await page.evaluate(()=>(window as any).recovered=true);
+ for(let count=0;count<10;count++){const before=await page.evaluate(()=>(window as any).played.length);await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBe(before+1);}
+ expect(await page.evaluate(()=>(window as any).sourceCalls)).toBe(calls);expect(await page.evaluate(()=>(window as any).smartCalls)).toBeGreaterThan(1);
+ await page.locator('#source-start').click();await expect(page.locator('#source-name')).toHaveText('Моя волна');
+});
+
+test('offline startup prepares known history clips without autoplay or metadata search dependency',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.__TAURI_INTERNALS__={invoke:async(cmd:string)=>{
+  if(cmd==='source_fetch')throw 'Network/TLS error';
+  if(cmd==='smart_history_fetch')return [{id:'90',title:'Known clip',artist:'Fixture',historyVideoId:'Ccccccccccc',weight:1}];
+  if(cmd==='search_videos')throw 'Metadata unavailable';
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#source-name')).toHaveText('Умная история');await expect(page.locator('#play')).toBeEnabled();expect(await page.evaluate(()=>(window as any).played)).toEqual([]);expect(await page.evaluate(()=>(window as any).loaded.at(-1))).toBe('Ccccccccccc');
+ await page.locator('#play').click();await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe('Ccccccccccc');
+});
+
+test('Pause during a pending Smart History start prevents its late autoplay',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.__TAURI_INTERNALS__={invoke:async(cmd:string)=>{
+  if(cmd==='source_fetch')return [{id:'1',title:'Current',artist:'Fixture'}];
+  if(cmd==='search_videos')return [{id:'Aaaaaaaaaaa',title:'Current',score:100,reason:'fixture'}];
+  if(cmd==='smart_history_fetch'){await new Promise(resolve=>w.releaseSmart=resolve);return [{id:'90',title:'Known clip',artist:'Fixture',historyVideoId:'Ccccccccccc',weight:1}];}
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await historyPanel(page);await page.locator('#history-smart').click();await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseSmart)).toBe('function');await page.locator('#pause').click();await page.evaluate(()=>(window as any).releaseSmart());
+ await expect(page.locator('#source-name')).toHaveText('Умная история');await expect.poll(()=>page.evaluate(()=>(window as any).loaded.at(-1))).toBe('Ccccccccccc');expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+});
+
+test('empty Smart History reports absence and does not invent tracks or start the old cue',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.__TAURI_INTERNALS__={invoke:async(cmd:string)=>{
+  if(cmd==='source_fetch')return [{id:'1',title:'Current',artist:'Fixture'}];
+  if(cmd==='search_videos')return [{id:'Aaaaaaaaaaa',title:'Current',score:100,reason:'fixture'}];
+  if(cmd==='smart_history_fetch')return [];
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await historyPanel(page);await page.locator('#history-smart').click();await expect(page.locator('#status')).toContainText('нет подходящих клипов');await expect(page.locator('#track-title')).toHaveText('Current');expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+});
+
+test('Smart History skips an unavailable unsearchable old clip and keeps the remaining stream unattended',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;Math.random=()=>0;w.__TAURI_INTERNALS__={invoke:async(cmd:string)=>{
+  if(cmd==='source_fetch')throw 'Network error';
+  if(cmd==='smart_history_fetch')return [{id:'manual:Aaaaaaaaaaa',title:'Old bad clip',artist:'',historyVideoId:'Aaaaaaaaaaa',weight:1},{id:'manual:Ccccccccccc',title:'Good old clip',artist:'',historyVideoId:'Ccccccccccc',weight:1}];
+  if(cmd==='search_videos')throw 'Invalid search metadata';
+ }};});
+ await mockAutomaticPlayer(page,false,['Aaaaaaaaaaa']);await page.goto('/');await expect(page.locator('#source-name')).toHaveText('Умная история');await expect(page.locator('#play')).toBeEnabled();await page.locator('#play').click();await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe('Ccccccccccc');
+ for(let count=0;count<10;count++){const before=await page.evaluate(()=>(window as any).played.length);await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBe(before+1);}
+ expect(await page.evaluate(()=>(window as any).played.every((id:string)=>id==='Ccccccccccc'))).toBe(true);
+});
+
+test('feedback generations reject an old read after a newer saved like',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.currentState=0;w.currentGeneration=1;w.staleOnce=false;w.oldRead=false;w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+  if(cmd==='source_fetch')return [{id:'1',title:'Current',artist:'Fixture'}];
+  if(cmd==='search_videos')return [{id:'Aaaaaaaaaaa',title:'Current',score:100,reason:'fixture'}];
+  if(cmd==='feedback_command'){
+   const r=args.request;if(r.type==='set'){w.currentState=r.state;w.currentGeneration++;w.staleOnce=true;return {trackId:r.trackId,state:r.state,revision:2,pending:true,generation:w.currentGeneration};}
+   if(r.type==='sync')return {pending:0};
+   if(r.type==='get'){if(w.staleOnce){w.staleOnce=false;w.oldRead=true;return {trackId:r.trackId,state:0,revision:1,pending:false,generation:1,excludedTrackIds:[]};}return {trackId:r.trackId,state:w.currentState,revision:w.currentGeneration,pending:false,generation:w.currentGeneration,excludedTrackIds:[]};}
+  }
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#like')).toBeEnabled();await page.locator('#like').click();await expect.poll(()=>page.evaluate(()=>(window as any).oldRead)).toBe(true);await expect(page.locator('#like')).toHaveAttribute('aria-pressed','true');
+});
+
+test('Smart History honors a local dislike in its prepared buffer and accepts a later remote removal',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;Math.random=()=>0;w.generation=1;w.serverExcluded=[];w.reactionStates={};w.pending=false;w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+  if(cmd==='source_fetch')throw 'Network error';
+  if(cmd==='smart_history_fetch')return ['90','91','92'].map((id,index)=>({id,title:'History '+id,artist:'Fixture',historyVideoId:['Aaaaaaaaaaa','Bbbbbbbbbbb','Ccccccccccc'][index],weight:1}));
+  if(cmd==='search_videos')return [];
+  if(cmd==='feedback_command'){
+   const r=args.request;if(r.type==='set'){w.reactionStates[r.trackId]=r.state;w.pending=true;w.generation++;return {trackId:r.trackId,state:r.state,revision:w.generation,pending:true,generation:w.generation};}
+   if(r.type==='sync'){if(w.pending){w.serverExcluded=Object.keys(w.reactionStates).filter(id=>w.reactionStates[id]===-1);w.pending=false;w.generation++;}return {pending:0};}
+   if(r.type==='get')return {trackId:r.trackId,state:w.serverExcluded.includes(r.trackId)?-1:0,revision:w.generation,pending:w.pending,generation:w.generation,...(!w.pending?{excludedTrackIds:w.serverExcluded}: {})};
+  }
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#source-name')).toHaveText('Умная история');await expect(page.locator('#play')).toBeEnabled();await page.locator('#play').click();await expect(page.locator('#dislike')).toBeEnabled();await page.locator('#dislike').click();
+ for(let count=0;count<10;count++){const before=await page.evaluate(()=>(window as any).played.length);await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBeGreaterThan(before);}
+ expect(await page.evaluate(()=>(window as any).played.filter((id:string)=>id==='Aaaaaaaaaaa').length)).toBe(1);
+ await page.evaluate(()=>{const w=window as any;w.serverExcluded=[];w.reactionStates['90']=0;w.generation++;window.dispatchEvent(new Event('online'));});
+ await expect.poll(()=>page.evaluate(()=>(window as any).serverExcluded.length)).toBe(0);
+ let returned=false;
+ for(let count=0;count<24&&!returned;count++){const before=await page.evaluate(()=>(window as any).played.length);await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBeGreaterThan(before);returned=await page.evaluate(()=>(window as any).played.at(-1)==='Aaaaaaaaaaa');}
+ expect(returned).toBe(true);
+});

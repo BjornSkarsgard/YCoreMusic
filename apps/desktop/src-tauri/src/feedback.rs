@@ -11,6 +11,7 @@ use std::{
 };
 #[derive(Default)]
 struct Cache {
+    generation: u64,
     uid: Option<String>,
     liked: HashSet<String>,
     disliked: HashSet<String>,
@@ -18,6 +19,21 @@ struct Cache {
 }
 #[derive(Clone, Default)]
 pub struct Feedback(Arc<Mutex<Cache>>);
+pub struct Profile {
+    pub uid: String,
+    pub liked: HashSet<String>,
+    pub disliked: HashSet<String>,
+}
+impl Feedback {
+    pub fn profile(&self) -> Option<Profile> {
+        let cache = self.0.try_lock().ok()?;
+        Some(Profile {
+            uid: cache.uid.clone()?,
+            liked: cache.liked.clone(),
+            disliked: cache.disliked.clone(),
+        })
+    }
+}
 #[derive(Deserialize)]
 #[serde(
     tag = "type",
@@ -43,6 +59,7 @@ fn refresh(cache: &mut Cache) -> Result<(), &'static str> {
     cache.liked = liked.into_iter().collect();
     cache.disliked = disliked.into_iter().collect();
     cache.updated = Some(Instant::now());
+    cache.generation += 1;
     Ok(())
 }
 fn get(cache: &mut Cache, store: &Store, track: &str) -> Result<Reaction, &'static str> {
@@ -121,8 +138,23 @@ pub async fn feedback_command(
     tauri::async_runtime::spawn_blocking(move || -> Result<serde_json::Value, &'static str> {
         let mut cache = state.0.lock().map_err(|_| "Feedback unavailable")?;
         match request {
-            Request::Get { track_id } => serde_json::to_value(get(&mut cache, &store, &track_id)?)
-                .map_err(|_| "Cannot serialize feedback"),
+            Request::Get { track_id } => {
+                let record = get(&mut cache, &store, &track_id)?;
+                let complete = cache.updated.is_some()
+                    && cache.uid.as_deref().is_some_and(|uid| {
+                        store
+                            .pending_reactions(uid)
+                            .is_ok_and(|rows| rows.is_empty())
+                    });
+                let mut value =
+                    serde_json::to_value(record).map_err(|_| "Cannot serialize feedback")?;
+                value["generation"] = serde_json::json!(cache.generation);
+                if complete {
+                    value["excludedTrackIds"] =
+                        serde_json::json!(cache.disliked.iter().collect::<Vec<_>>());
+                }
+                Ok(value)
+            }
             Request::Set {
                 track_id,
                 state,
@@ -131,9 +163,20 @@ pub async fn feedback_command(
                 if cache.uid.is_none() {
                     refresh(&mut cache)?;
                 }
-                let uid = cache.uid.as_deref().ok_or("Account unavailable")?;
-                serde_json::to_value(store.set_reaction(uid, &track_id, state, expected)?)
-                    .map_err(|_| "Cannot serialize feedback")
+                let uid = cache.uid.clone().ok_or("Account unavailable")?;
+                let record = store.set_reaction(&uid, &track_id, state, expected)?;
+                cache.generation += 1;
+                cache.liked.remove(&track_id);
+                cache.disliked.remove(&track_id);
+                if state == 1 {
+                    cache.liked.insert(track_id.clone());
+                } else if state == -1 {
+                    cache.disliked.insert(track_id.clone());
+                }
+                let mut value =
+                    serde_json::to_value(record).map_err(|_| "Cannot serialize feedback")?;
+                value["generation"] = serde_json::json!(cache.generation);
+                Ok(value)
             }
             Request::Sync => {
                 if test_mode {
