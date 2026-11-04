@@ -203,7 +203,7 @@ test('saved manual clip precedes search and pause/resume produces one history ev
     }};
   });
   await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
-  expect(await page.evaluate(()=>(window as any).searches)).toBe(0);
+  expect(await page.evaluate(()=>(window as any).loaded[0])).toBe('Bbbbbbbbbbb');
   expect(await page.evaluate(()=>(window as any).records)).toEqual([]);
   await page.locator('#play').click();await page.locator('#pause').click();await page.locator('#play').click();
   await expect.poll(()=>page.evaluate(()=>(window as any).records.length)).toBe(1);
@@ -627,4 +627,64 @@ test('catalogue detail has back navigation and ignores a late collection after r
  await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseCollection)).toBe('function');
  await page.locator('#catalogue-back').click();await page.evaluate(()=>(window as any).releaseCollection());
  await expect(page.locator('#catalogue-collection')).toBeHidden();await expect(page.locator('.catalogue-card')).toBeVisible();await expect(page.locator('#catalogue-query')).toHaveValue('Artist');
+});
+
+test('personal library browses playlists and paginated likes without replacing playback',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.libraryCalls=[];w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+  if(cmd==='source_fetch')return [{id:'99',title:'Current',artist:'Fixture'}];
+  if(cmd==='search_videos')return [{id:'M7lc1UVf-VE',title:'Current',score:100,reason:'fixture'}];
+  if(cmd==='library_overview')return {playlists:[{kind:'playlist',id:'7',owner:'8',title:'My playlist',subtitle:'2 трека'}],liked_count:101};
+  if(cmd==='catalogue_collection'){w.libraryCalls.push(args);return {title:'Likes',tracks:[{id:String(args.page+1),title:'Liked '+args.page,artist:'Fixture'}],page:args.page,hasMore:args.kind==='likes'&&args.page===0};}
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await page.locator('[data-panel=library]').click();
+ await page.locator('.library-playlist').click();await expect(page.locator('#library-content .catalogue-track')).toHaveCount(1);await expect(page.locator('#track-title')).toHaveText('Current');
+ await page.getByRole('button',{name:'← Моя музыка'}).click();await page.locator('#library-likes').click();await page.getByRole('button',{name:'Ещё песни',exact:true}).click();
+ await expect(page.locator('#library-content .catalogue-track')).toHaveCount(2);expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+ await page.locator('#library-play-all').click();await expect(page.locator('#queue-list li')).toHaveText(['Liked 0 · Fixture','Liked 1 · Fixture']);
+ expect(await page.evaluate(()=>(window as any).libraryCalls.map((c:any)=>c.kind))).toEqual(['playlist','likes','likes']);
+});
+
+test('likes persist optimistically, dislike advances and Undo restores the old reaction without rewinding',async({page})=>{
+ await page.clock.install();
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.offline=true;w.feedback={};w.reactions=[];w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+  if(cmd==='source_fetch')return ['1','2','3','4','5'].map(id=>({id,title:'Track '+id,artist:'Fixture'}));
+  if(cmd==='search_videos')return [{id:'M7lc1UVf-VE',title:'Clip',score:100,reason:'fixture'}];
+  if(cmd==='feedback_command'){
+   const r=args.request;if(r.type==='sync'){if(w.offline)throw 'Offline';return {pending:0};}
+   if(r.type==='get')return w.feedback[r.trackId]??{trackId:r.trackId,state:0,revision:1,pending:false};
+   if(r.type==='set'){w.reactions.push(r);const previous=w.feedback[r.trackId]??{revision:1};return w.feedback[r.trackId]={trackId:r.trackId,state:r.state,revision:previous.revision+1,pending:true};}
+  }
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#like')).toBeEnabled();await page.locator('#like').click();await expect(page.locator('#like')).toHaveAttribute('aria-pressed','true');
+ await expect(page.locator('#feedback-notice')).toContainText('сохранена');await expect(page.locator('#dislike')).toBeEnabled();await page.locator('#dislike').click();
+ await expect(page.locator('#track-title')).toHaveText('Track 2');await page.locator('#feedback-undo').click();await expect(page.locator('#feedback-notice')).toContainText('отменён');
+ await expect(page.locator('#track-title')).toHaveText('Track 2');expect(await page.evaluate(()=>(window as any).feedback['1'].state)).toBe(1);
+ await page.evaluate(()=>{(window as any).offline=false;window.dispatchEvent(new Event('online'));});await page.clock.fastForward(2000);
+ await expect.poll(()=>page.evaluate(()=>(window as any).reactions.length)).toBe(3);
+});
+
+test('alternative video cards show previews, views and durations and keep the same track playing',async({page})=>{
+ await page.route('https://i.ytimg.com/**',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="100" height="60"/>'}));
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.saved=[];w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+  if(cmd==='source_fetch')return [{id:'123',title:'Song',artist:'Artist'}];
+  if(cmd==='search_videos')return [{id:'Lllllllllll',title:'Artist Song Live',views:2000000,durationSeconds:300,score:100,reason:'fixture'},{id:'Ooooooooooo',title:'Artist Song Official Video',views:1000000,durationSeconds:245,score:100,reason:'fixture'}];
+  if(cmd==='storage_command'&&args.request.type==='save_video')w.saved.push(args.request.videoId);
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await page.locator('#play').click();
+ const card=page.locator('.alternative-video').filter({hasText:'Official Video'});await expect(card.locator('img')).toHaveAttribute('src','https://i.ytimg.com/vi/Ooooooooooo/mqdefault.jpg');await expect(card).toContainText('4:05');await expect(card).toContainText('1 000 000 просмотров');
+ await card.click();await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe('Ooooooooooo');await expect(page.locator('#track-title')).toHaveText('Song');await expect(page.locator('#queue-list li[aria-current=true]')).toHaveCount(1);
+ expect(await page.evaluate(()=>(window as any).saved)).toEqual(['Ooooooooooo']);await page.locator('#pause').click();await page.locator('.alternative-video').filter({hasText:'Live'}).click();await expect(page.locator('#play')).toBeEnabled();expect(await page.evaluate(()=>(window as any).played.at(-1))).toBe('Ooooooooooo');
+});
+
+test('discovery preserves chart order, browsing is inert and refresh requests live data again',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.discoveries=0;w.__TAURI_INTERNALS__={invoke:async(cmd:string)=>{
+  if(cmd==='source_fetch')return [{id:'9',title:'Current',artist:'Fixture'}];
+  if(cmd==='search_videos')return [{id:'M7lc1UVf-VE',title:'Clip',score:100,reason:'fixture'}];
+  if(cmd==='discovery_fetch'){w.discoveries++;return {title:'Current chart',tracks:[{id:'3',title:'Top',artist:'A'},{id:'1',title:'Second',artist:'B'}],playlists:[{kind:'playlist',id:'7',owner:'8',title:'Popular collection',subtitle:''}]};}
+  if(cmd==='catalogue_collection')return {title:'Popular collection',tracks:[{id:'4',title:'Collection track',artist:'A'}],page:0,hasMore:false};
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await page.locator('[data-panel=discovery]').click();await expect(page.locator('.chart-position')).toHaveText(['1','2']);await expect(page.locator('#track-title')).toHaveText('Current');
+ await page.locator('#discovery-content .catalogue-card').click();await expect(page.locator('#catalogue-collection .catalogue-track')).toHaveCount(1);await page.locator('#catalogue-back').click();await expect(page.locator('#discovery-content')).toBeVisible();
+ await page.locator('#discovery-refresh').click();await expect.poll(()=>page.evaluate(()=>(window as any).discoveries)).toBe(2);
+ await page.getByRole('button',{name:'▶ Включить чарт'}).click();await expect(page.locator('#queue-list li')).toHaveText(['Top · A','Second · B']);
 });

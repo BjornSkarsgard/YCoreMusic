@@ -3,6 +3,9 @@ mod catalogue;
 #[allow(dead_code)]
 mod credentials;
 mod desktop;
+mod discovery;
+mod feedback;
+mod library;
 mod matcher;
 mod media;
 mod power;
@@ -135,6 +138,7 @@ fn main() {
             Ok(())
         })
         .manage(source::Source::default())
+        .manage(feedback::Feedback::default())
         .manage(matcher::Matcher::default())
         .manage(window_mode::WindowMode::default())
         .invoke_handler(tauri::generate_handler![
@@ -147,6 +151,9 @@ fn main() {
             desktop::desktop_close,
             catalogue_search,
             catalogue_collection,
+            library::library_overview,
+            discovery::discovery_fetch,
+            feedback::feedback_command,
             storage::storage_command,
             search_videos,
             window_mode::window_mini,

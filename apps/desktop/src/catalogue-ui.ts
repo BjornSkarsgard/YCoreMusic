@@ -1,6 +1,6 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { Track } from './queue';
-export interface CatalogueEntity {kind:'artist'|'album'|'playlist';id:string;owner?:string;title:string;subtitle:string}
+export interface CatalogueEntity {kind:'artist'|'album'|'playlist'|'likes';id:string;owner?:string;title:string;subtitle:string}
 export interface CatalogueCollection {title:string;tracks:Track[];hasMore:boolean;page:number}
 interface Results {corrected?:string;artists:CatalogueEntity[];tracks:Track[];albums:CatalogueEntity[];playlists:CatalogueEntity[];page:number}
 export interface CollectionContext {entity:CatalogueEntity;page:number;hasMore:boolean}
@@ -15,6 +15,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
  let results:Results={artists:[],tracks:[],albums:[],playlists:[],page:0};
  let opened:{entity:CatalogueEntity;tracks:Track[];page:number;hasMore:boolean}|undefined;
  let browsingCollection=false,hasSearchMore=false,resultsScroll=0;
+ let collectionReturn:(()=>void)|undefined;
  let returnFocus:HTMLElement|undefined;
  const scrollPane=()=>root.closest('.panel-scroll') as HTMLElement|null;
  function collectionView(show:boolean){
@@ -25,12 +26,13 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    get('catalogue-collection').hidden=!show;
  }
  function backButton(){
-   const button=document.createElement('button');button.type='button';button.id='catalogue-back';button.textContent='← К результатам поиска';
+   const button=document.createElement('button');button.type='button';button.id='catalogue-back';button.textContent=collectionReturn?'← К обзору':'← К результатам поиска';
    button.onclick=()=>{
      ++collectionRevision;opened=undefined;collectionView(false);
      get('catalogue-status').textContent='Результаты Яндекс Музыки.';
      const pane=scrollPane();if(pane)pane.scrollTop=resultsScroll;
      if(returnFocus?.isConnected)returnFocus.focus({preventScroll:true});
+     const back=collectionReturn;collectionReturn=undefined;back?.();
    };
    return button;
  }
@@ -105,6 +107,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
  get<HTMLFormElement>('catalogue-search').onsubmit=event=>{event.preventDefault();void search(false);};
  get('catalogue-more').onclick=()=>void search(true);
  get('catalogue-query').oninput=()=>{
+   collectionReturn=undefined;
    ++searchRevision;clearTimeout(timer);get<HTMLButtonElement>('catalogue-more').disabled=true;
    ++collectionRevision;opened=undefined;collectionView(false);
    if(get<HTMLInputElement>('catalogue-query').value.trim().length<2){
@@ -112,4 +115,5 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    }
    timer=setTimeout(()=>void search(false),400);
  };
+ return (entity:CatalogueEntity,back?:()=>void)=>{collectionReturn=back;void open(entity,false);};
 }

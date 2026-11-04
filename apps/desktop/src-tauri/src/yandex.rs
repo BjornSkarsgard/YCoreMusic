@@ -37,6 +37,26 @@ pub fn request_limited(
         .header("Authorization", auth.clone())
         .send()
         .map_err(|_| "Network/TLS error")?;
+    decode_response(response, limit)
+}
+pub fn request_form(
+    client: &Client,
+    path: &str,
+    auth: &HeaderValue,
+    body: &[(&str, String)],
+) -> Result<Value, &'static str> {
+    let response = client
+        .post(format!("https://api.music.yandex.net/{path}"))
+        .header("Authorization", auth.clone())
+        .form(body)
+        .send()
+        .map_err(|_| "Network/TLS error")?;
+    decode_response(response, 16_000_000)
+}
+fn decode_response(
+    response: reqwest::blocking::Response,
+    limit: u64,
+) -> Result<Value, &'static str> {
     match response.status().as_u16() {
         200 => {}
         401 | 403 => return Err("Authorization denied"),

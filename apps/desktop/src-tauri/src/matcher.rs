@@ -17,6 +17,8 @@ pub struct Candidate {
     #[serde(rename = "needsReview")]
     pub needs_review: bool,
     pub views: Option<u64>,
+    #[serde(rename = "durationSeconds")]
+    pub duration_seconds: Option<u32>,
     pub score: u32,
     pub reason: String,
 }
@@ -190,6 +192,8 @@ fn row(row: &Value, title: &str, artist: &str) -> Option<Candidate> {
         .iter()
         .filter_map(|run| run.get("text").and_then(Value::as_str))
         .find_map(view_count);
+    let duration_seconds = duration(row.get("fixedColumns").unwrap_or(&Value::Null))
+        .or_else(|| duration(row.get("flexColumns").unwrap_or(&Value::Null)));
     let byline = artist_runs
         .iter()
         .filter(|run| run.pointer("/navigationEndpoint/browseEndpoint").is_some())
@@ -209,10 +213,50 @@ fn row(row: &Value, title: &str, artist: &str) -> Option<Candidate> {
         title: candidate_title,
         byline,
         views,
+        duration_seconds,
         needs_review,
         score,
         reason,
     })
+}
+fn duration(value: &Value) -> Option<u32> {
+    fn clock(text: &str) -> Option<u32> {
+        let parts = text.trim().split(':').collect::<Vec<_>>();
+        if !(2..=3).contains(&parts.len())
+            || parts
+                .iter()
+                .any(|s| s.is_empty() || s.len() > 3 || !s.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return None;
+        }
+        let mut seconds = 0u32;
+        for (index, part) in parts.iter().enumerate() {
+            let value = part.parse::<u32>().ok()?;
+            if index > 0 && value >= 60 {
+                return None;
+            }
+            seconds = seconds.checked_mul(60)?.checked_add(value)?;
+        }
+        Some(seconds)
+    }
+    match value {
+        Value::String(s) => clock(s),
+        Value::Array(items) => items.iter().find_map(duration),
+        Value::Object(items) => items
+            .iter()
+            .filter(|(key, _)| {
+                matches!(
+                    key.as_str(),
+                    "text"
+                        | "simpleText"
+                        | "runs"
+                        | "musicResponsiveListItemFixedColumnRenderer"
+                        | "musicResponsiveListItemFlexColumnRenderer"
+                )
+            })
+            .find_map(|(_, v)| duration(v)),
+        _ => None,
+    }
 }
 fn parse(value: &Value, title: &str, artist: &str) -> Vec<Candidate> {
     fn walk(value: &Value, title: &str, artist: &str, depth: usize, out: &mut Vec<Candidate>) {
@@ -336,6 +380,7 @@ mod tests {
             title: "Fixture".into(),
             byline: "Unrelated uploader".into(),
             views: Some(views),
+            duration_seconds: None,
             needs_review,
             score,
             reason: String::new(),
@@ -429,6 +474,33 @@ mod tests {
         .is_none());
         assert!(score("Missing", "Oasis", "Wonderwall", "Oasis", "").is_none());
         assert!(score("Wonderwall", "", "Wonderwall", "Oasis", "").is_none());
+    }
+    #[test]
+    fn duration_reads_metadata_clocks_without_treating_view_counts_as_time() {
+        assert_eq!(
+            duration(
+                &json!([{"musicResponsiveListItemFixedColumnRenderer":{"text":{"runs":[{"text":"1:02:03"}]}}}])
+            ),
+            Some(3723)
+        );
+        assert_eq!(
+            duration(&json!({"text":{"runs":[{"text":"4:31"}]}})),
+            Some(271)
+        );
+        assert_eq!(duration(&json!({"text":"31M views"})), None);
+        assert_eq!(duration(&json!({"text":"4:99"})), None);
+    }
+    #[test]
+    #[ignore = "Read-only real video duration metadata probe"]
+    fn live_video_durations() {
+        let result = search(&Matcher::default(), "Wonderwall", "Oasis").unwrap();
+        assert!(!result.is_empty());
+        let known = result
+            .iter()
+            .filter(|v| v.duration_seconds.is_some())
+            .count();
+        println!("Video duration metadata: {} / {}", known, result.len());
+        assert!(known > 0);
     }
     #[test]
     #[ignore = "Opt-in user-reported metadata regression"]

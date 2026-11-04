@@ -10,7 +10,7 @@ const nativeEnvironment={...process.env,ENCORE_TEST_DATA_DIR:resolve(root,'.tool
 const driver=spawn(process.env.ENCORE_TAURI_DRIVER ?? 'tauri-driver',[
   '--port','4444','--native-driver',process.env.ENCORE_EDGE_DRIVER ?? resolve(root,'.tools/edgedriver/msedgedriver.exe')
 ],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
-let session;
+let session,appPid,isolated=false;
 let originalVolume=null,volumeCaptured=false;
 async function request(path,body,method=body===undefined?'GET':'POST') {
   const response=await fetch('http://127.0.0.1:4444'+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(45000)});
@@ -34,6 +34,7 @@ try {
   for(let attempt=0;attempt<40;attempt++){try{await request('/status');break;}catch{await sleep(250);}}
   const created=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:nativeApp}}}});
   session=created.sessionId;
+  appPid=created.capabilities?.['goog:processID'];
   await until('return !!document.getElementById("play")');
   await execute('window.nativeErrors=[];window.addEventListener("error",event=>window.nativeErrors.push(event.message));');
   assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
@@ -42,6 +43,7 @@ try {
   const store=async(requestBody)=>request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("storage_command",{request:arguments[0]}).then(done).catch(()=>done({testError:true}));',args:[requestBody]});
   const storageStatus=await store({type:'status'});
   assert.equal(storageStatus.testMode,true,'Refuse storage tests against the personal database');
+  isolated=true;
   assert.equal(storageStatus.available,true,'Test database unavailable');
   const fixture='native-fixture-'+Date.now();
   await store({type:'save_video',trackId:'123456789',videoId:'M7lc1UVf-VE'});
@@ -82,6 +84,39 @@ try {
     await until('return document.getElementById("track-title").textContent+" · "+document.getElementById("track-artist").textContent===window.expectedCatalogueTrack');
     assert(await execute('return document.querySelectorAll("#queue-list li").length>0'));
     console.log('Native catalogue: Cyrillic query, four sections, artist/album/playlist lists and selection: PASS');
+  }
+  if(process.env.ENCORE_LIVE_LIBRARY==='1') {
+    await until('return document.querySelectorAll("#queue-list li").length>0');
+    const before=await execute('return document.getElementById("track-title").textContent');
+    await execute('document.querySelector("[data-panel=library]").click()');
+    await until('return !!document.getElementById("library-likes")');
+    await click('library-likes');
+    await until('return document.querySelectorAll("#library-content .catalogue-track").length>0');
+    assert.equal(await execute('return document.getElementById("track-title").textContent'),before);
+    await execute('document.querySelector("[data-panel=discovery]").click()');
+    await until('return document.querySelectorAll(".discovery-track").length>0');
+    assert.equal(await execute('return document.getElementById("track-title").textContent'),before);
+    assert.equal(await nativeInvoke('feedback_command',{request:{type:'sync'}}),null,'Test mode must block live feedback writes');
+    writeFileSync(resolve(root,'.tools/native-discovery.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
+    console.log('Native personal library, likes metadata and current chart browsing: PASS; live feedback writes blocked');
+  }
+  if(process.env.ENCORE_LIVE_ALTERNATIVES==='1') {
+    const results=await nativeInvoke('catalogue_search',{query:'Oasis Wonderwall',page:0});
+    const track=results.tracks.find(track=>track.artist.includes('Oasis')&&track.title.toLowerCase().includes('wonderwall'));
+    assert(track,'Known real alternative-video fixture not found');
+    await store({type:'remove_video',trackId:track.id});
+    await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));window.alternativeFixture=arguments[0];document.getElementById("catalogue-query").value="Oasis Wonderwall";document.getElementById("catalogue-search").requestSubmit();',[track.title]);
+    await until('return Array.from(document.querySelectorAll("#catalogue-results .catalogue-track")).some(row=>row.querySelector("strong").textContent===window.alternativeFixture&&row.querySelector("small").textContent.includes("Oasis"))');
+    await execute('Array.from(document.querySelectorAll("#catalogue-results .catalogue-track")).find(row=>row.querySelector("strong").textContent===window.alternativeFixture&&row.querySelector("small").textContent.includes("Oasis")).querySelector("button").click()');
+    await until('return document.querySelectorAll(".alternative-video").length>1 && document.getElementById("status").textContent==="Воспроизведение"',45000);
+    await until('return Array.from(document.querySelectorAll(".alternative-video img")).some(image=>image.complete&&image.naturalWidth>0)');
+    await execute('const button=document.querySelector(".alternative-video[aria-pressed=false]");window.alternativeExpected=button.querySelector("strong").textContent;button.click()');
+    await until('return document.querySelector(".alternative-video[aria-pressed=true] strong")?.textContent===window.alternativeExpected && document.getElementById("status").textContent==="Воспроизведение"',45000);
+    assert.equal(await execute('return document.getElementById("track-title").textContent'),track.title);
+    assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);
+    await click('pause');
+    writeFileSync(resolve(root,'.tools/native-alternatives.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
+    console.log('Native real alternative video switch: preview, same track, one IFrame, explicit play preserved, muted: PASS');
   }
   if(process.env.ENCORE_LIVE_MATCHING==='1') {
     await until('return !document.getElementById("play").disabled || /Уверенного|недоступен|недоступны/.test(document.getElementById("status").textContent)',40000);
@@ -162,6 +197,8 @@ try {
       await request('/session/'+session+'/element/'+button['element-6066-11e4-a52e-4f735466cecf']+'/click',{});
     };
     await clickFullscreen();await until('return document.fullscreenElement?.classList.contains("workspace")');
+    const fullscreenSurface=await request('/session/'+session+'/element',{using:'css selector',value:'.workspace'});
+    await request('/session/'+session+'/actions',{actions:[{type:'pointer',id:'fullscreen-idle',parameters:{pointerType:'mouse'},actions:[{type:'pointerMove',duration:200,origin:fullscreenSurface,x:0,y:-100}]}]});
     await until('return getComputedStyle(document.querySelector(".player-hud")).opacity==="0"');
     assert.equal(await execute('return document.querySelectorAll("iframe#player").length'),1);
     await clickFullscreen();await until('return !document.fullscreenElement');
@@ -276,5 +313,9 @@ try {
   if(session && volumeCaptured) await execute('if(arguments[0]===null)localStorage.removeItem("encore.volume.v1");else localStorage.setItem("encore.volume.v1",arguments[0]);',[originalVolume]).catch(()=>{});
   if(session) await nativeInvoke('desktop_action',{action:'quit'}).catch(()=>{});
   if(session) await request('/session/'+session,undefined,'DELETE').catch(()=>{});
+  if(isolated&&Number.isInteger(appPid)){
+    for(let count=0;count<30;count++){try{process.kill(appPid,0);}catch{break;}await sleep(100);}
+    try{process.kill(appPid);}catch{}
+  }
   if(process.platform==='win32') { await new Promise(resolve=>{const cleanup=spawn('taskkill',['/PID',String(driver.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});cleanup.on('close',resolve);cleanup.on('error',resolve);}); } else driver.kill();
 }

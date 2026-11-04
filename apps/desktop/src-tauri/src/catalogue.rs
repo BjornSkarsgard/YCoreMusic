@@ -9,6 +9,7 @@ pub enum Kind {
     Artist,
     Album,
     Playlist,
+    Likes,
 }
 #[derive(Serialize)]
 pub struct Entity {
@@ -60,7 +61,7 @@ fn artists(value: &Value) -> String {
         })
         .unwrap_or_default()
 }
-fn track(value: &Value) -> Option<Track> {
+pub(crate) fn track(value: &Value) -> Option<Track> {
     let value = value
         .get("track")
         .filter(|track| track.is_object())
@@ -273,6 +274,7 @@ pub fn collection(
                 .ok_or("Invalid playlist owner")?;
             request(&format!("users/{owner}/playlists/{entity_id}"), &[])?
         }
+        Kind::Likes => return crate::library::liked_collection(page),
     };
     parse_collection(&value, kind, page)
 }

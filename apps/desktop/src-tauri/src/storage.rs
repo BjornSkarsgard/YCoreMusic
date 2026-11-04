@@ -7,6 +7,14 @@ use std::{
 };
 #[derive(Clone)]
 pub struct Store(Arc<Mutex<Connection>>);
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Reaction {
+    pub track_id: String,
+    pub state: i8,
+    pub revision: i64,
+    pub pending: bool,
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayRecord {
@@ -42,7 +50,7 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|_| "Cannot read database schema; existing file preserved")?;
-    if version > 1 {
+    if version > 2 {
         return Err("Database schema is newer than Encore; existing file preserved");
     }
     if version == 0 {
@@ -65,13 +73,110 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
         .prepare("SELECT track_id,video_id,updated_at FROM manual_videos LIMIT 0")
         .map_err(|_| "Invalid manual video schema")?;
     connection.prepare("SELECT playback_id,track_id,title,artist,video_id,started_at,search_text FROM play_history LIMIT 0").map_err(|_|"Invalid history schema")?;
+    if version < 2 {
+        let transaction = connection
+            .transaction()
+            .map_err(|_| "Cannot start feedback migration")?;
+        transaction.execute_batch("CREATE TABLE track_feedback(account_id TEXT NOT NULL,track_id TEXT NOT NULL,state INTEGER NOT NULL CHECK(state IN(-1,0,1)),revision INTEGER NOT NULL,pending INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL,PRIMARY KEY(account_id,track_id));CREATE INDEX feedback_outbox ON track_feedback(account_id,pending,updated_at);PRAGMA user_version=2;").map_err(|_|"Cannot migrate feedback storage")?;
+        transaction
+            .commit()
+            .map_err(|_| "Cannot commit feedback migration")?;
+    }
+    connection.prepare("SELECT account_id,track_id,state,revision,pending,updated_at FROM track_feedback LIMIT 0").map_err(|_|"Invalid feedback schema")?;
     Ok(())
 }
 impl Store {
     pub fn open(path: &Path) -> Result<Self, &'static str> {
         let mut connection = Connection::open(path).map_err(|_| "Cannot open local database")?;
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |row| row.get(0))
+            .map_err(|_| "Cannot read storage version")?;
+        if version == 1 {
+            let backup = path.with_extension(format!(
+                "v1-backup-{}.sqlite",
+                chrono::Utc::now().timestamp_millis()
+            ));
+            connection
+                .execute("VACUUM INTO ?1", [backup.to_string_lossy().as_ref()])
+                .map_err(|_| "Cannot back up database before migration")?;
+        }
         migrate(&mut connection)?;
         Ok(Self(Arc::new(Mutex::new(connection))))
+    }
+    pub fn reaction(&self, uid: &str, track: &str) -> Result<Option<Reaction>, &'static str> {
+        if !track_id(uid) || !track_id(track) {
+            return Err("Invalid feedback identity");
+        }
+        self.0.lock().map_err(|_|"Storage unavailable")?.query_row("SELECT state,revision,pending FROM track_feedback WHERE account_id=?1 AND track_id=?2",params![uid,track],|row|Ok(Reaction{track_id:track.into(),state:row.get(0)?,revision:row.get(1)?,pending:row.get(2)?})).optional().map_err(|_|"Cannot read feedback")
+    }
+    pub fn set_reaction(
+        &self,
+        uid: &str,
+        track: &str,
+        state: i8,
+        expected: Option<i64>,
+    ) -> Result<Reaction, &'static str> {
+        if !track_id(uid) || !track_id(track) || !(-1..=1).contains(&state) {
+            return Err("Invalid feedback");
+        }
+        let mut connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let tx = connection
+            .transaction()
+            .map_err(|_| "Cannot start feedback transaction")?;
+        let previous: i64 = tx
+            .query_row(
+                "SELECT revision FROM track_feedback WHERE account_id=?1 AND track_id=?2",
+                params![uid, track],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|_| "Cannot read feedback revision")?
+            .unwrap_or(0);
+        if expected.is_some_and(|revision| revision != previous) {
+            return Err("Feedback changed; undo ignored");
+        }
+        let revision = previous + 1;
+        tx.execute("INSERT INTO track_feedback(account_id,track_id,state,revision,pending,updated_at) VALUES(?1,?2,?3,?4,1,?5) ON CONFLICT(account_id,track_id) DO UPDATE SET state=excluded.state,revision=excluded.revision,pending=1,updated_at=excluded.updated_at",params![uid,track,state,revision,chrono::Utc::now().to_rfc3339()]).map_err(|_|"Cannot save feedback")?;
+        tx.commit().map_err(|_| "Cannot commit feedback")?;
+        Ok(Reaction {
+            track_id: track.into(),
+            state,
+            revision,
+            pending: true,
+        })
+    }
+    pub fn remember_reaction(
+        &self,
+        uid: &str,
+        track: &str,
+        state: i8,
+    ) -> Result<Reaction, &'static str> {
+        if !track_id(uid) || !track_id(track) || !(-1..=1).contains(&state) {
+            return Err("Invalid feedback");
+        }
+        self.0.lock().map_err(|_|"Storage unavailable")?.execute("INSERT INTO track_feedback(account_id,track_id,state,revision,pending,updated_at) VALUES(?1,?2,?3,1,0,?4) ON CONFLICT(account_id,track_id) DO UPDATE SET state=excluded.state,revision=track_feedback.revision+CASE WHEN track_feedback.state!=excluded.state THEN 1 ELSE 0 END WHERE track_feedback.pending=0",params![uid,track,state,chrono::Utc::now().to_rfc3339()]).map_err(|_|"Cannot cache remote feedback")?;
+        self.reaction(uid, track)?.ok_or("Feedback unavailable")
+    }
+    pub fn pending_reactions(&self, uid: &str) -> Result<Vec<Reaction>, &'static str> {
+        let connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let mut statement=connection.prepare("SELECT track_id,state,revision FROM track_feedback WHERE account_id=?1 AND pending=1 ORDER BY updated_at LIMIT 25").map_err(|_|"Cannot read outbox")?;
+        let rows = statement
+            .query_map([uid], |row| {
+                Ok(Reaction {
+                    track_id: row.get(0)?,
+                    state: row.get(1)?,
+                    revision: row.get(2)?,
+                    pending: true,
+                })
+            })
+            .map_err(|_| "Cannot read outbox")?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|_| "Cannot read outbox");
+        rows
+    }
+    pub fn acknowledge_reaction(&self, uid: &str, record: &Reaction) -> Result<(), &'static str> {
+        self.0.lock().map_err(|_|"Storage unavailable")?.execute("UPDATE track_feedback SET pending=0 WHERE account_id=?1 AND track_id=?2 AND revision=?3",params![uid,record.track_id,record.revision]).map_err(|_|"Cannot acknowledge feedback")?;
+        Ok(())
     }
     pub fn save_video(&self, track: &str, video: &str) -> Result<(), &'static str> {
         if !track_id(track) || !video_id(video) {
@@ -157,6 +262,83 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn migration_backs_up_v1_and_preserves_history_and_manual_overrides() {
+        let path = std::env::temp_dir().join(format!(
+            "encore-migrate-{}-{}.sqlite",
+            std::process::id(),
+            chrono::Utc::now().timestamp_nanos_opt().unwrap()
+        ));
+        {
+            let store = Store::open(&path).unwrap();
+            store.save_video("123", "M7lc1UVf-VE").unwrap();
+            store
+                .record(&PlayRecord {
+                    playback_id: "migration-event".into(),
+                    track_id: "123".into(),
+                    title: "Keep".into(),
+                    artist: "Artist".into(),
+                    video_id: "M7lc1UVf-VE".into(),
+                })
+                .unwrap();
+            store
+                .0
+                .lock()
+                .unwrap()
+                .execute_batch("DROP TABLE track_feedback;PRAGMA user_version=1;")
+                .unwrap();
+        }
+        let before: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_stem()
+                    .unwrap()
+                    .to_string_lossy()
+                    .starts_with(&path.file_stem().unwrap().to_string_lossy().to_string())
+            })
+            .collect();
+        {
+            let store = Store::open(&path).unwrap();
+            assert_eq!(
+                store.saved_video("123").unwrap().as_deref(),
+                Some("M7lc1UVf-VE")
+            );
+            assert_eq!(store.history("").unwrap().len(), 1);
+            store.set_reaction("1", "123", 1, None).unwrap();
+        }
+        let backup = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .find(|p| {
+                !before.contains(p)
+                    && p.file_stem()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with(&path.file_stem().unwrap().to_string_lossy().to_string())
+            })
+            .unwrap();
+        {
+            let connection = Connection::open(&backup).unwrap();
+            assert_eq!(
+                connection
+                    .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                1
+            );
+            assert_eq!(
+                connection
+                    .query_row("SELECT COUNT(*) FROM play_history", [], |r| r
+                        .get::<_, i64>(0))
+                    .unwrap(),
+                1
+            );
+        }
+        std::fs::remove_file(path).unwrap();
+        std::fs::remove_file(backup).unwrap();
+    }
     fn memory() -> Store {
         let mut connection = Connection::open_in_memory().unwrap();
         migrate(&mut connection).unwrap();
