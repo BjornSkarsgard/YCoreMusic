@@ -41,9 +41,11 @@ pub struct Status {
     visible: bool,
     topmost: bool,
     fullscreen: bool,
+    monitor_id: Option<String>,
 }
 fn status(window: Option<WebviewWindow>) -> Status {
     Status {
+        monitor_id: window.as_ref().and_then(crate::monitors::current_id),
         enabled: window.is_some(),
         visible: window
             .as_ref()
@@ -65,13 +67,25 @@ pub enum WindowAction {
 }
 
 #[tauri::command]
-pub async fn scene_window(window: WebviewWindow, action: WindowAction) -> Result<Status, String> {
+pub async fn scene_window(
+    window: WebviewWindow,
+    action: WindowAction,
+    monitor_id: Option<String>,
+) -> Result<Status, String> {
     if window.label() != "main" {
         return Err("Untrusted window".into());
     }
     let app = window.app_handle();
     match action {
         WindowAction::Open => {
+            if let Some(id) = monitor_id.as_deref() {
+                if !crate::monitors::list(&window)?
+                    .iter()
+                    .any(|display| display.id == id)
+                {
+                    return Err("Selected display is disconnected".into());
+                }
+            }
             if let Some(scene) = app.get_webview_window(LABEL) {
                 scene.show().map_err(|_| "Cannot show scene")?;
                 scene.unminimize().map_err(|_| "Cannot restore scene")?;
@@ -103,6 +117,11 @@ pub async fn scene_window(window: WebviewWindow, action: WindowAction) -> Result
                     })
                     .build()
                     .map_err(|_| "Cannot create scene window")?;
+            }
+            if let Some(id) = monitor_id.as_deref() {
+                if let Some(scene) = app.get_webview_window(LABEL) {
+                    crate::monitors::place(&scene, id)?;
+                }
             }
         }
         WindowAction::Off => {

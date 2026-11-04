@@ -282,15 +282,32 @@ try {
   if(process.env.ENCORE_SCENE_SMOKE==='1') {
     const mainHandle=await request('/session/'+session+'/window');
     const beforeHandles=await request('/session/'+session+'/window/handles');
+    const displays=await nativeInvoke('monitor_list');assert(displays.length>0);assert(displays.every(display=>display.width>0&&display.height>0&&display.scaleFactor>0));
+    assert.equal(new Set(displays.map(display=>display.id)).size,displays.length);
+    console.log('Native monitor inventory: '+displays.length+' display(s), '+displays.filter(display=>display.stable).length+' Windows interface identities, '+displays.filter(display=>display.refreshHz).length+' nominal refresh rates');
+    const targetDisplay=displays.find(display=>display.primary)??displays[0];
+    assert.equal(await nativeInvoke('scene_window',{action:'open',monitorId:'missing-display'}),null,'Disconnected display must not open a replacement scene');
     assert.equal(await nativeInvoke('scene_snapshot'),null,'Main cannot impersonate a scene viewer');
     assert.equal(await nativeInvoke('scene_control',{action:{type:'next'}}),null);
-    await execute('document.querySelector("[data-panel=settings]").click();document.getElementById("scene-open").click();');
+    await execute('document.querySelector("[data-panel=settings]").click();');
+    await until('return document.getElementById("scene-monitor").options.length>1');
+    await execute('document.getElementById("scene-monitor").value=arguments[0];document.getElementById("scene-open").click();',[targetDisplay.id]);
     await until('return !document.getElementById("scene-off").disabled');
+    for(let attempt=0;attempt<30;attempt++){if((await nativeInvoke('scene_window',{action:'status'}))?.monitorId===targetDisplay.id)break;await sleep(100);}
+    assert.equal((await nativeInvoke('scene_window',{action:'status'})).monitorId,targetDisplay.id);
+    for(const display of displays){
+      await nativeInvoke('scene_window',{action:'open',monitorId:display.id});
+      for(let attempt=0;attempt<30;attempt++){if((await nativeInvoke('scene_window',{action:'status'}))?.monitorId===display.id)break;await sleep(100);}
+      assert.equal((await nativeInvoke('scene_window',{action:'status'})).monitorId,display.id,'Scene must move to the explicitly selected display');
+    }
+    await nativeInvoke('scene_window',{action:'open',monitorId:targetDisplay.id});
+    console.log('Native explicit scene placement across '+displays.length+' connected display(s): PASS');
     const sceneHandles=await request('/session/'+session+'/window/handles');assert.equal(sceneHandles.length,beforeHandles.length+1);
     const sceneHandle=sceneHandles.find(handle=>!beforeHandles.includes(handle));
     const switchTo=handle=>request('/session/'+session+'/window',{handle});
     await switchTo(sceneHandle);await until('return !!document.getElementById("scene-title")');
     assert.equal(await nativeInvoke('storage_command',{request:{type:'status'}}),null,'Scene cannot access personal storage');
+    assert.equal(await nativeInvoke('monitor_list'),null,'Scene cannot enumerate display configuration');
     assert.equal(await nativeInvoke('scene_window',{action:'off'}),null,'Scene cannot replace window configuration');
     await nativeInvoke('scene_control',{action:{type:'fullscreen'}});
     const sceneUntil=async(field,value)=>{for(let attempt=0;attempt<40;attempt++){if((await nativeInvoke('scene_control',{action:{type:'status'}}))?.[field]===value)return;await sleep(100);}throw Error('Scene window did not settle: '+field);};

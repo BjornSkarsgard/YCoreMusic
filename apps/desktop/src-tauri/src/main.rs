@@ -11,6 +11,7 @@ mod feedback;
 mod library;
 mod matcher;
 mod media;
+mod monitors;
 mod power;
 mod scenes;
 mod smart_history;
@@ -170,6 +171,7 @@ fn main() {
             scenes::scene_publish,
             scenes::scene_snapshot,
             scenes::scene_control,
+            monitors::monitor_list,
             wave_feedback::wave_sync,
             source_stations,
             autostart::autostart_status,

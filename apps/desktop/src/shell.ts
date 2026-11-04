@@ -28,7 +28,7 @@ export function showPanel(name:string){
  if(name==='discovery')document.getElementById('discovery')?.dispatchEvent(new Event('discovery-open'));
  if(name==='library')document.getElementById('library')?.dispatchEvent(new Event('library-open'));
  if(name==='queue')document.querySelector('[data-pane="queue"]')?.dispatchEvent(new Event('queue-open'));
- if(name==='settings')for(const id of ['autostart-settings','diagnostics'])document.getElementById(id)?.dispatchEvent(new Event('settings-open'));
+ if(name==='settings')for(const id of ['scene-settings','autostart-settings','diagnostics'])document.getElementById(id)?.dispatchEvent(new Event('settings-open'));
  if(name==='history')(document.getElementById('history-panel') as HTMLDetailsElement).open=true;
 }
 export function mountShellNavigation(){

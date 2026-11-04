@@ -25,3 +25,24 @@ test('late initial window status cannot disable a newly opened scene; open and o
  const count=await page.evaluate(()=>(window as any).published.length);await page.waitForTimeout(650);expect(await page.evaluate(()=>(window as any).published.length)).toBe(count);
  expect(await page.evaluate(()=>(window as any).windowCalls)).toEqual(['status','open','off']);
 });
+
+test('monitor selection is explicit and a missing display remains selected instead of moving to another screen',async({page})=>{
+ await page.addInitScript(()=>{
+  const w=window as any;w.isTauri=true;w.displayCalls=0;w.selectedDisplays=[];
+  w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
+   if(command==='source_fetch'||command==='smart_history_fetch')return [];
+   if(command==='monitor_list'){++w.displayCalls;return w.disconnected?[]:[{id:'monitor-tv',name:'TV',stable:true,primary:false,width:3840,height:2160,scaleFactor:2,refreshHz:60}];}
+   if(command==='scene_window'){
+    if(args.action==='open'){w.selectedDisplays.push(args.monitorId);if(w.disconnected)throw Error('Selected display is disconnected');return {enabled:true,visible:true,topmost:false};}
+    return {enabled:false,visible:false,topmost:false};
+   }
+  }};
+ });
+ await page.goto('/');await page.locator('[data-panel=settings]').click();await expect(page.locator('#scene-monitor option')).toHaveCount(2);
+ expect(await page.evaluate(()=>(window as any).selectedDisplays)).toEqual([]);
+ await page.locator('#scene-monitor').selectOption('monitor-tv');await page.locator('#scene-open').click();await expect(page.locator('#scene-off')).toBeEnabled();
+ expect(await page.evaluate(()=>(window as any).selectedDisplays)).toEqual(['monitor-tv']);
+ await page.evaluate(()=>(window as any).disconnected=true);await page.locator('#monitor-refresh').click();await expect(page.locator('#monitor-status')).toContainText('Экран отключён');
+ await expect(page.locator('#scene-monitor')).toHaveValue('monitor-tv');await page.locator('#scene-open').click();await expect(page.locator('#scene-window-status')).toContainText('Не удалось');
+ expect(await page.evaluate(()=>(window as any).selectedDisplays)).toEqual(['monitor-tv','monitor-tv']);
+});
