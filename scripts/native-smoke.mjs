@@ -63,6 +63,7 @@ try {
     console.log('Native source session + next batch via OS credential store: PASS (counts only)');
   }
   if(process.env.ENCORE_LIVE_CATALOGUE==='1') {
+    await until('return document.querySelectorAll("#queue-list li").length>0');
     const before=await execute('return document.getElementById("track-title").textContent');
     await execute('document.getElementById("catalogue-query").value="рамштайн";document.getElementById("catalogue-search").requestSubmit();');
     await until('return Array.from(document.querySelectorAll(".catalogue-card strong")).some(item=>item.textContent.toLowerCase()==="rammstein")');
@@ -71,12 +72,13 @@ try {
     await execute('Array.from(document.querySelectorAll(".catalogue-card strong")).find(item=>item.textContent.toLowerCase()==="rammstein").closest("button").click()');
     await until('return document.querySelectorAll("#catalogue-collection .catalogue-track").length>0');
     for(const heading of ['Альбомы','Плейлисты']) {
+      await click('catalogue-back');
       await execute('Array.from(document.querySelectorAll("#catalogue-results section")).find(section=>section.querySelector("h3")?.textContent===arguments[0]).querySelector(".catalogue-card").click()',[heading]);
       await until('return document.querySelectorAll("#catalogue-collection .catalogue-track").length>0');
     }
     assert.equal(await execute('return document.getElementById("track-title").textContent'),before);
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));');
-    await execute('window.expectedCatalogueTrack=document.querySelector("#catalogue-collection .catalogue-track strong").textContent+" · "+document.querySelector("#catalogue-collection .catalogue-track small").textContent;document.querySelector("#catalogue-collection > button").click()');
+    await execute('window.expectedCatalogueTrack=document.querySelector("#catalogue-collection .catalogue-track strong").textContent+" · "+document.querySelector("#catalogue-collection .catalogue-track small").textContent;document.getElementById("catalogue-play-all").click()');
     await until('return document.getElementById("track-title").textContent+" · "+document.getElementById("track-artist").textContent===window.expectedCatalogueTrack');
     assert(await execute('return document.querySelectorAll("#queue-list li").length>0'));
     console.log('Native catalogue: Cyrillic query, four sections, artist/album/playlist lists and selection: PASS');
@@ -151,10 +153,16 @@ try {
     console.log('Native clean hover/custom seek, real caption on/off, settings position/history preservation: PASS');
     const frameBeforeFullscreen=await execute('return document.getElementById("player").src');
     const clickFullscreen=async()=>{
+      if(await execute('return !!document.fullscreenElement')) {
+        const workspace=await request('/session/'+session+'/element',{using:'css selector',value:'.workspace'});
+        await request('/session/'+session+'/actions',{actions:[{type:'pointer',id:'fullscreen-motion',parameters:{pointerType:'mouse'},actions:[{type:'pointerMove',duration:200,origin:workspace,x:0,y:-100}]}]});
+        await until('return getComputedStyle(document.querySelector(".player-hud")).opacity==="1"');
+      }
       const button=await request('/session/'+session+'/element',{using:'css selector',value:'#fullscreen'});
       await request('/session/'+session+'/element/'+button['element-6066-11e4-a52e-4f735466cecf']+'/click',{});
     };
     await clickFullscreen();await until('return document.fullscreenElement?.classList.contains("workspace")');
+    await until('return getComputedStyle(document.querySelector(".player-hud")).opacity==="0"');
     assert.equal(await execute('return document.querySelectorAll("iframe#player").length'),1);
     await clickFullscreen();await until('return !document.fullscreenElement');
     assert.equal(await execute('return document.getElementById("player").src'),frameBeforeFullscreen);

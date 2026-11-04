@@ -1,5 +1,6 @@
 import './style.css';
 import {appShell,mountShellNavigation,showPanel} from './shell';
+import {mountFullscreenControls} from './fullscreen-controls';
 import { videoId } from './video-id';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {listen} from '@tauri-apps/api/event';
@@ -561,6 +562,7 @@ document.addEventListener('fullscreenchange',()=>{
 });
 
 mountShellNavigation();
+mountFullscreenControls(document.querySelector<HTMLElement>('.workspace')!,document.querySelector<HTMLElement>('.player-hud')!);
 
 const streamWatchdog=setInterval(()=>{
  if(!playIntent||powerPaused||!activeVideo)return;

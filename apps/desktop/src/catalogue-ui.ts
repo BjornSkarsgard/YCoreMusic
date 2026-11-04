@@ -14,6 +14,26 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
  let filter='Всё';
  let results:Results={artists:[],tracks:[],albums:[],playlists:[],page:0};
  let opened:{entity:CatalogueEntity;tracks:Track[];page:number;hasMore:boolean}|undefined;
+ let browsingCollection=false,hasSearchMore=false,resultsScroll=0;
+ let returnFocus:HTMLElement|undefined;
+ const scrollPane=()=>root.closest('.panel-scroll') as HTMLElement|null;
+ function collectionView(show:boolean){
+   browsingCollection=show;
+   get('catalogue-results').hidden=show;
+   get('catalogue-filters').hidden=show;
+   get('catalogue-more').hidden=show||!hasSearchMore;
+   get('catalogue-collection').hidden=!show;
+ }
+ function backButton(){
+   const button=document.createElement('button');button.type='button';button.id='catalogue-back';button.textContent='← К результатам поиска';
+   button.onclick=()=>{
+     ++collectionRevision;opened=undefined;collectionView(false);
+     get('catalogue-status').textContent='Результаты Яндекс Музыки.';
+     const pane=scrollPane();if(pane)pane.scrollTop=resultsScroll;
+     if(returnFocus?.isConnected)returnFocus.focus({preventScroll:true});
+   };
+   return button;
+ }
  function play(tracks:Track[],title:string,context?:CollectionContext){select({tracks,title,collection:context});}
  function trackRows(tracks:Track[],onPlay:(index:number)=>void){
    return tracks.map((track,index)=>{
@@ -35,21 +55,26 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
      if(name==='Исполнители'&&results.tracks.length&&filter==='Всё')renderTracks(container);
    }
    if(results.tracks.length&&(filter==='Треки'||(!results.artists.length&&filter==='Всё')))renderTracks(container);
+   if(!container.childElementCount){const empty=document.createElement('p');empty.className='panel-description';empty.textContent=filter==='Всё'?'Ничего не найдено.':'В разделе «'+filter+'» пока нет результатов. Попробуйте другой фильтр или запрос.';container.append(empty);}
  }
  function renderTracks(container:HTMLElement){const section=document.createElement('section'),heading=document.createElement('h3');heading.textContent='Треки';section.append(heading,...trackRows(results.tracks,index=>play([results.tracks[index]],results.tracks[index].title)));container.append(section);}
  function renderCollection(){
    if(!opened)return;
    const value=opened,container=get('catalogue-collection');container.hidden=false;container.replaceChildren();
    const heading=document.createElement('h3');heading.textContent=value.entity.title;
-   const playAll=document.createElement('button');playAll.textContent='▶ Воспроизвести список';playAll.disabled=!value.tracks.length;playAll.onclick=()=>play([...value.tracks],value.entity.title,{entity:value.entity,page:value.page,hasMore:value.hasMore});
+   const playAll=document.createElement('button');playAll.id='catalogue-play-all';playAll.textContent='▶ Воспроизвести список';playAll.disabled=!value.tracks.length;playAll.onclick=()=>play([...value.tracks],value.entity.title,{entity:value.entity,page:value.page,hasMore:value.hasMore});
    const more=document.createElement('button');more.textContent='Ещё песни';more.hidden=!value.hasMore;more.onclick=()=>void open(value.entity,true);
-   container.append(heading,playAll,...trackRows(value.tracks,index=>play(value.tracks.slice(index),value.entity.title,{entity:value.entity,page:value.page,hasMore:value.hasMore})),more);
+   container.append(backButton(),heading,playAll,...trackRows(value.tracks,index=>play(value.tracks.slice(index),value.entity.title,{entity:value.entity,page:value.page,hasMore:value.hasMore})),more);
  }
  async function open(entity:CatalogueEntity,append:boolean){
    const revision=++collectionRevision;
    const requestedPage=append&&opened?opened.page+1:0;
-   const container=get('catalogue-collection');container.hidden=false;
-   if(!append){opened=undefined;container.replaceChildren();}
+   const container=get('catalogue-collection');
+   if(!append){
+     if(!browsingCollection){resultsScroll=scrollPane()?.scrollTop??0;returnFocus=document.activeElement instanceof HTMLElement?document.activeElement:undefined;}
+     opened=undefined;container.replaceChildren(backButton());
+   }
+   collectionView(true);if(!append){const pane=scrollPane();if(pane)pane.scrollTop=0;}
    get('catalogue-status').textContent='Загрузка списка…';
    try{
      const response=await collectionPage(entity,requestedPage);
@@ -66,13 +91,13 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    if(!isTauri()){get('catalogue-status').textContent='Каталог Яндекса доступен в desktop-версии после подключения аккаунта.';return;}
    const requestedPage=append?page+1:0;
    get('catalogue-status').textContent='Поиск в Яндекс Музыке…';get<HTMLButtonElement>('catalogue-more').disabled=true;
-   if(!append){++collectionRevision;opened=undefined;get('catalogue-collection').hidden=true;}
+   if(!append){++collectionRevision;opened=undefined;collectionView(false);}
    try{
      const response=await invoke<Results>('catalogue_search',{query:text,page:requestedPage});
      if(revision!==searchRevision)return;
      const count=response.artists.length+response.tracks.length+response.albums.length+response.playlists.length;
      if(append&&query===text){results={...response,artists:[...results.artists,...response.artists],tracks:[...results.tracks,...response.tracks],albums:[...results.albums,...response.albums],playlists:[...results.playlists,...response.playlists]};}else results=response;
-     page=requestedPage;query=text;render();get('catalogue-more').hidden=count===0;
+     page=requestedPage;query=text;render();hasSearchMore=count>0;get('catalogue-more').hidden=browsingCollection||!hasSearchMore;
      get('catalogue-status').textContent=count?(response.corrected?'Результаты Яндекса для «'+response.corrected+'».':'Результаты Яндекс Музыки.'):append?'Больше результатов нет.':'Ничего не найдено.';
    }catch{if(revision===searchRevision)get('catalogue-status').textContent='Поиск недоступен. Проверьте сеть и подключение аккаунта.';}
    finally{if(revision===searchRevision)get<HTMLButtonElement>('catalogue-more').disabled=false;}
@@ -81,6 +106,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
  get('catalogue-more').onclick=()=>void search(true);
  get('catalogue-query').oninput=()=>{
    ++searchRevision;clearTimeout(timer);get<HTMLButtonElement>('catalogue-more').disabled=true;
+   ++collectionRevision;opened=undefined;collectionView(false);
    if(get<HTMLInputElement>('catalogue-query').value.trim().length<2){
      ++collectionRevision;opened=undefined;get('catalogue-collection').hidden=true;get('catalogue-results').replaceChildren();get('catalogue-more').hidden=true;get('catalogue-status').textContent='Введите хотя бы два символа.';return;
    }

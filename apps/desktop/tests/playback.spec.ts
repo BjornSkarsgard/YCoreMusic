@@ -531,7 +531,7 @@ test('Wave skips missing, uncertain and rejected clips, refills ahead and contin
  }
  expect(await page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
  const played=await page.evaluate(()=>(window as any).played);expect(played).not.toContain('Aaaaaaaaaaa');expect(played).not.toContain('Bbbbbbbbbbb');expect(played).not.toContain('Ccccccccccc');
- await page.locator('#pause').click();const count=played.length;await page.waitForTimeout(100);expect(await page.evaluate(()=>(window as any).played.length)).toBe(count);
+ await page.mouse.move(100,100);await page.locator('#pause').click();const count=played.length;await page.waitForTimeout(100);expect(await page.evaluate(()=>(window as any).played.length)).toBe(count);
 });
 
 test('Wave retries metadata outages with backoff and Pause cancels automatic recovery',async({page})=>{
@@ -586,5 +586,45 @@ test('Wave leaves a cued clip that never starts and keeps fullscreen during reco
  await page.locator('#source-start').click();await expect(page.locator('#track-title')).toHaveText('A');
  await page.locator('#fullscreen').click();await page.clock.fastForward(17000);
  await expect(page.locator('#track-title')).toHaveText('B');expect(await page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
- await page.locator('#pause').click();
+ await page.mouse.move(100,100);await page.locator('#pause').click();
+});
+
+test('fullscreen controls overlay the video, wake on motion, stay while used and hide after idle',async({page})=>{
+ await page.clock.install();
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.__TAURI_INTERNALS__={invoke:async(cmd:string)=>{
+  if(cmd==='source_fetch')return [{id:'1',title:'Current',artist:'Fixture'}];
+  if(cmd==='search_videos')return [{id:'M7lc1UVf-VE',title:'Current',score:100,reason:'fixture'}];
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
+ const controls=await page.locator('.controls').boundingBox(),transport=await page.locator('.transport').boundingBox();
+ expect(Math.abs(controls!.x+controls!.width/2-transport!.x-transport!.width/2)).toBeLessThan(1);
+ const src=await page.locator('#player').getAttribute('src');await page.locator('#fullscreen').click();
+ await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
+ await expect(page.locator('.player-hud')).toHaveCSS('opacity','0');
+ const video=await page.locator('.screen').boundingBox();expect(video!.x).toBe(0);expect(video!.y).toBe(0);
+ await page.mouse.move(100,100);await page.clock.fastForward(200);await expect(page.locator('.player-hud')).toHaveCSS('opacity','1');
+ expect(await page.locator('.screen').boundingBox()).toEqual(video);
+ await page.clock.fastForward(4000);await expect(page.locator('.player-hud')).toHaveCSS('opacity','0');
+ await page.mouse.move(120,100);await page.clock.fastForward(200);await page.locator('#play').hover();
+ await page.clock.fastForward(5000);await expect(page.locator('.player-hud')).toHaveCSS('opacity','1');
+ await page.screenshot({path:'../../.tools/fullscreen-controls.png'});
+ await page.mouse.move(150,100);await page.clock.fastForward(4000);await expect(page.locator('.player-hud')).toHaveCSS('opacity','0');
+ await page.evaluate(()=>document.exitFullscreen());await expect(page.locator('.player-hud')).toHaveCSS('opacity','1');
+ expect(await page.locator('#player').getAttribute('src')).toBe(src);
+});
+
+test('catalogue detail has back navigation and ignores a late collection after returning',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.__TAURI_INTERNALS__={invoke:async(cmd:string)=>{
+  if(cmd==='source_fetch')return [];
+  if(cmd==='catalogue_search')return {artists:[{kind:'artist',id:'1',title:'Artist',subtitle:'Исполнитель'}],tracks:[],albums:[],playlists:[],page:0};
+  if(cmd==='catalogue_collection'){await new Promise(resolve=>w.releaseCollection=resolve);return {title:'Artist',tracks:[{id:'1',title:'Late',artist:'Artist'}],page:0,hasMore:false};}
+ }};});
+ await page.goto('/');await page.locator('#catalogue-query').fill('Artist');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+ await page.locator('#catalogue-filters button').filter({hasText:/^Альбомы$/}).click();
+ await expect(page.locator('#catalogue-results')).toContainText('пока нет результатов');
+ await page.locator('#catalogue-filters button').filter({hasText:/^Всё$/}).click();
+ await page.locator('.catalogue-card').click();await expect(page.locator('#catalogue-results')).toBeHidden();await expect(page.locator('#catalogue-back')).toBeVisible();
+ await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseCollection)).toBe('function');
+ await page.locator('#catalogue-back').click();await page.evaluate(()=>(window as any).releaseCollection());
+ await expect(page.locator('#catalogue-collection')).toBeHidden();await expect(page.locator('.catalogue-card')).toBeVisible();await expect(page.locator('#catalogue-query')).toHaveValue('Artist');
 });
