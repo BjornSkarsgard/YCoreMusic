@@ -8,31 +8,33 @@ export interface CatalogueSelection {tracks:Track[];title:string;collection?:Col
 export function collectionPage(entity:CatalogueEntity,page:number):Promise<CatalogueCollection>{return invoke('catalogue_collection',{kind:entity.kind,id:entity.id,owner:entity.owner??null,page});}
 export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
  const root=document.getElementById('catalogue')!;
- root.innerHTML=`<h2>Поиск в Яндекс Музыке</h2><form id="catalogue-search"><label for="catalogue-query">Исполнитель, песня, альбом или плейлист</label><div class="input-row"><input id="catalogue-query" placeholder="Например, рамштайн" autocomplete="off"><button>Найти</button></div></form><p id="catalogue-status" role="status"></p><div id="catalogue-results"></div><button id="catalogue-more" hidden>Ещё результаты</button><section id="catalogue-collection" hidden></section>`;
+ root.innerHTML=`<h2>Поиск в Яндекс Музыке</h2><form id="catalogue-search"><label for="catalogue-query">Исполнитель, песня, альбом или плейлист</label><div class="input-row"><input id="catalogue-query" placeholder="Например, рамштайн" autocomplete="off"><button>Найти</button></div></form><p id="catalogue-status" role="status"></p><div id="catalogue-filters" class="catalogue-filters" aria-label="Тип результатов"></div><div id="catalogue-results"></div><button id="catalogue-more" hidden>Ещё результаты</button><section id="catalogue-collection" hidden></section>`;
  const get=<T extends HTMLElement>(id:string)=>document.getElementById(id) as T;
  let searchRevision=0,collectionRevision=0,page=0,query='',timer:ReturnType<typeof setTimeout>|undefined;
+ let filter='Всё';
  let results:Results={artists:[],tracks:[],albums:[],playlists:[],page:0};
  let opened:{entity:CatalogueEntity;tracks:Track[];page:number;hasMore:boolean}|undefined;
  function play(tracks:Track[],title:string,context?:CollectionContext){select({tracks,title,collection:context});}
  function trackRows(tracks:Track[],onPlay:(index:number)=>void){
    return tracks.map((track,index)=>{
      const row=document.createElement('div');row.className='catalogue-track';
-     const text=document.createElement('span');text.textContent=track.title+' · '+track.artist;
+     const text=document.createElement('span');text.className='track-text';const title=document.createElement('strong'),artist=document.createElement('small');title.textContent=track.title;artist.textContent=track.artist;text.append(title,artist);
      const button=document.createElement('button');button.type='button';button.textContent='▶';button.setAttribute('aria-label','Воспроизвести '+track.title);button.onclick=()=>onPlay(index);
      row.append(text,button);return row;
    });
  }
  function render(){
    const container=get('catalogue-results');container.replaceChildren();
+   get('catalogue-filters').replaceChildren(...['Всё','Треки','Исполнители','Альбомы','Плейлисты'].map(name=>{const button=document.createElement('button');button.textContent=name;button.setAttribute('aria-pressed',String(name===filter));button.onclick=()=>{filter=name;render();};return button;}));
    const sections:[string,CatalogueEntity[]][]=[['Исполнители',results.artists],['Альбомы',results.albums],['Плейлисты',results.playlists]];
    for(const [name,entities] of sections){
-     if(!entities.length)continue;
-     const section=document.createElement('section'),heading=document.createElement('h3'),cards=document.createElement('div');heading.textContent=name;cards.className='catalogue-cards';
-     for(const entity of entities){const button=document.createElement('button');button.type='button';button.className='catalogue-card';const title=document.createElement('strong'),subtitle=document.createElement('span');title.textContent=entity.title;subtitle.textContent=entity.subtitle;button.append(title,subtitle);button.onclick=()=>void open(entity,false);cards.append(button);}
+     if(!entities.length || (filter!=='Всё'&&filter!==name))continue;
+     const section=document.createElement('section'),heading=document.createElement('h3'),cards=document.createElement('div');heading.textContent=name;cards.className='catalogue-cards'+(name==='Исполнители'?' catalogue-artists':'');
+     for(const entity of entities){const button=document.createElement('button');button.type='button';button.className='catalogue-card';button.dataset.initial=entity.title.slice(0,1);const title=document.createElement('strong'),subtitle=document.createElement('span');title.textContent=entity.title;subtitle.textContent=entity.subtitle;button.append(title,subtitle);button.onclick=()=>void open(entity,false);cards.append(button);}
      section.append(heading,cards);container.append(section);
-     if(name==='Исполнители'&&results.tracks.length)renderTracks(container);
+     if(name==='Исполнители'&&results.tracks.length&&filter==='Всё')renderTracks(container);
    }
-   if(!results.artists.length&&results.tracks.length)renderTracks(container);
+   if(results.tracks.length&&(filter==='Треки'||(!results.artists.length&&filter==='Всё')))renderTracks(container);
  }
  function renderTracks(container:HTMLElement){const section=document.createElement('section'),heading=document.createElement('h3');heading.textContent='Треки';section.append(heading,...trackRows(results.tracks,index=>play([results.tracks[index]],results.tracks[index].title)));container.append(section);}
  function renderCollection(){

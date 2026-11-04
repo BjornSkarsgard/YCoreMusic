@@ -1,4 +1,5 @@
 import './style.css';
+import {appShell,mountShellNavigation,showPanel} from './shell';
 import { videoId } from './video-id';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import {listen} from '@tauri-apps/api/event';
@@ -8,14 +9,7 @@ import {mountCatalogue,collectionPage,type CollectionContext} from './catalogue-
 import {PreviousGesture,VolumeState} from './playback-controls';
 import {CaptionControls,qualityLabel} from './player-options';
 
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
-<header><a class="brand">encore<span>●</span></a><div class="window-actions"><button id="mini" aria-pressed="false">Миниплеер</button><button id="topmost" aria-pressed="false">Поверх окон</button><span class="badge">ЭТАП 0 · ЛАБОРАТОРИЯ</span></div></header>
-<main><section class="intro"><p class="eyebrow">МУЗЫКА ПОЛУЧАЕТ ЭКРАН</p><h1>Ещё одну.</h1><p>Первый шаг к вашему музыкальному телеканалу.<br>Проверяем воспроизведение, прежде чем строить эфир.</p></section>
-<details class="catalogue-panel" open><summary>Поиск в Яндекс Музыке</summary><section id="catalogue"></section></details><section class="source-panel"><div class="source-actions"><button id="source-start">Моя волна · новая сессия</button><button id="source-more" disabled>Ещё рекомендации</button><button id="find-video" disabled>Подобрать заново</button></div><p id="source-status" role="status">Яндекс доступен в desktop-версии после локального подключения аккаунта.</p><h2 id="track-title">Ручная проверка видео</h2><p id="track-artist"></p><details><summary>Очередь</summary><ol id="queue-list"></ol></details></section><p id="storage-status" role="status"></p><section class="workspace"><div class="screen"><div id="player"></div><div id="empty"><span>▶</span><h2>Начнём с одного клипа</h2><p>Вставьте YouTube-ссылку. Музыка начнётся только по Play.</p></div></div>
-
-<div class="controls"><button id="previous" aria-label="Предыдущий трек" title="В начало; повторно за 3 секунды — предыдущий трек" disabled>⏮</button><button id="play" disabled>▶ Play</button><button id="pause" disabled>Ⅱ Пауза</button><button id="queue-next" aria-label="Следующий трек" disabled>⏭</button><button id="repeat" aria-pressed="false">Повтор: выкл.</button><button id="mute" aria-pressed="false">Звук</button><button id="back" disabled>−5 с</button><button id="forward" disabled>+5 с</button><label>Громкость <input id="volume" type="range" min="0" max="100" value="50"></label></div>
-<div class="timeline"><output id="elapsed">0:00</output><input id="seek" aria-label="Позиция видео" type="range" min="0" max="0" value="0" step="1" disabled><output id="duration">0:00</output></div><div class="player-options"><label>Субтитры <select id="captions" aria-label="Субтитры" disabled></select></label><label>Размер <select id="caption-size" aria-label="Размер субтитров" disabled><option value="-1">Мелкий</option><option value="0" selected>Обычный</option><option value="1">Крупный</option><option value="2">Очень крупный</option></select></label><span id="video-quality">Качество: Авто</span><button id="youtube-settings" aria-pressed="false" title="Показать панель YouTube для ручного выбора качества" disabled>Панель YouTube</button><button id="fullscreen" aria-pressed="false">На весь экран</button></div><p id="player-options-status" role="status"></p><form id="load"><label for="url">YouTube-ссылка или ID</label><div class="input-row"><input id="url" placeholder="https://www.youtube.com/watch?v=…" autocomplete="off" required><button>Подготовить</button></div></form><div id="candidate-list" aria-label="Найденные клипы"></div><p id="status" role="status" aria-live="polite">Ожидание ссылки · без autoplay</p></section>
-<aside><div><span class="dot"></span> Одна сцена · один плеер</div><p>Прототип использует системный аудиовыход. Аудиовыходом управляет ОС. Анализ звука ещё не реализован. Автоподбор экспериментальный; при несовпадении замените ссылку вручную.</p><details id="history-panel"><summary>История прослушивания</summary><div class="history-actions"><input id="history-query" aria-label="Поиск в истории" placeholder="Название или исполнитель"><button id="history-refresh">Обновить</button><button id="history-clear">Очистить историю</button></div><p id="history-status" role="status"></p><ol id="history-list"></ol></details><dialog id="clear-dialog"><p>Удалить всю историю прослушивания? Ручные ссылки сохранятся.</p><button id="clear-cancel">Отмена</button><button id="clear-confirm">Удалить историю</button></dialog><details><summary>Журнал проверки</summary><pre id="log"></pre></details></aside></main>`;
+document.querySelector<HTMLDivElement>('#app')!.innerHTML = appShell;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const queue = new PlaybackQueue();
 let player: YT.Player | undefined;
@@ -60,8 +54,10 @@ function report(message: string) {
   const log = element('log');
   log.textContent = `${new Date().toLocaleTimeString()} ${message}\n${log.textContent}`.slice(0, 6000);
 }
+function intentUI(){document.body.classList.toggle('is-playing',playIntent);element<HTMLButtonElement>('pause').disabled=!playIntent;}
 function enabled(value: boolean) {
   for (const id of ['play', 'pause', 'back', 'forward','youtube-settings']) element<HTMLButtonElement>(id).disabled = !value;
+  if(playIntent)element<HTMLButtonElement>('pause').disabled=false;
 }
 function api(): Promise<void> {
   if (window.YT?.Player) return Promise.resolve();
@@ -81,8 +77,11 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
   event.preventDefault();
   const id=videoId(element<HTMLInputElement>('url').value);
   if(!id){report('Нужна HTTPS-ссылка YouTube или video ID из 11 символов.');return;}
+  clearRetry();sourceNeedsFresh=false;++sourceRevision;
+  if(!queue.current)finiteSource=true;
   const track=queue.current;
   if(isTauri() && track && /^\d+$/.test(track.id)) void storage({type:'save_video',trackId:track.id,videoId:id}).then(()=>{element('storage-status').textContent='Ручной клип сохранён для этого трека.';}).catch(()=>{element('storage-status').textContent='Не удалось сохранить ручной клип. Текущий выбор действует только до перезапуска.';});
+  element<HTMLDialogElement>('video-dialog').close();
   void loadVideo(id);
 });
 async function loadVideo(id:string,resume=false,automatic=false,restore?:{position:number;record?:PlayRecord}) {
@@ -106,7 +105,10 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
   const record=restore?.record??{event:playEvent,recorded:false,pending:false};activeRecord=record;
   const current = ++generation;
   enabled(false);
-  if(resume) element<HTMLButtonElement>('pause').disabled=false;
+  intentUI();
+  const loadKey=queue.generation+':'+queue.current?.ordinal;
+  if(loadKey!==currentLoadKey){currentLoadKey=loadKey;trackDeadline=Date.now()+24000;}
+  loadStarted=Date.now();bufferingSince=0;
   playerReady = false;
   player?.destroy(); player = undefined;
   element('empty').hidden = false;
@@ -116,8 +118,8 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
     if (current !== generation) return;
     let ready = false;
     const timer = setTimeout(() => {
-      if (current === generation && !ready) { ++generation; enabled(false); playerReady = false; player?.destroy(); player = undefined; report('Видео не подготовилось за 20 секунд. Проверьте сеть и повторите загрузку.'); if(automatic) tryAlternative(sourceGeneration,ordinal); }
-    }, 20000);
+      if (current === generation && !ready) { ++generation; enabled(false); playerReady = false; player?.destroy(); player = undefined; report('Видео не подготовилось вовремя. Проверьте сеть и повторите загрузку.'); if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); }
+    }, automatic?12000:20000);
     if (!document.getElementById('player')) { const mount = document.createElement('div'); mount.id = 'player'; document.querySelector('.screen')!.prepend(mount); }
     player = new YT.Player('player', {
       width: '100%', height: '100%',
@@ -136,31 +138,34 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
         onStateChange: event => {
           if (current !== generation) return;
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
+          intentUI();
           report(states[event.data] ?? `Состояние ${event.data}`);
           if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); captionControls.refresh(event.target);if(playIntent&&!powerPaused) event.target.playVideo(); }
           if(event.data===1) {
-            if(powerPaused){playIntent=false;event.target.pauseVideo();return;}
-            playIntent=true;
+            if(powerPaused||(!playIntent&&!youtubeControls)){event.target.pauseVideo();return;}
+            playIntent=true;clearRetry();skipStreak=0;retryAttempt=0;bufferingSince=0;loadStarted=0;intentUI();
             captionControls.refresh(event.target,true);
             if(isTauri() && !record.recorded && !record.pending) {
               record.pending=true;
               void storage({type:'record',event:record.event}).then(()=>{record.recorded=true;}).catch(()=>{element('storage-status').textContent='Не удалось записать прослушивание в историю.';}).finally(()=>{record.pending=false;});
             }
           }
-          if(event.data===2) playIntent=false;
+          if(event.data===2){if(youtubeControls)playIntent=false;else if(playIntent&&!bufferingSince)bufferingSince=Date.now();intentUI();}
+          if(event.data===3&&playIntent&&!bufferingSince)bufferingSince=Date.now();
+          if(event.data===5||event.data===0)bufferingSince=0;
           if([0,1,2,5].includes(event.data)){mediaPlayback=event.data===1?'playing':event.data===0?'stopped':'paused';publishMedia();}
           if(event.data===0 && !powerPaused){if(repeatMode==='one')void loadVideo(id,playIntent,automatic);else if(queue.current)void advance(playIntent);}
         },
-        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(automatic) tryAlternative(sourceGeneration,ordinal); } },
+        onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); } },
         onApiChange:event=>{if(current===generation)captionControls.refresh(event.target);},
         onPlaybackQualityChange:event=>{if(current===generation)element('video-quality').textContent='Качество: '+qualityLabel(event.data);},
         onAutoplayBlocked: () => { if (current === generation) report('YouTube заблокировал Play. Откройте панель YouTube и нажмите Play на видео.'); },
       },
     });
-  } catch (error) { if (current === generation) report(error instanceof Error ? error.message : 'Ошибка загрузки'); }
+  } catch (error) { if (current === generation){report(error instanceof Error ? error.message : 'Ошибка загрузки');if(automatic&&playIntent)deferWave('Ждём YouTube',()=>void loadVideo(id,playIntent,true),5000);} }
 }
-element('play').onclick = () => {powerPaused=false;playIntent=true;player?.playVideo();};
-element('pause').onclick = () => {playIntent=false;player?.pauseVideo();};
+element('play').onclick = () => systemControl('play');
+element('pause').onclick = () => systemControl('pause');
 function seek(delta: number) { previousGesture.reset(); if (player) player.seekTo(Math.max(0, Math.min(player.getDuration(), player.getCurrentTime() + delta)), true); }
 element('back').onclick = () => seek(-5);
 element('forward').onclick = () => seek(5);
@@ -196,6 +201,7 @@ window.addEventListener('beforeunload', () => { clearInterval(positionTimer); pl
 
 function stopPlayer() {
   activeVideo=undefined;activeRecord=undefined;captionControls.reset();
+  intentUI();loadStarted=0;bufferingSince=0;
   mediaPlayback='stopped';publishMedia();
   previousGesture.reset();
   ++generation; playerReady = false; player?.destroy(); player = undefined; enabled(false);
@@ -215,157 +221,184 @@ function renderQueue() {
   element<HTMLButtonElement>('previous').disabled = !queue.current && !playerReady;
   element<HTMLButtonElement>('find-video').disabled = !queue.current;
 }
-let fetching = false;
-async function sourceFetch(fresh: boolean) {
-  if (fetching) return;
-  if (!isTauri()) { element('source-status').textContent = 'Откройте Encore desktop: браузерный режим не имеет доступа к аккаунту.'; return; }
-  fetching=true;
-  const requestRevision=++sourceRevision;
-  element<HTMLButtonElement>('source-start').disabled=true;
-  element<HTMLButtonElement>('source-more').disabled=true;
-  element('source-status').textContent='Получение рекомендаций…';
-  try {
-    const tracks=await invoke<Track[]>('source_fetch',{fresh});
-    if(requestRevision!==sourceRevision)return false;
-    if (fresh) { stopPlayer(); queue.reset(tracks); finiteSource=false; activeCollection=undefined;if(repeatMode==='queue'){repeatMode='off';renderRepeat();} choices.clear(); bypassSaved.clear(); element<HTMLInputElement>('url').value=''; }
-    else queue.append(tracks);
-    renderQueue();
-    element('source-status').textContent='Получено ' + tracks.length + ' треков. Порядок сохранён. Подготавливаем клипы…';
-    if (fresh) {playIntent=false;report('Новая сессия · без autoplay');}
-    prepareAhead();
-    return true;
-  } catch (error) {
-    if(requestRevision!==sourceRevision)return false;
-    const known: Record<string,string> = {
-      'No saved token. Run yandex-probe --save-token locally first.':'Сначала подключите аккаунт: yandex-probe --save-token в локальном терминале.',
-      'Authorization denied':'Срок доступа истёк или доступ отклонён. Подключите аккаунт заново.',
-      'Network/TLS error':'Не удалось связаться с Яндексом. Текущая очередь сохранена.',
-      'Credential store locked or unavailable':'Системное хранилище недоступно или заблокировано.',
-      'Identical batch returned; queue unchanged':'Сервер повторил порцию. Очередь сохранена, повторите позже.',
-    };
-    element('source-status').textContent=known[String(error)] ?? 'Не удалось получить рекомендации. Очередь сохранена.';
-  } finally {
-    fetching=false; element<HTMLButtonElement>('source-start').disabled=false;
-    element<HTMLButtonElement>('source-more').disabled=!queue.current || finiteSource;
-  }
+let sourceWork:Promise<boolean>|undefined;
+let startingSource=false;
+let sourceNeedsFresh=false;
+let currentStation='user:onyourwave';
+let currentStationLabel='Все жанры';
+let retryTimer:ReturnType<typeof setTimeout>|undefined;
+let retryAttempt=0;
+let skipStreak=0;
+let currentLoadKey='',trackDeadline=0,loadStarted=0,bufferingSince=0;
+function clearRetry(){clearTimeout(retryTimer);retryTimer=undefined;}
+function deferWave(message:string,action:()=>void=()=>prepareAhead(),minimum=1000){
+  if(!playIntent||powerPaused||finiteSource)return;
+  if(retryTimer)return;
+  const epoch=queue.generation,revision=sourceRevision;
+  const delay=Math.max(minimum,Math.min(30000,1000*2**Math.min(retryAttempt++,5)));
+  report(message+' · повтор через '+Math.ceil(delay/1000)+' с');
+  retryTimer=setTimeout(()=>{retryTimer=undefined;if(playIntent&&!powerPaused&&!finiteSource&&epoch===queue.generation&&revision===sourceRevision)action();},delay);
 }
-element('source-start').onclick=()=>void sourceFetch(true);
+function canSkip(){return playIntent&&!powerPaused&&(!finiteSource||!!document.fullscreenElement);}
+let skipQueued=false;
+function skipUnavailable(message:string){
+  if(skipQueued||(!finiteSource&&retryTimer))return;
+  if(!canSkip()) {if(finiteSource)playIntent=false;intentUI();report(message+' · можно выбрать другой клип');element<HTMLButtonElement>('play').disabled=false;return;}
+  report(message+' · следующий трек');
+  ++skipStreak;
+  if(skipStreak%12===0&&!finiteSource){deferWave('Ищем следующую подборку',()=>void advance(playIntent),5000);return;}
+  const epoch=queue.generation,ordinal=queue.current?.ordinal;skipQueued=true;
+  queueMicrotask(()=>{skipQueued=false;if(canSkip()&&epoch===queue.generation&&ordinal===queue.current?.ordinal)void advance(playIntent);});
+}
+function sourceFetch(fresh:boolean,autoplay=false):Promise<boolean>{
+  if(sourceWork)return sourceWork;
+  if(!isTauri()){element('source-status').textContent='Подключите аккаунт в Encore для компьютера.';return Promise.resolve(false);}
+  if(fresh){
+    clearRetry();startingSource=true;sourceNeedsFresh=true;
+    stopPlayer();queue.reset([...queue.snapshot]);choices.clear();bypassSaved.clear();
+    finiteSource=false;activeCollection=undefined;playIntent=autoplay&&!powerPaused;
+    ++sourceRevision;intentUI();
+    currentStation=element<HTMLSelectElement>('station-select').value||'user:onyourwave';
+    currentStationLabel=element<HTMLSelectElement>('station-select').selectedOptions[0]?.textContent??'Все жанры';
+    if(repeatMode==='queue'){repeatMode='off';renderRepeat();}
+  }
+  const revision=sourceRevision,epoch=queue.generation;
+  element<HTMLButtonElement>('source-start').disabled=true;element<HTMLButtonElement>('source-more').disabled=true;
+  element('source-status').textContent='Получение рекомендаций…';
+  sourceWork=(async()=>{
+    try{
+      const tracks=await invoke<Track[]>('source_fetch',{fresh,station:currentStation});
+      if(revision!==sourceRevision||epoch!==queue.generation)return false;
+      if(!Array.isArray(tracks)||!tracks.length)throw new Error('Empty recommendations');
+      if(fresh){queue.reset(tracks);sourceNeedsFresh=false;choices.clear();bypassSaved.clear();element<HTMLInputElement>('url').value='';}
+      else queue.append(tracks);
+      renderQueue();
+      const label=currentStationLabel;
+      element('source-name').textContent=label==='Все жанры'?'Моя волна':'Моя волна · '+label;
+      element('source-status').textContent='В очереди '+queue.ahead(20).length+' треков · клипы подбираются заранее';
+      return true;
+    }catch(error){
+      if(revision!==sourceRevision||epoch!==queue.generation)return false;
+      const text=String(error);
+      const auth=/Authorization|token|credential|Credential/.test(text);
+      element('source-status').textContent=auth?'Переподключите аккаунт Яндекса в локальном терминале.':'Источник временно недоступен. Текущая очередь сохранена.';
+      if(auth){playIntent=false;report('Нужно подключить аккаунт Яндекса');}
+      else if(playIntent){const continuation=sourceNeedsFresh?()=>void sourceFetch(true,playIntent):advancing?()=>void advance(playIntent):()=>void sourceFetch(false);deferWave('Ждём Яндекс Музыку',continuation,/Rate limited/.test(text)?10000:1000);}
+      intentUI();
+      return false;
+    }finally{
+      sourceWork=undefined;startingSource=false;
+      element<HTMLButtonElement>('source-start').disabled=false;element<HTMLButtonElement>('source-more').disabled=!queue.current||finiteSource;
+      if(!sourceNeedsFresh)prepareAhead();
+    }
+  })();
+  return sourceWork;
+}
+element('source-start').onclick=()=>{retryAttempt=0;powerPaused=false;void sourceFetch(true,true);};
 element('source-more').onclick=()=>void sourceFetch(false);
 element('queue-next').onclick=()=>void advance(playIntent);
 element('find-video').onclick=()=>{
   if(!queue.current)return;
-  const track=queue.current;
-  if(isTauri() && /^\d+$/.test(track.id)) {
-    const epoch=queue.generation,ordinal=track.ordinal;
-    void storage({type:'remove_video',trackId:track.id}).then(()=>{if(queue.generation===epoch && queue.current?.ordinal===ordinal)resetMatching();}).catch(()=>{element('storage-status').textContent='Не удалось сбросить сохранённый клип.';});
-    return;
-  }
-  resetMatching();
+  const track=queue.current,epoch=queue.generation,ordinal=track.ordinal;
+  const reset=()=>{if(queue.generation!==epoch||queue.current?.ordinal!==ordinal)return;choices.delete(epoch+':'+ordinal);queue.clearVideo(ordinal);stopPlayer();playIntent=false;prepareAhead();};
+  if(isTauri()&&/^\d+$/.test(track.id))void storage({type:'remove_video',trackId:track.id}).then(reset).catch(()=>report('Не удалось сбросить сохранённый клип'));
+  else reset();
 };
-function resetMatching(){
-  if(!queue.current)return;
-  choices.delete(queue.generation+':'+queue.current.ordinal);
-  queue.clearVideo(queue.current.ordinal);
-  stopPlayer();playIntent=false;prepareAhead();
-}
-
 function renderCandidates(items:Candidate[],epoch:number,ordinal:number){
   element('candidate-list').replaceChildren(...items.map(candidate=>{
-    const button=document.createElement('button');button.type='button';
-    button.textContent=candidate.title+(candidate.byline?' · '+candidate.byline:'')+(candidate.views!==undefined?' · '+candidate.views.toLocaleString()+' просмотров':'')+(candidate.needsReview?' · проверить исполнителя':'');
-    button.onclick=()=>{
-      if(epoch!==queue.generation || queue.current?.ordinal!==ordinal)return;
-      element<HTMLInputElement>('url').value=candidate.id;
-      element<HTMLFormElement>('load').requestSubmit();
-    };
-    return button;
+    const button=document.createElement('button');button.type='button';button.textContent=candidate.title+(candidate.byline?' · '+candidate.byline:'')+(candidate.views!==undefined?' · '+candidate.views.toLocaleString()+' просмотров':'')+(candidate.needsReview?' · проверить исполнителя':'');
+    button.onclick=()=>{if(epoch!==queue.generation||queue.current?.ordinal!==ordinal)return;element<HTMLInputElement>('url').value=candidate.id;element<HTMLFormElement>('load').requestSubmit();};return button;
   }));
 }
-
-function tryAlternative(epoch:number,ordinal:number|undefined) {
+function tryAlternative(epoch:number,ordinal:number|undefined){
   queueMicrotask(()=>{
-    if(epoch!==queue.generation || ordinal!==queue.current?.ordinal) return;
-    const entry=choices.get(epoch+':'+ordinal);
-    if(entry && ++entry.index<entry.items.length) {
-      const next=entry.items[entry.index];
-      report('Пробуем другой клип той же композиции…');
-      if(next.needsReview){stopPlayer();playIntent=false;renderCandidates(entry.items,epoch,ordinal!);report('Исполнитель в видео не подтверждён. Выберите подходящий клип из списка.');}
-      else void loadVideo(next.id,playIntent,true);
-    } else if(entry?.items[0]?.saved && ordinal!==undefined) {
-      const key=epoch+':'+ordinal;bypassSaved.add(key);choices.delete(key);queue.clearVideo(ordinal);stopPlayer();prepareAhead();
-    } else {playIntent=false;report('Клипы недоступны. Задайте ссылку вручную; трек остаётся текущим.');}
+    if(epoch!==queue.generation||ordinal!==queue.current?.ordinal)return;
+    queue.clearVideo(ordinal!);const key=epoch+':'+ordinal,entry=choices.get(key);
+    if(entry){
+      ++entry.index;
+      while(entry.items[entry.index]?.needsReview&&canSkip())++entry.index;
+      const candidate=entry.items[entry.index];
+      if(candidate && (entry.index<3||!canSkip()) && (!canSkip()||Date.now()<trackDeadline)){
+        if(candidate.needsReview){playIntent=false;stopPlayer();renderCandidates(entry.items,epoch,ordinal!);report('Выберите подходящий клип из списка.');}
+        else void loadVideo(candidate.id,playIntent,true);
+        return;
+      }
+      if(entry.items[0]?.saved&&!bypassSaved.has(key)){bypassSaved.add(key);choices.delete(key);stopPlayer();prepareAhead();return;}
+    }
+    stopPlayer();skipUnavailable('Клипы недоступны');
   });
 }
-function prepareAhead() {
-  if(!isTauri() || !queue.current) return;
+const searchErrors=new Map<string,number>();
+const matchJobs=new Map<string,Promise<Candidate[]>>();
+function prepareAhead(){
+  intentUI();
+  if(!isTauri()||startingSource||sourceNeedsFresh||!queue.current)return;
   const epoch=queue.generation;
-  for(const track of queue.ahead()) {
+  for(const track of queue.ahead(finiteSource?3:8)){
     const key=epoch+':'+track.ordinal;
-    if(track.videoId) continue;
+    if(track.videoId)continue;
     const cached=choices.get(key);
-    if(cached) {
-      if(track.ordinal===queue.current?.ordinal) {
-        const candidate=cached.items[cached.index];
-        if(candidate){renderCandidates(cached.items,epoch,track.ordinal);if(candidate.needsReview){playIntent=false;report('Выберите подходящий клип из списка.');}else void loadVideo(candidate.id,playIntent,true);}
-        else {playIntent=false;report('Уверенного совпадения нет. Вставьте ссылку вручную; порядок очереди сохранён.');}
-      }
+    if(cached){
+      if(track.ordinal!==queue.current?.ordinal)continue;
+      let candidate=cached.items[cached.index];
+      if(canSkip()){while(candidate?.needsReview){++cached.index;candidate=cached.items[cached.index];}}
+      if(candidate){
+        renderCandidates(cached.items,epoch,track.ordinal);
+        if(candidate.needsReview){element<HTMLButtonElement>('play').disabled=false;report('Исполнитель не подтверждён. В волне этот трек будет пропущен после Play.');}
+        else void loadVideo(candidate.id,playIntent,true);
+      }else skipUnavailable('Подходящий клип не найден');
       continue;
     }
-    if(searching.has(key)) continue;
+    if(searchErrors.has(key)){
+      if(track.ordinal===queue.current?.ordinal&&playIntent)deferWave('Поиск видео временно недоступен',()=>{searchErrors.delete(key);prepareAhead();},3000);
+      continue;
+    }
+    if(searching.has(key)||searching.size>=3)continue;
     searching.add(key);
-    if(track.ordinal===queue.current.ordinal) report('Ищем клип для текущего трека…');
-    void (async()=>{
-      if(/^\d+$/.test(track.id) && !bypassSaved.has(key)) {
-        try {const saved=await storage<string|null>({type:'get_video',trackId:track.id});if(saved)return [{id:saved,title:track.title,artist:track.artist,score:1000,reason:'Ваш сохранённый клип',saved:true}];}
-        catch {element('storage-status').textContent='Сохранённые клипы недоступны. Используется временный автоподбор.';}
+    const matchKey=track.id+'|'+track.title+'|'+track.artist;
+    let job=matchJobs.get(matchKey);
+    if(!job){job=(async()=>{
+      if(/^\d+$/.test(track.id)&&!bypassSaved.has(key)){
+        try{const saved=await storage<string|null>({type:'get_video',trackId:track.id});if(saved)return [{id:saved,title:track.title,score:1000,reason:'Ваш сохранённый клип',saved:true}];}catch{/* Match without a saved override. */}
       }
       return invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist});
-    })().then(items=>{
-      if(epoch!==queue.generation) return;
-      if(!Array.isArray(items)) items=[];
-      choices.set(key,{items,index:0});
-      const current=queue.current;
-      if(current?.ordinal!==track.ordinal || current.videoId) return;
-      if(!items.length) {playIntent=false;report('Уверенного совпадения нет. Вставьте ссылку вручную; порядок очереди сохранён.');return;}
-      renderCandidates(items,epoch,track.ordinal);
-      element('source-status').textContent=items[0].reason+' · '+items[0].title;
-      if(items[0].needsReview){playIntent=false;report('Найдены клипы, но исполнитель не подтверждён. Выберите из списка или задайте ссылку.');return;}
-      void loadVideo(items[0].id,playIntent,true);
-    }).catch(()=>{
-      if(epoch===queue.generation && track.ordinal===queue.current?.ordinal && !queue.current.videoId) {playIntent=false;report('Поиск временно недоступен. Повторите или задайте ссылку вручную.');}
-    }).finally(()=>searching.delete(key));
+    })();matchJobs.set(matchKey,job);void job.finally(()=>matchJobs.delete(matchKey)).catch(()=>{});}
+    void job.then(items=>{
+      if(epoch!==queue.generation)return;
+      choices.set(key,{items:Array.isArray(items)?items:[],index:0});
+    }).catch(()=>{if(epoch===queue.generation)searchErrors.set(key,Date.now());}).finally(()=>{
+      searching.delete(key);
+      if(epoch===queue.generation)prepareAhead();
+      else if(queue.current)prepareAhead();
+    });
   }
+  if(!finiteSource&&playIntent&&queue.ahead(10).length<8&&!sourceWork&&!retryTimer)void sourceFetch(false);
 }
 let advancing=false;
-async function advance(resume:boolean) {
-  if(advancing || !queue.current) return;
-  advancing=true; previousGesture.reset(); playIntent=resume;
+async function advance(resume:boolean){
+  if(advancing||!queue.current||startingSource)return;
+  advancing=true;previousGesture.reset();playIntent=resume&&!powerPaused;
   const epoch=queue.generation;
   let wrapped=false;
-  try {
-    if(!queue.hasNext && finiteSource && repeatMode==='queue' && !activeCollection?.hasMore){queue.rewind();wrapped=true;}
-    else if(!queue.hasNext) {
+  try{
+    if(!queue.hasNext&&finiteSource&&repeatMode==='queue'&&!activeCollection?.hasMore){queue.rewind();wrapped=true;}
+    else if(!queue.hasNext){
       if(finiteSource){
         if(!activeCollection?.hasMore){playIntent=false;report('Конец выбранного списка.');return;}
-        try{
-          const context=activeCollection;
-          const page=await collectionPage(context.entity,context.page+1);
-          if(epoch!==queue.generation)return;
-          queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};
-          if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;report('Больше треков в списке нет.');return;}}
-        }catch{if(epoch!==queue.generation)return;playIntent=false;report('Не удалось загрузить следующую часть списка. Очередь сохранена.');return;}
-      }else {
-      const received=await sourceFetch(false);
-      if(epoch!==queue.generation)return;
-      if(!received){playIntent=false;return;}
+        try{const context=activeCollection,page=await collectionPage(context.entity,context.page+1);if(epoch!==queue.generation)return;queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;report('Больше треков в списке нет.');return;}}}
+        catch{playIntent=false;report('Не удалось загрузить следующую часть списка. Очередь сохранена.');return;}
+      }else{
+        const received=await sourceFetch(false);
+        if(epoch!==queue.generation)return;
+        if(!received){deferWave('Ждём следующую подборку',()=>void advance(playIntent));return;}
       }
     }
-    if(!wrapped && !queue.next()) {playIntent=false;return;}
-    stopPlayer(); renderQueue();
-    element<HTMLButtonElement>('pause').disabled=!playIntent; element<HTMLInputElement>('url').value='';
-    if(queue.current.videoId) void loadVideo(queue.current.videoId,playIntent);
-    else {report('Подготовка следующего трека…');prepareAhead();}
-  } finally {advancing=false;}
+    if(!wrapped&&!queue.next()){if(!finiteSource)deferWave('Ждём следующую подборку',()=>void advance(playIntent));else playIntent=false;return;}
+    stopPlayer();renderQueue();element<HTMLButtonElement>('pause').disabled=!playIntent;element<HTMLInputElement>('url').value='';
+    if(!finiteSource){queue.trimPast(50);const valid=new Set(queue.snapshot.map(track=>queue.generation+':'+track.ordinal));for(const key of choices.keys())if(!valid.has(key))choices.delete(key);for(const key of searchErrors.keys())if(!valid.has(key))searchErrors.delete(key);}
+    if(queue.current.videoId)void loadVideo(queue.current.videoId,playIntent);
+    else prepareAhead();
+  }finally{advancing=false;intentUI();}
 }
 
 let compact=false, topmost=false, changingWindow=false;
@@ -419,7 +452,7 @@ async function refreshHistory(){
      title.textContent=entry.title+' · '+entry.artist+' · '+new Date(entry.startedAt).toLocaleString();
      button.textContent='Воспроизвести';button.onclick=()=>{
        stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist}]);finiteSource=true;activeCollection=undefined;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
-       element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
+       element('source-name').textContent='История';element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
        powerPaused=false;void loadVideo(entry.videoId,true);
      };
      const next=document.createElement('button'),append=document.createElement('button');
@@ -444,9 +477,9 @@ element('clear-confirm').onclick=async()=>{
 mountCatalogue(selection=>{
   if(!selection.tracks.length)return;
   stopPlayer();++sourceRevision;queue.reset(selection.tracks);choices.clear();bypassSaved.clear();
-  finiteSource=true;activeCollection=selection.collection;powerPaused=false;playIntent=true;renderQueue();
+  clearRetry();sourceNeedsFresh=false;finiteSource=true;activeCollection=selection.collection;powerPaused=false;playIntent=true;renderQueue();
   element<HTMLButtonElement>('source-more').disabled=true;
-  element('source-status').textContent='Яндекс Музыка · '+selection.title;
+  element('source-status').textContent='Яндекс Музыка · '+selection.title;element('source-name').textContent=selection.title;
   element<HTMLInputElement>('url').value='';prepareAhead();
 });
 
@@ -463,15 +496,16 @@ element('previous').onclick=()=>{
 
 function systemControl(action:string){
   switch(action){
-    case 'toggle': if(playIntent){playIntent=false;player?.pauseVideo();}else{powerPaused=false;playIntent=true;if(playerReady)player?.playVideo();}break;
-    case 'play':powerPaused=false;playIntent=true;if(playerReady)player?.playVideo();break;
-    case 'pause':playIntent=false;player?.pauseVideo();break;
+    case 'toggle':systemControl(playIntent?'pause':'play');break;
+    case 'play':powerPaused=false;playIntent=true;clearRetry();if(sourceNeedsFresh)void sourceFetch(true,true);else if(playerReady)player?.playVideo();else if(activeVideo?.videoId&&queue.current?.videoId)void loadVideo(activeVideo.videoId,true,activeAutomatic);else{element<HTMLButtonElement>('pause').disabled=false;prepareAhead();}break;
+    case 'pause':playIntent=false;clearRetry();player?.pauseVideo();if(queue.current)element<HTMLButtonElement>('play').disabled=false;break;
     case 'next':void advance(playIntent);break;
     case 'previous':element('previous').click();break;
   }
+  intentUI();
 }
 function powerPause(resume:boolean){
-  powerPaused=true;playIntent=false;
+  powerPaused=true;playIntent=false;clearRetry();intentUI();
   if(!resume)suspendPosition=playerReady?player?.getCurrentTime():undefined;
   player?.pauseVideo();
   if(resume && suspendPosition!==undefined && playerReady)player?.seekTo(suspendPosition,true);
@@ -525,3 +559,17 @@ document.addEventListener('fullscreenchange',()=>{
   element('fullscreen').textContent=document.fullscreenElement?'Выйти из полного экрана':'На весь экран';
   element('fullscreen').setAttribute('aria-pressed',String(!!document.fullscreenElement));
 });
+
+mountShellNavigation();
+
+const streamWatchdog=setInterval(()=>{
+ if(!playIntent||powerPaused||!activeVideo)return;
+ if(canSkip() && playerReady && loadStarted && Date.now()-loadStarted>15000){loadStarted=0;tryAlternative(queue.generation,queue.current?.ordinal);return;}
+ if(bufferingSince && Date.now()-bufferingSince>45000){bufferingSince=0;tryAlternative(queue.generation,queue.current?.ordinal);}
+ if(!finiteSource&&!startingSource)prepareAhead();
+},1000);
+window.addEventListener('beforeunload',()=>{clearInterval(streamWatchdog);clearRetry();});
+if(isTauri())void invoke<{id:string,title:string}[]>('source_stations').then(stations=>{
+ if(!Array.isArray(stations))return;const select=element<HTMLSelectElement>('station-select');
+ for(const station of stations){const option=new Option(station.title,station.id);select.append(option);}
+}).catch(()=>{});

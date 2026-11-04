@@ -171,3 +171,9 @@ PASS Windows native с настоящим YouTube на volume=0: controls=0/poin
 PASS native: открытие/скрытие YouTube controls сохраняет позицию и не дублирует SQLite history; свой fullscreen входит/выходит с тем же единственным IFrame. Screenshot .tools/native-custom-player.png просмотрен: на активном видео нет chrome overlays, свои controls видны под ним. Остальной native catalogue/tray/power/mini/history/repeat smoke PASS. Renderer: 22 PASS + 1 live opt-in skipped; после CC enforcement дополнительно целевой regression с auto-enabled caption mock PASS. 6 TS unit, strict check, Windows native-test build PASS.
 
 Ограничения: branding/служебные заставки YouTube на pause/load полностью не отключаются; изменение качества через API no-op, закрытие native панели может сбросить ручной выбор. CC bridge использует обнаруженные runtime возможности, его совместимость с будущими изменениями YouTube не гарантируется. Native Linux/macOS для новой панели не проверен. CI f85cc64 полностью PASS: Windows, Ubuntu, macOS Intel, macOS Apple Silicon. Новая панель ожидает собственного CI.
+
+## Ночной срез 2026-11-04 — постоянное видео и непрерывная волна
+
+Реализован layout «Сцена», независимый скролл выдачи, фильтры каталога, реальные жанровые станции, предзагрузка рекомендаций/поиска и автоматический пропуск непригодных видео. Pause/сон отменяют продолжение; сетевые ошибки повторяются с backoff, устаревшие сессии обновляются с прежним seed и недавними ID. Ограничена память истории очереди.
+
+Проверки: TS build + 7 unit PASS; renderer 26 PASS + 1 opt-in skipped; Rust 20 + 5 PASS, 6 ignored; Clippy PASS. Реальный Яндекс: 161 жанр, 5+5 рекомендаций выбранного жанра. Полный Windows native smoke PASS; отдельный live Wave — старт и два END-перехода без ручного выбора на одном IFrame (volume=0, ускоренная перемотка к концу). Windows debug executable обновлён. Многочасовой прогон и Linux/macOS runtime ещё не проверены. Актуальная передача контекста: SESSION-HANDOFF.md.

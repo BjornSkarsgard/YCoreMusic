@@ -28,3 +28,8 @@ test('inserting next preserves the current cursor, stable async identities and r
   assert.equal(queue.next()?.videoId,'saved-A');assert.equal(queue.next()?.videoId,'matched-B');assert.equal(queue.next()?.videoId,'matched-C');assert.equal(queue.next()?.videoId,'saved-B');
   assert.equal(queue.hasNext,false);assert.equal(new Set(queue.snapshot.map(entry=>entry.ordinal)).size,5);
 });
+
+test('trimming an infinite queue bounds memory without changing live IDs or the current track',()=>{
+ const queue=new PlaybackQueue();queue.reset(tracks);for(let n=0;n<100;n++){queue.append(tracks);queue.next();}
+ const current=queue.current!.ordinal;queue.trimPast(10);assert.equal(queue.current!.ordinal,current);assert(queue.snapshot.findIndex(item=>item.ordinal===current)<=10);assert(queue.resolve(current,'current-video',queue.generation));
+});

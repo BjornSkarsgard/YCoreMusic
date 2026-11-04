@@ -17,14 +17,31 @@ async fn source_fetch(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, source::Source>,
     fresh: bool,
+    station: Option<String>,
 ) -> Result<Vec<source::Track>, String> {
     if window.label() != "main" {
         return Err("Untrusted window".into());
     }
     let source = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || source::fetch(&source, fresh))
+    tauri::async_runtime::spawn_blocking(move || {
+        source::fetch(
+            &source,
+            fresh,
+            station.as_deref().unwrap_or("user:onyourwave"),
+        )
+    })
+    .await
+    .map_err(|_| "Source worker failed".to_string())?
+    .map_err(str::to_string)
+}
+#[tauri::command]
+async fn source_stations(window: tauri::WebviewWindow) -> Result<Vec<source::Station>, String> {
+    if window.label() != "main" {
+        return Err("Untrusted window".into());
+    }
+    tauri::async_runtime::spawn_blocking(source::stations)
         .await
-        .map_err(|_| "Source worker failed".to_string())?
+        .map_err(|_| "Stations worker failed".to_string())?
         .map_err(str::to_string)
 }
 #[tauri::command]
@@ -122,6 +139,7 @@ fn main() {
         .manage(window_mode::WindowMode::default())
         .invoke_handler(tauri::generate_handler![
             source_fetch,
+            source_stations,
             media::media_update,
             media::media_status,
             desktop::desktop_action,

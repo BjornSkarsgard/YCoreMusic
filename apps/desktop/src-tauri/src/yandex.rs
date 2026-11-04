@@ -19,6 +19,15 @@ pub fn request(
     auth: &HeaderValue,
     body: Option<&Value>,
 ) -> Result<Value, &'static str> {
+    request_limited(client, path, auth, body, 2_000_000)
+}
+pub fn request_limited(
+    client: &Client,
+    path: &str,
+    auth: &HeaderValue,
+    body: Option<&Value>,
+    limit: u64,
+) -> Result<Value, &'static str> {
     let url = format!("https://api.music.yandex.net/{path}");
     let builder = match body {
         Some(body) => client.post(&url).json(body),
@@ -36,10 +45,10 @@ pub fn request(
     }
     let mut bytes = Vec::new();
     response
-        .take(2_000_001)
+        .take(limit + 1)
         .read_to_end(&mut bytes)
         .map_err(|_| "Response read error")?;
-    if bytes.len() > 2_000_000 {
+    if bytes.len() as u64 > limit {
         return Err("Response too large");
     }
     let json: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid API JSON")?;

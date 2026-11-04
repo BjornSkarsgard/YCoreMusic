@@ -76,7 +76,7 @@ try {
     }
     assert.equal(await execute('return document.getElementById("track-title").textContent'),before);
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));');
-    await execute('window.expectedCatalogueTrack=document.querySelector("#catalogue-collection .catalogue-track span").textContent;document.querySelector("#catalogue-collection > button").click()');
+    await execute('window.expectedCatalogueTrack=document.querySelector("#catalogue-collection .catalogue-track strong").textContent+" · "+document.querySelector("#catalogue-collection .catalogue-track small").textContent;document.querySelector("#catalogue-collection > button").click()');
     await until('return document.getElementById("track-title").textContent+" · "+document.getElementById("track-artist").textContent===window.expectedCatalogueTrack');
     assert(await execute('return document.querySelectorAll("#queue-list li").length>0'));
     console.log('Native catalogue: Cyrillic query, four sections, artist/album/playlist lists and selection: PASS');
@@ -217,6 +217,22 @@ try {
     await press(' ');await until('return document.getElementById("status").textContent==="Воспроизведение"');
     await press(' ');await until('return document.getElementById("status").textContent==="Пауза"');
     console.log('Native local Space Play/Pause through WebDriver keyboard input: PASS');
+  }
+  if(process.env.ENCORE_LIVE_WAVE==='1') {
+    await until('return !document.getElementById("source-start").disabled',30000);
+    await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.querySelector("[data-panel=wave]").click();document.getElementById("station-select").value="user:onyourwave";document.getElementById("source-start").click();');
+    await until('return document.getElementById("status").textContent==="Воспроизведение"',120000);
+    for(let transition=0;transition<2;transition++) {
+      const before=await execute('return document.querySelector("#queue-list li.current")?.textContent ?? document.getElementById("track-title").textContent');
+      await execute('window.wavePrevious=arguments[0]',[before]);
+      await until('return Number(document.getElementById("seek").max)>5');
+      await execute('const seek=document.getElementById("seek");seek.value=String(Number(seek.max)-1);seek.dispatchEvent(new Event("input"));seek.dispatchEvent(new Event("change"));');
+      await until('return (document.querySelector("#queue-list li.current")?.textContent ?? document.getElementById("track-title").textContent)!==window.wavePrevious && document.getElementById("status").textContent==="Воспроизведение"',120000);
+    }
+    assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);
+    await click('pause');
+    writeFileSync(resolve(root,'.tools/native-wave-redesign.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
+    console.log('Native real Wave: explicit start and two unattended natural-END transitions, one IFrame, muted: PASS');
   }
   const rect=await request('/session/'+session+'/window/rect');
   await click('mini');

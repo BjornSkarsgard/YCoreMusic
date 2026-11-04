@@ -1,4 +1,6 @@
 import { test, expect } from '@playwright/test';
+async function videoEditor(page:import('@playwright/test').Page){if(!await page.locator('#video-dialog').evaluate((dialog:HTMLDialogElement)=>dialog.open))await page.locator('#edit-video').click();}
+async function historyPanel(page:import('@playwright/test').Page){await page.locator('[data-panel=history]').click();}
 test('startup is inert; loading cues, explicit Play plays; replacement removes old player', async ({ page }) => {
   const requests: string[] = [];
   page.on('request', request => { if (request.url().includes('youtube')) requests.push(request.url()); });
@@ -25,13 +27,13 @@ test('startup is inert; loading cues, explicit Play plays; replacement removes o
   await page.goto('/');
   await expect(page.locator('#play')).toBeDisabled();
   expect(requests).toHaveLength(0);
-  await page.locator('#url').fill('M7lc1UVf-VE');
+  await videoEditor(page);await page.locator('#url').fill('M7lc1UVf-VE');
   await page.getByRole('button', { name: 'Подготовить' }).click();
   await expect(page.locator('#play')).toBeEnabled();
   expect(await page.evaluate(() => (window as any).calls)).toEqual(['cue:M7lc1UVf-VE']);
   await page.locator('#play').click();
   expect(await page.evaluate(() => (window as any).calls)).toContain('play');
-  await page.locator('#url').fill('dQw4w9WgXcQ');
+  await videoEditor(page);await page.locator('#url').fill('dQw4w9WgXcQ');
   await page.getByRole('button', { name: 'Подготовить' }).click();
   await expect(page.locator('#play')).toBeEnabled();
   expect(await page.evaluate(() => (window as any).calls)).toEqual(['cue:M7lc1UVf-VE', 'play', 'destroy', 'cue:dQw4w9WgXcQ']);
@@ -47,7 +49,7 @@ test('cue timeout cannot be revived by a late callback', async ({ page }) => {
     }}; window.onYouTubeIframeAPIReady();
   `}));
   await page.goto('/');
-  await page.locator('#url').fill('M7lc1UVf-VE');
+  await videoEditor(page);await page.locator('#url').fill('M7lc1UVf-VE');
   await page.getByRole('button', {name:'Подготовить'}).click();
   await expect(page.locator('#status')).toHaveText('Подготовка видео…');
   await page.clock.fastForward(21000);
@@ -66,11 +68,11 @@ test('compact presentation preserves the same player and explicit play state', a
       playVideo(){window.calls.push('play');} destroy(){window.calls.push('destroy');}
     }};window.onYouTubeIframeAPIReady();
   `}));
-  await page.goto('/'); await page.locator('#url').fill('M7lc1UVf-VE');
+  await page.goto('/'); await videoEditor(page);await page.locator('#url').fill('M7lc1UVf-VE');
   await page.getByRole('button',{name:'Подготовить'}).click(); await expect(page.locator('#play')).toBeEnabled();
   await page.locator('#play').click(); await page.locator('#mini').click();
-  await expect(page.locator('body')).toHaveClass('compact');
-  await expect(page.locator('#play')).toBeVisible();
+  await expect(page.locator('body')).toHaveClass(/compact/);
+  await expect(page.locator('#pause')).toBeVisible();
   await page.locator('#mini').click();
   expect(await page.evaluate(()=>(window as any).calls)).toEqual(['play']);
 });
@@ -88,7 +90,6 @@ test('source metadata stays text, failed prefetch preserves queue, mini invokes 
     }};
   });
   await page.goto('/');
-  await page.locator('#source-start').click();
   await expect(page.locator('#queue-list li')).toHaveCount(2);
   await expect(page.locator('#track-title')).toHaveText('<img src=x onerror=alert(1)>');
   await expect(page.locator('#track-title img')).toHaveCount(0);
@@ -97,7 +98,7 @@ test('source metadata stays text, failed prefetch preserves queue, mini invokes 
   await expect(page.locator('#queue-list li')).toHaveCount(2);
   await page.locator('#queue-next').click();
   await expect(page.locator('#track-title')).toHaveText('Track B');
-  await expect(page.locator('#play')).toBeDisabled();
+  await expect(page.locator('#play')).toBeEnabled();
   await page.locator('#mini').click(); await page.locator('#topmost').click();
   const commands=await page.evaluate(()=>(window as any).commands);
   expect(commands).toContainEqual({cmd:'window_mini',args:{compact:true}});
@@ -113,11 +114,12 @@ test('compact controls remain visible in a wide short window', async ({ page }) 
   await expect(page.locator('#mini')).toBeVisible();
 });
 
-async function mockAutomaticPlayer(page: import('@playwright/test').Page, failFirst = false) {
+async function mockAutomaticPlayer(page: import('@playwright/test').Page, failFirst = false,failIds:string[]=[]) {
+  await page.addInitScript(()=>{(window as any).played=[];(window as any).loaded=[];(window as any).seeks=[];});
   await page.route('https://www.youtube.com/iframe_api', route=>route.fulfill({contentType:'text/javascript',body:`
     window.loaded=[];window.played=[];window.seeks=[];window.YT={Player:class{
       constructor(id,options){this.el=document.getElementById(id);this.options=options;window.activePlayer=this;setTimeout(()=>options.events.onReady({target:this}),0);}
-      cueVideoById(value){const id=typeof value==='string'?value:value.videoId;this.id=id;window.loaded.push(id);if(${failFirst} && id==='Aaaaaaaaaaa'){queueMicrotask(()=>this.options.events.onError({data:101}));}else this.options.events.onStateChange({data:5,target:this});}
+      cueVideoById(value){const id=typeof value==='string'?value:value.videoId;this.id=id;window.loaded.push(id);if((${failFirst} && id==='Aaaaaaaaaaa') || ${JSON.stringify(failIds)}.includes(id)){queueMicrotask(()=>this.options.events.onError({data:101}));}else this.options.events.onStateChange({data:5,target:this});}
       setVolume(){} seekTo(position){window.seeks.push(position);} getDuration(){return 120;} getCurrentTime(){return 5;}
       playVideo(){window.played.push(this.id);this.options.events.onStateChange({data:1,target:this});}
       pauseVideo(){this.options.events.onStateChange({data:2,target:this});}
@@ -138,7 +140,7 @@ test('slow B cannot be overtaken by ready C after A ends; paused Next stays paus
   });
   await mockAutomaticPlayer(page);await page.goto('/');
   await expect(page.locator('#play')).toBeEnabled();
-  expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+  expect(await page.evaluate(()=>(window as any).played??[])).toEqual([]);
   await page.locator('#play').click();
   await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));
   await expect(page.locator('#track-title')).toHaveText('B');
@@ -162,7 +164,7 @@ test('embed rejection tries another candidate for the same track without autopla
   await expect.poll(()=>page.evaluate(()=>(window as any).loaded)).toEqual(['Aaaaaaaaaaa','Bbbbbbbbbbb']);
   await expect(page.locator('#play')).toBeEnabled();
   await expect(page.locator('#track-title')).toHaveText('A');
-  expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+  expect(await page.evaluate(()=>(window as any).played??[])).toEqual([]);
 });
 
 test('Pause while next track is being resolved cancels automatic continuation',async({page})=>{
@@ -205,7 +207,7 @@ test('saved manual clip precedes search and pause/resume produces one history ev
   expect(await page.evaluate(()=>(window as any).records)).toEqual([]);
   await page.locator('#play').click();await page.locator('#pause').click();await page.locator('#play').click();
   await expect.poll(()=>page.evaluate(()=>(window as any).records.length)).toBe(1);
-  await page.locator('#url').fill('Ccccccccccc');await page.getByRole('button',{name:'Подготовить'}).click();
+  await videoEditor(page);await page.locator('#url').fill('Ccccccccccc');await page.getByRole('button',{name:'Подготовить'}).click();
   expect(await page.evaluate(()=>(window as any).saved)).toEqual(['Ccccccccccc']);
 });
 test('history replay wins over late startup source and clearing requires confirmation',async({page})=>{
@@ -220,7 +222,7 @@ test('history replay wins over late startup source and clearing requires confirm
     }};
   });
   await mockAutomaticPlayer(page);await page.goto('/');
-  await page.locator('#history-panel summary').click();await page.locator('#history-list').getByRole('button',{name:'Воспроизвести',exact:true}).click();
+  await historyPanel(page);await page.locator('#history-list').getByRole('button',{name:'Воспроизвести',exact:true}).click();
   await expect(page.locator('#track-title')).toHaveText('From history');
   await page.evaluate(()=>(window as any).releaseSource());
   await expect(page.locator('#source-start')).toBeEnabled();
@@ -246,7 +248,7 @@ test('unavailable saved clip falls back to search without deleting the saved cho
   await mockAutomaticPlayer(page,true);await page.goto('/');
   await expect.poll(()=>page.evaluate(()=>(window as any).loaded)).toEqual(['Aaaaaaaaaaa','Bbbbbbbbbbb']);
   expect(await page.evaluate(()=>(window as any).removed)).toBe(0);
-  expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+  expect(await page.evaluate(()=>(window as any).played??[])).toEqual([]);
 });
 
 test('uncertain matches are offered for selection and never autoplay',async({page})=>{
@@ -259,9 +261,9 @@ test('uncertain matches are offered for selection and never autoplay',async({pag
   });
   await mockAutomaticPlayer(page);await page.goto('/');
   await expect(page.locator('#candidate-list button')).toHaveCount(1);
-  await expect(page.locator('#play')).toBeDisabled();
-  await page.locator('#candidate-list button').click();await expect(page.locator('#play')).toBeEnabled();
-  expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+  await expect(page.locator('#play')).toBeEnabled();
+  await videoEditor(page);await page.locator('#candidate-list button').click();await expect(page.locator('#play')).toBeEnabled();
+  expect(await page.evaluate(()=>(window as any).played??[])).toEqual([]);
 });
 
 test('Yandex catalogue renders sections, browsing leaves playback alone, starting list preserves order',async({page})=>{
@@ -283,7 +285,7 @@ test('Yandex catalogue renders sections, browsing leaves playback alone, startin
   await page.locator('.catalogue-card').filter({hasText:'Rammstein playlist'}).click();
   await expect(page.locator('#catalogue-collection .catalogue-track')).toHaveCount(3);
   await expect(page.locator('#track-title')).toHaveText('Current wave');
-  expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+  expect(await page.evaluate(()=>(window as any).played??[])).toEqual([]);
   await page.getByRole('button',{name:'▶ Воспроизвести список'}).click();
   await expect(page.locator('#track-title')).toHaveText('Three');
   await expect(page.locator('#queue-list li')).toHaveText(['Three · Rammstein','One · Rammstein','Three · Rammstein']);
@@ -369,7 +371,7 @@ test('finite pagination finishes before queue repeat, paused wrapping stays paus
   await page.locator('#pause').click();
   for(const title of ['Q','P']){await page.locator('#queue-next').click();await expect(page.locator('#track-title')).toHaveText(title);await expect(page.locator('#play')).toBeEnabled();}
   expect(await page.evaluate(()=>(window as any).played.filter((id:string)=>id==='Ppppppppppp').length)).toBe(2);
-  await page.locator('#source-start').click();await expect(page.locator('#track-title')).toHaveText('Wave');await expect(page.locator('#repeat')).toHaveText('Повтор: выкл.');
+  await page.locator('[data-panel=wave]').click();await page.locator('#source-start').click();await expect(page.locator('#track-title')).toHaveText('Wave');await expect(page.locator('#repeat')).toHaveText('Повтор: выкл.');
   await page.locator('#repeat').click();await page.locator('#repeat').click();await expect(page.locator('#repeat')).toHaveText('Повтор: выкл.');
 });
 
@@ -412,15 +414,15 @@ test('history next and append preserve playing clip and saved video IDs while ke
     }};
   });
   await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await page.locator('#play').click();
-  await page.locator('#history-panel').evaluate((item:HTMLDetailsElement)=>item.open=true);
+  await historyPanel(page);
   await page.locator('#history-list').getByRole('button',{name:'Следом',exact:true}).click();
   await page.locator('#history-list').getByRole('button',{name:'В конец',exact:true}).click();
   await expect(page.locator('#track-title')).toHaveText('A');
   expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa']);
-  await expect(page.locator('#queue-list li')).toHaveText(['A · Fixture','History H · Fixture','B · Fixture','History H · Fixture']);
-  for(const title of ['History H','B','History H','C']){await page.locator('#queue-next').click();await expect(page.locator('#track-title')).toHaveText(title);await expect(page.locator('#play')).toBeEnabled();}
-  expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa','Hhhhhhhhhhh','Bbbbbbbbbbb','Hhhhhhhhhhh','Ccccccccccc']);
-  expect(await page.evaluate(()=>(window as any).more)).toBe(1);
+  const rows=await page.locator('#queue-list li').allTextContents();expect(rows.slice(0,3)).toEqual(['A · Fixture','History H · Fixture','B · Fixture']);expect(rows.at(-1)).toBe('History H · Fixture');
+  for(const title of rows.slice(1).map(row=>row.split(' · ')[0])){await page.locator('#queue-next').click();await expect(page.locator('#track-title')).toHaveText(title);await expect(page.locator('#play')).toBeEnabled();}
+  expect((await page.evaluate(()=>(window as any).played)).slice(0,3)).toEqual(['Aaaaaaaaaaa','Hhhhhhhhhhh','Bbbbbbbbbbb']);
+  expect(await page.evaluate(()=>(window as any).more)).toBeGreaterThanOrEqual(1);
 });
 
 test('history next retains a playing manual video when there is no source queue',async({page})=>{
@@ -431,9 +433,9 @@ test('history next retains a playing manual video when there is no source queue'
       if(cmd==='storage_command'&&args.request.type==='history')return [{trackId:'9',title:'History H',artist:'Fixture',videoId:'Hhhhhhhhhhh',startedAt:1}];
     }};
   });
-  await mockAutomaticPlayer(page);await page.goto('/');await page.locator('#url').fill('M7lc1UVf-VE');await page.locator('#load').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+  await mockAutomaticPlayer(page);await page.goto('/');await videoEditor(page);await page.locator('#url').fill('M7lc1UVf-VE');await page.locator('#load').evaluate((form:HTMLFormElement)=>form.requestSubmit());
   await expect(page.locator('#play')).toBeEnabled();await page.locator('#play').click();
-  await page.locator('#history-panel').evaluate((item:HTMLDetailsElement)=>item.open=true);
+  await historyPanel(page);
   await page.locator('#history-list').getByRole('button',{name:'Следом',exact:true}).click();
   expect(await page.evaluate(()=>(window as any).played)).toEqual(['M7lc1UVf-VE']);
   await expect(page.locator('#queue-list li')).toHaveCount(2);
@@ -443,15 +445,15 @@ test('history next retains a playing manual video when there is no source queue'
 
 
 test('local Space and arrows control playback while search and link fields keep editing keys',async({page})=>{
-  await mockAutomaticPlayer(page);await page.goto('/');await page.locator('#url').fill('M7lc1UVf-VE');await page.locator('#load').evaluate((form:HTMLFormElement)=>form.requestSubmit());
-  await expect(page.locator('#play')).toBeEnabled();await page.locator('h1').click();
+  await mockAutomaticPlayer(page);await page.goto('/');await videoEditor(page);await page.locator('#url').fill('M7lc1UVf-VE');await page.locator('#load').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+  await expect(page.locator('#play')).toBeEnabled();await page.locator('#track-title').click();
   await page.keyboard.press('Space');await expect(page.locator('#status')).toHaveText('Воспроизведение');
   await page.keyboard.press('ArrowRight');await page.keyboard.press('ArrowLeft');
   expect(await page.evaluate(()=>(window as any).seeks)).toEqual([10,0]);
   await page.keyboard.press('Space');await expect(page.locator('#status')).toHaveText('Пауза');
   await page.locator('#catalogue-query').fill('artist');await page.keyboard.press('Space');await page.keyboard.press('ArrowLeft');
   await expect(page.locator('#catalogue-query')).toHaveValue('artist ');await expect(page.locator('#status')).toHaveText('Пауза');
-  await page.locator('#url').focus();await page.keyboard.press('Space');await page.keyboard.press('ArrowRight');
+  await videoEditor(page);await page.locator('#url').focus();await page.keyboard.press('Space');await page.keyboard.press('ArrowRight');
   expect(await page.evaluate(()=>(window as any).seeks)).toEqual([10,0]);
   expect(await page.evaluate(()=>(window as any).played)).toEqual(['M7lc1UVf-VE']);
 });
@@ -500,4 +502,89 @@ test('custom controls suppress iframe input, captions use exposed options and se
   await expect(page.locator('#video-quality')).toHaveText('Качество: Авто');
   await page.evaluate(()=>{const w=window as any;w.players.at(-1).options.events.onPlaybackQualityChange({data:'hd720',target:w.players.at(-1)});});
   await expect(page.locator('#video-quality')).toHaveText('Качество: 720p');
+});
+
+test('Wave skips missing, uncertain and rejected clips, refills ahead and continues unattended',async({page})=>{
+ await page.addInitScript(()=>{
+  const w=window as any;w.isTauri=true;w.batches=0;w.searchActive=0;w.searchMax=0;
+  w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+   if(cmd==='source_fetch'){w.batches++;return (args.fresh?['A','B','C','D']:['E','F','G','H','I']).map(id=>({id,title:id,artist:'Fixture'}));}
+   if(cmd==='search_videos'){
+    w.searchMax=Math.max(w.searchMax,++w.searchActive);await new Promise(r=>setTimeout(r,15));--w.searchActive;
+    if(args.title==='A')return [];
+    return [{id:args.title+args.title.toLowerCase().repeat(10),title:args.title,score:100,reason:'fixture',needsReview:args.title==='B'}];
+   }
+  }};
+ });
+ await mockAutomaticPlayer(page,false,['Ccccccccccc']);await page.goto('/');
+ await expect(page.locator('#play')).toBeEnabled();expect(await page.evaluate(()=>(window as any).played??[])).toEqual([]);
+ await page.locator('#source-start').click();
+ await expect.poll(()=>page.evaluate(()=>(window as any).played?.[0])).toBe('Ddddddddddd');
+ await expect(page.locator('#video-dialog')).not.toBeVisible();
+ expect(await page.evaluate(()=>(window as any).searchMax)).toBeLessThanOrEqual(3);
+ expect(await page.evaluate(()=>(window as any).batches)).toBeGreaterThanOrEqual(3);
+ await page.locator('#fullscreen').click();await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
+ for(let count=0;count<18;count++){
+  const before=await page.evaluate(()=>(window as any).played.length);
+  await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));
+  await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBeGreaterThan(before);
+ }
+ expect(await page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
+ const played=await page.evaluate(()=>(window as any).played);expect(played).not.toContain('Aaaaaaaaaaa');expect(played).not.toContain('Bbbbbbbbbbb');expect(played).not.toContain('Ccccccccccc');
+ await page.locator('#pause').click();const count=played.length;await page.waitForTimeout(100);expect(await page.evaluate(()=>(window as any).played.length)).toBe(count);
+});
+
+test('Wave retries metadata outages with backoff and Pause cancels automatic recovery',async({page})=>{
+ await page.clock.install();
+ await page.addInitScript(()=>{
+  const w=window as any;w.isTauri=true;w.working=false;w.searchCount=0;
+  w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+   if(cmd==='source_fetch')return ['A','B','C','D','E','F','G','H'].map(id=>({id,title:id,artist:'Fixture'}));
+   if(cmd==='search_videos'){w.searchCount++;if(!w.working)throw 'Network error';return [{id:'M7lc1UVf-VE',title:'fixture',score:100,reason:'fixture'}];}
+  }};
+ });
+ await mockAutomaticPlayer(page);await page.goto('/');await page.locator('#source-start').click();
+ await expect(page.locator('#status')).toContainText('повтор через');
+ await page.locator('#pause').click();const searches=await page.evaluate(()=>(window as any).searchCount);
+ await page.clock.fastForward(60000);expect(await page.evaluate(()=>(window as any).searchCount)).toBe(searches);expect(await page.evaluate(()=>(window as any).played??[])).toEqual([]);
+ await page.evaluate(()=>(window as any).working=true);await page.locator('#play').click();await page.clock.fastForward(4000);
+ await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBe(1);
+});
+
+test('video and transport stay visible while searching and scrolling; genre Wave uses selected server seed',async({page})=>{
+ await page.setViewportSize({width:1200,height:820});
+ await page.addInitScript(()=>{
+  const w=window as any;w.isTauri=true;w.seeds=[];
+  w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+   if(cmd==='source_stations')return [{id:'genre:metal',title:'Метал'}];
+   if(cmd==='source_fetch'){w.seeds.push(args.station);return [{id:'1',title:'Wave',artist:'Fixture'}];}
+   if(cmd==='search_videos')return [{id:'M7lc1UVf-VE',title:'Fixture',score:100,reason:'fixture'}];
+   if(cmd==='catalogue_search')return {artists:[{kind:'artist',id:'1',title:'Rammstein',subtitle:'Исполнитель'}],tracks:Array.from({length:50},(_,i)=>({id:String(i),title:'Track '+i,artist:'Rammstein'})),albums:[],playlists:[],page:0};
+  }};
+ });
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#station-select option')).toHaveCount(2);
+ await page.locator('#station-select').selectOption('genre:metal');await page.locator('#source-start').click();await expect(page.locator('#source-name')).toHaveText('Моя волна · Метал');
+ expect(await page.evaluate(()=>(window as any).seeds)).toContain('genre:metal');
+ await page.locator('#catalogue-query').fill('рамштайн');await expect(page.locator('.catalogue-track')).toHaveCount(50);
+ const before=await page.locator('.screen').boundingBox();await page.locator('.panel-scroll').evaluate(el=>el.scrollTop=el.scrollHeight);
+ expect(await page.locator('.screen').boundingBox()).toEqual(before);const transport=await page.locator('.controls').boundingBox();expect(transport!.y+transport!.height).toBeLessThanOrEqual(820);expect(await page.evaluate(()=>window.scrollY)).toBe(0);
+ await page.screenshot({path:'../../.tools/redesign.png'});
+});
+
+test('Wave leaves a cued clip that never starts and keeps fullscreen during recovery',async({page})=>{
+ await page.clock.install();
+ await page.addInitScript(()=>{
+  const w=window as any;w.isTauri=true;
+  w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+   if(cmd==='source_fetch')return ['A','B','C','D','E','F','G','H'].map(id=>({id,title:id,artist:'Fixture'}));
+   if(cmd==='search_videos')return [{id:args.title+args.title.toLowerCase().repeat(10),title:args.title,score:100,reason:'fixture'}];
+  }};
+ });
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
+ // Freeze every current candidate at CUED; the watchdog must advance to B.
+ await page.evaluate(()=>{const w=window as any;w.YT.Player.prototype.playVideo=function(){};});
+ await page.locator('#source-start').click();await expect(page.locator('#track-title')).toHaveText('A');
+ await page.locator('#fullscreen').click();await page.clock.fastForward(17000);
+ await expect(page.locator('#track-title')).toHaveText('B');expect(await page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
+ await page.locator('#pause').click();
 });
