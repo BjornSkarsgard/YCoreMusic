@@ -293,3 +293,11 @@ Native свежей сборки: запуск --encore-autostart в tray/без
 Локальная оптимизированная Windows release сборка и NSIS завершились успешно:target/release/bundle/nsis/Encore_0.0.1_x64-setup.exe,3.28MiB. SHA256/signature записаны в .tools/windows-package-result.json, пакет не установлен и не опубликован, подписи нет. Во frontend/пакет не добавлены пользовательские credentials илиSQLite. Ручной packageworkflow появился в GitHub после задержки регистрации; Linux dispatch запрошен для проверки DEB/AppImage, итог ещё ожидается.
 
 README приведён к текущему single-window prototype: удалены противоречащие актуальной реализации старые утверждения про отсутствие Wave/нескольких favourites/автообхода. docs00 теперь явно Windows/Linux/macOS и видеопоток Wave; начало журнала статуса маркирует ранние записи историческими. Готовность UIlogin, real preference writes,physical lifecycle,platformruntime не завышена.
+
+## REQ-006: период истории (2026-11-04)
+
+Свёрнутый блок «Период» задаёт локальные календарные дни «С»/«По». Последний день включён; следующий день рассчитывается календарно, включая DST, а не прибавлением24часов. Смена периода отменяет late responses и сбрасывает cursor, кнопка сброса не меняет текстовый запрос. Пустая выдача по фильтру не объявляется пустой историей. Диалог очистки явно предупреждает об удалении всей истории, включая записи вне периода.
+
+storage/history принимает optional from/until в Unixseconds: from включён,until исключён,пагинацияbeforeId сохранена. Старые клиенты без периода совместимы. Все собственные started_at хранятся в UTC; фильтрация по UTCsecondprefix не округляет наносекунды на границе дня, миграция не требуется.
+
+Проверки: UI62PASS+1opt-in skipped,Rust37app+5probePASS/9ignored,Clippy/buildPASS. Native Windows inclusive today+pagination+futureempty+clear+noautoplay+mini/topmost/maximized/instancePASS. Отдельно проверен25часовой день NewYork и поздний старый период. Linuxrelease DEB/AppImage workflow41867671860PASS, артефакты скачаны в.tools/linux-packages-41867671860; runtimeещё не проверялся. MacARM packaging41870661876запрошен, итог ожидается.

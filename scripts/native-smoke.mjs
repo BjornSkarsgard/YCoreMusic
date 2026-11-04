@@ -1,15 +1,16 @@
-// Opt-in Windows desktop integration test. No credentials or API bodies are logged.
+// Opt-in Windows / Linux X11 desktop integration test. No credentials or API bodies are logged.
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import {existsSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const root=process.cwd();
 const backgroundSmoke=process.env.ENCORE_AUTOSTART_SMOKE==='1';
-const nativeApp=resolve(root,'apps/desktop/src-tauri/target/native-test/encore.exe');
+const nativeApp=resolve(root,'apps/desktop/src-tauri/target/native-test/'+(process.platform==='win32'?'encore.exe':'encore'));
+const nativeDriver=process.env.ENCORE_NATIVE_DRIVER??(process.platform==='win32'?(process.env.ENCORE_EDGE_DRIVER??resolve(root,'.tools/edgedriver/msedgedriver.exe')):'/usr/bin/WebKitWebDriver');
 assert(existsSync(nativeApp),'Build the native-test profile first; see README native smoke instructions.');
 const nativeEnvironment={...process.env,ENCORE_TEST_DATA_DIR:process.env.ENCORE_NATIVE_TEST_DATA_DIR??resolve(root,'.tools/native-test-data')};
 const driver=spawn(process.env.ENCORE_TAURI_DRIVER ?? 'tauri-driver',[
-  '--port','4444','--native-driver',process.env.ENCORE_EDGE_DRIVER ?? resolve(root,'.tools/edgedriver/msedgedriver.exe')
+  '--port','4444','--native-driver',nativeDriver
 ],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
 let session,appPid,isolated=false,networkEmulated=false;
 let originalVolume=null,volumeCaptured=false;
@@ -88,14 +89,22 @@ try {
   await store({type:'record',event:{...event,playbackId:fixture+'-after-page'}});
   const olderPage=await store({type:'history',query:fixture,beforeId:newestPage.at(-1).id});
   assert.equal(olderPage.length,5);assert(olderPage.every(row=>row.id<newestPage.at(-1).id));
+  const now=Math.floor(Date.now()/1000);
+  assert.equal((await store({type:'history',query:fixture,from:now-600,until:now+3600})).length,100);
+  assert.equal((await store({type:'history',query:fixture,from:now+86400})).length,0);
+
   await click('history-more');
   await until('return document.querySelectorAll("#history-list li").length===105&&document.getElementById("history-more").hidden');
+  await execute('const date=new Date(),today=date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0");document.getElementById("history-from").value=today;document.getElementById("history-until").value=today;document.getElementById("history-from").dispatchEvent(new Event("change"));');
+  await until('return document.querySelectorAll("#history-list li").length===100');await click('history-more');
+  await until('return document.querySelectorAll("#history-list li").length===106');
   assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
   await click('history-clear');await click('clear-confirm');
   await until('return !document.getElementById("clear-dialog").open&&document.querySelectorAll("#history-list li").length===0');
   assert.equal((await store({type:'history',query:fixture})).length,0);
   await execute('document.getElementById("history-query").value="";document.getElementById("history-query").dispatchEvent(new Event("input"));');
-  console.log('Native history cursor pagination, concurrent new play, inert browsing and confirmed clear: PASS');
+  await click('history-period-clear');
+  console.log('Native history cursor pagination, inclusive local date period, concurrent new play and confirmed clear: PASS');
   if(process.env.ENCORE_LIVE_YANDEX==='1') {
     await until('return document.querySelectorAll("#queue-list li").length>0');
     const count=await execute('return document.querySelectorAll("#queue-list li").length');

@@ -372,6 +372,29 @@ impl Store {
         query: &str,
         before_id: Option<i64>,
     ) -> Result<Vec<HistoryEntry>, &'static str> {
+        self.history_range(query, before_id, None, None)
+    }
+    fn history_range(
+        &self,
+        query: &str,
+        before_id: Option<i64>,
+        from: Option<i64>,
+        until: Option<i64>,
+    ) -> Result<Vec<HistoryEntry>, &'static str> {
+        if from.zip(until).is_some_and(|(from, until)| from >= until) {
+            return Err("Invalid history period");
+        }
+        let boundary = |seconds: Option<i64>| {
+            seconds
+                .map(|seconds| {
+                    chrono::DateTime::from_timestamp(seconds, 0)
+                        .map(|date| date.format("%Y-%m-%dT%H:%M:%S").to_string())
+                        .ok_or("Invalid history boundary")
+                })
+                .transpose()
+        };
+        let from = boundary(from)?;
+        let until = boundary(until)?;
         if before_id.is_some_and(|id| id <= 0) {
             return Err("Invalid history cursor");
         }
@@ -379,18 +402,21 @@ impl Store {
             return Err("Search query too long");
         }
         let connection = self.0.lock().map_err(|_| "Storage unavailable")?;
-        let mut statement=connection.prepare("SELECT id,track_id,title,artist,video_id,started_at FROM play_history WHERE instr(search_text,?1)>0 AND (?2 IS NULL OR id<?2) ORDER BY id DESC LIMIT 100").map_err(|_|"Cannot query history")?;
+        let mut statement=connection.prepare("SELECT id,track_id,title,artist,video_id,started_at FROM play_history WHERE instr(search_text,?1)>0 AND (?2 IS NULL OR id<?2) AND (?3 IS NULL OR substr(started_at,1,19)>=?3) AND (?4 IS NULL OR substr(started_at,1,19)<?4) ORDER BY id DESC LIMIT 100").map_err(|_|"Cannot query history")?;
         let rows = statement
-            .query_map(params![query.to_lowercase(), before_id], |row| {
-                Ok(HistoryEntry {
-                    id: row.get(0)?,
-                    track_id: row.get(1)?,
-                    title: row.get(2)?,
-                    artist: row.get(3)?,
-                    video_id: row.get(4)?,
-                    started_at: row.get(5)?,
-                })
-            })
+            .query_map(
+                params![query.to_lowercase(), before_id, from, until],
+                |row| {
+                    Ok(HistoryEntry {
+                        id: row.get(0)?,
+                        track_id: row.get(1)?,
+                        title: row.get(2)?,
+                        artist: row.get(3)?,
+                        video_id: row.get(4)?,
+                        started_at: row.get(5)?,
+                    })
+                },
+            )
             .map_err(|_| "Cannot read history")?;
         rows.collect::<rusqlite::Result<Vec<_>>>()
             .map_err(|_| "Invalid history data")
@@ -796,6 +822,71 @@ mod tests {
         ));
     }
     #[test]
+    fn history_period_keeps_local_day_boundaries_repeats_and_cursor_without_rounding_nanoseconds() {
+        let store = memory();
+        for (i, time) in [
+            "2026-11-03T18:59:59.999999999+00:00",
+            "2026-11-03T19:00:00+00:00",
+            "2026-11-04T18:59:59.999999999+00:00",
+            "2026-11-04T19:00:00+00:00",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let event = PlayRecord {
+                playback_id: format!("date-{i}"),
+                track_id: "123".into(),
+                title: "Range".into(),
+                artist: "Fixture".into(),
+                video_id: "M7lc1UVf-VE".into(),
+            };
+            store.record(&event).unwrap();
+            store
+                .0
+                .lock()
+                .unwrap()
+                .execute(
+                    "UPDATE play_history SET started_at=?1 WHERE playback_id=?2",
+                    params![time, event.playback_id],
+                )
+                .unwrap();
+        }
+        let from = chrono::DateTime::parse_from_rfc3339("2026-11-03T19:00:00Z")
+            .unwrap()
+            .timestamp();
+        let until = from + 86400;
+        let ids = |rows: Vec<HistoryEntry>| rows.into_iter().map(|row| row.id).collect::<Vec<_>>();
+        assert_eq!(
+            ids(store
+                .history_range("RANGE", None, Some(from), Some(until))
+                .unwrap()),
+            vec![3, 2]
+        );
+        assert_eq!(
+            ids(store
+                .history_range("range", Some(3), Some(from), Some(until))
+                .unwrap()),
+            vec![2]
+        );
+        assert_eq!(
+            ids(store
+                .history_range("range", None, Some(from), None)
+                .unwrap()),
+            vec![4, 3, 2]
+        );
+        assert_eq!(
+            ids(store
+                .history_range("range", None, None, Some(until))
+                .unwrap()),
+            vec![3, 2, 1]
+        );
+        assert!(store
+            .history_range("", None, Some(until), Some(from))
+            .is_err());
+        assert!(store.history_range("", None, Some(i64::MAX), None).is_err());
+        assert_eq!(store.history("", None).unwrap().len(), 4);
+    }
+    #[test]
     fn manual_override_survives_reopen_and_rejects_invalid_values() {
         let path = std::env::temp_dir().join(format!(
             "encore-store-{}-{}.sqlite",
@@ -874,6 +965,8 @@ pub enum Request {
     History {
         query: String,
         before_id: Option<i64>,
+        from: Option<i64>,
+        until: Option<i64>,
     },
     ClearHistory,
 }
@@ -916,9 +1009,18 @@ pub async fn storage_command(
             }
             Request::RemoveVideo { track_id } => store.remove_video(&track_id)?,
             Request::Record { event } => store.record(&event)?,
-            Request::History { query, before_id } => {
-                return serde_json::to_value(store.history(&query, before_id)?)
-                    .map_err(|_| "Cannot serialize history")
+            Request::History {
+                query,
+                before_id,
+                from,
+                until,
+            } => {
+                let rows = if from.is_none() && until.is_none() {
+                    store.history(&query, before_id)?
+                } else {
+                    store.history_range(&query, before_id, from, until)?
+                };
+                return serde_json::to_value(rows).map_err(|_| "Cannot serialize history");
             }
             Request::ClearHistory => store.clear_history()?,
             Request::Status => {}
