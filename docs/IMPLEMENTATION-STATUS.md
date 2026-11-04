@@ -249,3 +249,11 @@ TypeScript/build PASS; renderer 45 PASS +1 opt-in skipped, включая stale 
 Сохраняем track/position/history-record при confirmed browser offline; buffering восстанавливает тот же clip с backoff. Pause/wake/source/Next guards, END после reconnect учитывает repeat-one. Renderer56PASS+1opt-in skipped, TS/buildPASS.7новых regression включают15мин offline через clock, восстановление43с без duplicate history, Pause,Next,late callbacks,wake,finite retries иrepeat.
 
 Настоящий60мин native Wave прогон идёт на baseline025ab78 (до нового recovery), hidden+volume0+fresh test directory, без seek/Next. Окончательный результат ещё не получен. Native-test profile занят: не пересобирать до завершения. Новый recovery требует отдельной native проверки после прогона; полный реальный сетевой outage пока не утверждать проверенным. CI025ab78: Windows/Linux/macIntel PASS; macARM canceled без failedstep, overallfailure; следующий push перепроверит.
+
+## 2026-11-04: REQ-043 автозапуск — реализация, native проверка ожидается
+
+В настройках checkbox реального OSautostart, по умолчанию ничего не регистрируется. Официальный plugin2.7.0, нативные main-only commands, отдельный --encore-autostart путь hidden+paused, tray-failure fallback, повторный background instance не крадёт фокус. Native testMode запрещает OS mutations. Rust31app+5probePASS,9ignored;ClippyPASS;2целевыхautostart rendererPASS; полный renderer прогон повторяется после исправления проверки немедленного rollback checkbox.
+
+Подготовлен дополнительный native сценарий CDP outage только собственного WebView, без изменения системной сети. Он ещё не запускался; не объявлять PASS. Native profile занят60минWave baseline025ab78. После завершения пересобрать с новым recovery/autostart, выполнить ENCORE_AUTOSTART_SMOKE/ENCORE_LIVE_RECOVERY и обычный native YouTube smoke. Autostart enable/disable текущего пользователя и настоящий login не выполнялись.
+
+Повторный полный renderer для autostart:58PASS+1opt-in skipped; TypeScript/buildPASS. Native runtime всё ещё ожидается после часового прогона.

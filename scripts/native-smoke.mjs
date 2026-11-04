@@ -4,13 +4,14 @@ import { resolve } from 'node:path';
 import {existsSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const root=process.cwd();
+const backgroundSmoke=process.env.ENCORE_AUTOSTART_SMOKE==='1';
 const nativeApp=resolve(root,'apps/desktop/src-tauri/target/native-test/encore.exe');
 assert(existsSync(nativeApp),'Build the native-test profile first; see README native smoke instructions.');
 const nativeEnvironment={...process.env,ENCORE_TEST_DATA_DIR:process.env.ENCORE_NATIVE_TEST_DATA_DIR??resolve(root,'.tools/native-test-data')};
 const driver=spawn(process.env.ENCORE_TAURI_DRIVER ?? 'tauri-driver',[
   '--port','4444','--native-driver',process.env.ENCORE_EDGE_DRIVER ?? resolve(root,'.tools/edgedriver/msedgedriver.exe')
 ],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
-let session,appPid,isolated=false;
+let session,appPid,isolated=false,networkEmulated=false;
 let originalVolume=null,volumeCaptured=false;
 async function request(path,body,method=body===undefined?'GET':'POST') {
   const response=await fetch('http://127.0.0.1:4444'+path,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(45000)});
@@ -27,12 +28,16 @@ async function until(script,timeout=25000) {
   throw new Error('Native condition timed out: '+script+' '+JSON.stringify(diagnostic));
 }
 async function nativeInvoke(cmd,args={}){return request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke(arguments[0],arguments[1]).then(done).catch(()=>done(null));',args:[cmd,args]});}
+async function network(offline){
+  await request('/session/'+session+'/ms/cdp/execute',{cmd:'Network.emulateNetworkConditions',params:{offline,latency:0,downloadThroughput:-1,uploadThroughput:-1}});
+  networkEmulated=offline;
+}
 async function mediaUntil(playback){for(let n=0;n<40;n++){const status=await nativeInvoke('media_status');if(status?.available&&status.playback===playback)return;await sleep(100);}throw new Error('Native media status did not become '+playback);}
 async function click(id){await execute('document.getElementById(arguments[0]).click()', [id]);}
 try {
   driver.on('error',()=>{});
   for(let attempt=0;attempt<40;attempt++){try{await request('/status');break;}catch{await sleep(250);}}
-  const created=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:nativeApp}}}});
+  const created=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:nativeApp,args:backgroundSmoke?['--encore-autostart']:[]}}}});
   session=created.sessionId;
   await until('return !!document.getElementById("play")');
   await execute('window.nativeErrors=[];window.addEventListener("error",event=>window.nativeErrors.push(event.message));');
@@ -46,6 +51,17 @@ try {
   appPid=(await nativeInvoke('desktop_status')).process_id;
   assert(Number.isInteger(appPid),'Native test process identity unavailable');
   assert.equal(storageStatus.available,true,'Test database unavailable');
+  if(backgroundSmoke){
+    const desktop=await nativeInvoke('desktop_status');assert.equal(desktop.visible,!desktop.tray_available,'Autostart should stay hidden when tray is available');
+    assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
+    await nativeInvoke('desktop_action',{action:'open'});
+    console.log('Native autostart argument -> tray without autoplay, explicit Open restores: PASS');
+  }
+  const autostartBefore=await nativeInvoke('autostart_status');assert.equal(autostartBefore.canChange,false);
+  assert.equal(await nativeInvoke('autostart_set',{enabled:true}),null,'Isolated tests must not write autostart');
+  assert.deepEqual(await nativeInvoke('autostart_status'),autostartBefore);
+  console.log('Native autostart read and isolated mutation guard: PASS (no OS setting written)');
+
   const fixture='native-fixture-'+Date.now();
   await store({type:'save_video',trackId:'123456789',videoId:'M7lc1UVf-VE'});
   assert.equal(await store({type:'get_video',trackId:'123456789'}),'M7lc1UVf-VE');
@@ -322,6 +338,28 @@ try {
     await press(' ');await until('return document.getElementById("status").textContent==="Пауза"');
     console.log('Native local Space Play/Pause through WebDriver keyboard input: PASS');
   }
+  if(process.env.ENCORE_LIVE_RECOVERY==='1'){
+    await store({type:'record',event:{playbackId:fixture+'-recovery',trackId:'manual:M7lc1UVf-VE',title:'Native recovery fixture',artist:'',videoId:'M7lc1UVf-VE'}});
+    await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.querySelector("[data-panel=history]").click();document.getElementById("history-query").value="Native recovery fixture";document.getElementById("history-refresh").click()');
+    await until('return document.querySelectorAll("#history-list li").length>0');
+    await execute('Array.from(document.querySelector("#history-list li").querySelectorAll("button")).find(button=>button.textContent==="Воспроизвести").click()');
+    await until('return document.getElementById("status").textContent==="Воспроизведение"',45000);
+    const recordsBefore=(await store({type:'history',query:'Native recovery fixture'})).length;
+    const beforeTitle=await execute('return document.getElementById("track-title").textContent');
+    await network(true);await until('return navigator.onLine===false');
+    await execute('const seek=document.getElementById("seek");window.recoveryTarget=Math.floor(Number(seek.max)*0.7);seek.value=String(window.recoveryTarget);seek.dispatchEvent(new Event("change"));');
+    await until('return document.getElementById("status").textContent.includes("Нет сети")',45000);
+    const seconds=Number(process.env.ENCORE_OUTAGE_SECONDS??20);assert(Number.isFinite(seconds)&&seconds>=10&&seconds<=900,'Outage must be between10 and900 seconds');
+    for(let waited=0;waited<seconds;waited+=5){await sleep(Math.min(5,seconds-waited)*1000);assert.equal(await execute('return document.getElementById("track-title").textContent'),beforeTitle);}
+    await click('pause');await network(false);await until('return navigator.onLine===true');await sleep(2000);
+    assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение','Reconnect ignored Pause');
+    await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"',45000);await sleep(1000);
+    assert.equal(await execute('return document.getElementById("track-title").textContent'),beforeTitle);
+    assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);
+    assert.equal((await store({type:'history',query:'Native recovery fixture'})).length,recordsBefore,'Recovery duplicated history');
+    assert(await execute('return Math.abs(Number(document.getElementById("seek").value)-window.recoveryTarget)<12'),'Recovery lost position');
+    await click('pause');console.log('Native actual WebView network outage, stable track/position/history, reconnect after Pause: PASS ('+seconds+'s; OS network unchanged)');
+  }
   const soakMinutes=Number(process.env.ENCORE_WAVE_SOAK_MINUTES??0);
   if(process.env.ENCORE_LIVE_WAVE==='1'||soakMinutes>0) {
     await until('return !document.getElementById("source-start").disabled',30000);
@@ -386,6 +424,11 @@ try {
   console.log('Native mini from maximized window and restore: PASS');
   await request('/session/'+session+'/window/minimize',{});
   assert.equal((await nativeInvoke('desktop_status')).minimized,true);
+  const automaticExtra=spawn(nativeApp,['--encore-autostart'],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
+  const automaticExited=await new Promise(resolve=>{const timeout=setTimeout(()=>{automaticExtra.kill();resolve(false);},5000);automaticExtra.on('close',()=>{clearTimeout(timeout);resolve(true);});});
+  assert(automaticExited,'Second autostart instance did not exit');
+  assert.equal((await nativeInvoke('desktop_status')).minimized,true,'Autostart duplicate must not steal focus');
+  console.log('Native duplicate autostart keeps the existing window minimized: PASS');
   const extra=spawn(nativeApp,[],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
   const exited=await new Promise(resolve=>{const timeout=setTimeout(()=>{extra.kill();resolve(false);},5000);extra.on('close',()=>{clearTimeout(timeout);resolve(true);});});
   assert(exited,'Second instance did not exit');
@@ -393,6 +436,7 @@ try {
   assert.equal((await nativeInvoke('desktop_status')).minimized,false);
   console.log('Native single instance guard restores minimized existing window: PASS');
 } finally {
+  if(isolated&&session&&networkEmulated)await network(false).catch(()=>{});
   if(isolated && session && volumeCaptured) await execute('if(arguments[0]===null)localStorage.removeItem("encore.volume.v1");else localStorage.setItem("encore.volume.v1",arguments[0]);',[originalVolume]).catch(()=>{});
   if(isolated && session) await nativeInvoke('desktop_action',{action:'quit'}).catch(()=>{});
   if(isolated && session) await request('/session/'+session,undefined,'DELETE').catch(()=>{});

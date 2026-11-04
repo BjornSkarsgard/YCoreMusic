@@ -10,6 +10,11 @@ pub struct DesktopState {
     available: AtomicBool,
     quitting: AtomicBool,
 }
+impl DesktopState {
+    pub fn tray_available(&self) -> bool {
+        self.available.load(Ordering::Relaxed)
+    }
+}
 #[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {

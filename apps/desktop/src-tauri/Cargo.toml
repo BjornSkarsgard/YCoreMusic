@@ -17,6 +17,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154" }
 souvlaki = { version = "0.9.3", default-features = false, features = ["use_zbus"] }
 tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2.7.0"
 tauri-plugin-power-monitor = "0.1.0"
 tauri-plugin-single-instance = "2"
 unicode-normalization = "0.1.26"

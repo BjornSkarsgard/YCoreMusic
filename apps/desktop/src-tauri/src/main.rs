@@ -1,4 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod autostart;
 mod catalogue;
 #[allow(dead_code)]
 mod credentials;
@@ -98,6 +99,12 @@ async fn catalogue_collection(
 }
 fn main() {
     let mut context = tauri::generate_context!();
+    let background_launch = autostart::requested(std::env::args_os().skip(1));
+    if background_launch {
+        if let Some(window) = context.config_mut().app.windows.first_mut() {
+            window.visible = false;
+        }
+    }
     if cfg!(debug_assertions) && std::env::var_os("ENCORE_TEST_DATA_DIR").is_some() {
         // Separate instance lock and WebView profile; never attach to the user's player.
         context.config_mut().identifier = "io.encore.desktop.test".into();
@@ -106,15 +113,18 @@ fn main() {
         }
     }
     tauri::Builder::default()
+        .plugin(autostart::plugin())
         .plugin(tauri_plugin_power_monitor::init())
         .plugin(power::plugin())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            let _ = desktop::open(app);
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if !autostart::requested(args) {
+                let _ = desktop::open(app);
+            }
         }))
         .manage(desktop::DesktopState::default())
         .manage(media::MediaState::default())
         .on_window_event(desktop::closing)
-        .setup(|app| {
+        .setup(move |app| {
             let test_directory = if cfg!(debug_assertions) {
                 std::env::var_os("ENCORE_TEST_DATA_DIR")
             } else {
@@ -135,6 +145,11 @@ fn main() {
             });
             app.manage(storage::StorageState { store, test_mode });
             let _ = desktop::install(app.handle());
+            if background_launch && !app.state::<desktop::DesktopState>().tray_available() {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                }
+            }
             let _ = media::install(app.handle());
             Ok(())
         })
@@ -145,6 +160,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             source_fetch,
             source_stations,
+            autostart::autostart_status,
+            autostart::autostart_set,
             smart_history::smart_history_fetch,
             media::media_update,
             media::media_status,
