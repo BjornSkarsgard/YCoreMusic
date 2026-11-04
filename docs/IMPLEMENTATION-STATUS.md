@@ -1,6 +1,12 @@
 # Статус реализации Encore
 
-## Этап 0
+## Актуальная сводка — 2026-11-04
+
+Рабочий single-window prototype: Wave/жанры/поиск/медиатека/чарт/реакции/outbox/Smart History/favourites/history/mini/fullscreen/tray/recovery/autostart/диагностика. Windows native и настоящий60мин Wave прогон подтверждены ниже. Linux/macOS runtime, UIlogin, реальные preference writes, physical sleep/lock, multi-monitor/visualizer/remote и clean install остаются открытыми. ПоследниеCI mac jobs могут не стартовать из-за hostedrunnercapacity; это не успешная platform приёмка.
+
+Далее идёт хронологический журнал. Ранние записи описывают прошлое состояние и не отменяют более поздние решения (в частности, выбор audioendpoint отменён пользователем).
+
+## Этап 0 — историческая запись
 
 - Подготовлены Tauri shell и TypeScript-экран S3 с одним YouTube IFrame.
 - Только ручная загрузка/Play; авторизации, My Wave, очереди и backend пока нет.
@@ -281,3 +287,9 @@ Native свежей сборки: запуск --encore-autostart в tray/без
 ## 2026-11-04: упаковка в установочные файлы
 
 Отдельная opt-in bundleconfig, npmкоманды NSIS/DEB+AppImage/APP+DMG и dispatch-only workflow для release artifacts без публикации. Локальный Windows debugNSIS успешно собран3.72MiB, SHA256 BB808E20E4ACA70FA7F46FE41214354D1765D642E902E1661EBA38CA218E2996. В установщик не включены токен/SQLite. Он не запускался, чистая установка/удаление не проверены; releaseупаковка вCI ещё ожидается. До этого полный UI/native/Rust срез428a444PASS по предыдущей записи. Mac hostedrunnercapacity по-прежнему внешнее ограничение.
+
+## 2026-11-04: Windows release пакет и актуализация документации
+
+Локальная оптимизированная Windows release сборка и NSIS завершились успешно:target/release/bundle/nsis/Encore_0.0.1_x64-setup.exe,3.28MiB. SHA256/signature записаны в .tools/windows-package-result.json, пакет не установлен и не опубликован, подписи нет. Во frontend/пакет не добавлены пользовательские credentials илиSQLite. Ручной packageworkflow появился в GitHub после задержки регистрации; Linux dispatch запрошен для проверки DEB/AppImage, итог ещё ожидается.
+
+README приведён к текущему single-window prototype: удалены противоречащие актуальной реализации старые утверждения про отсутствие Wave/нескольких favourites/автообхода. docs00 теперь явно Windows/Linux/macOS и видеопоток Wave; начало журнала статуса маркирует ранние записи историческими. Готовность UIlogin, real preference writes,physical lifecycle,platformruntime не завышена.
