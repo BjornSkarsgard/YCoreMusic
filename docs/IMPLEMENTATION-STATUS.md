@@ -339,3 +339,9 @@ PASS:40app+5probe Rust/9ignored;Clippy;TS/build;полный renderer67PASS+1opt
 Пользователь сообщил успешный вход без прежней400. Исправлен неизменный текст кнопки: saved/connected → «Сменить аккаунт», missing → «Войти в Яндекс», authorization_denied → «Войти снова». Отдельный статус различает сохранённое подключение и проверенный доступ. Снимок OS-store читается локально при старте без network account-check; существующая диагностика отдаёт тот же результат accountUI без отдельного запроса.
 
 Добавлен стартовый диалог только при missing: объяснение, Later/Login, постоянный opt-out и путь Settings→Яндекс Музыка. Напоминание не появляется у saved аккаунта или при opt-out; ручной вход остаётся. Проверены повторный запуск с/без opt-out, saved account после reload, явный вход из приглашения и отмена без autoplay. PASS:72renderer+1opt-in skipped, TS/build, WindowsnativeOAuthopen/cancel/guard+fullbasic. Обычный debugexe успешно обновлён, пользовательские credentials не менялись тестами.
+
+## Исправление волны после выхода — 2026-11-05
+
+Пользователь подтвердил disconnect именно в Encore. Нативная readonly диагностика OS-store показала missing; секрет не выводился и не изменялся проверкой. Найден sourceFetch catch, который одинаково включал Smart History при network и auth errors. Убрана автоматическая подстановка локальной истории при auth error. Свежая неавторизованная Wave очищает старый буфер, показывает «Моя волна · нужен вход» и путь Settings→Яндекс Музыка. Явная история без аккаунта и fallback при network failure сохранены.
+
+PASS:3targetedrenderer (подтверждённый logout из играющей волны с reload/noiframe/emptyqueue/noautomaticSmartHistory, ручная история, orderednetworkfallback/offlinestart), TS/build, Windowsnative basic. Обычный debugexe успешно обновлён. Учётная запись тестами не отключалась: настоящий credential уже отсутствовал после действия пользователя; сценарий удаления в renderer использует фикстуру.

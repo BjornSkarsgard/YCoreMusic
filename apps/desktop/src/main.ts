@@ -348,8 +348,9 @@ function sourceFetch(fresh:boolean,autoplay=false):Promise<boolean>{
       if(revision!==sourceRevision||epoch!==queue.generation)return false;
       const text=String(error);
       const auth=/Authorization|token|credential|Credential/.test(text);
-      element('source-status').textContent=auth?'Переподключите аккаунт Яндекса в локальном терминале.':'Источник временно недоступен. Текущая очередь сохранена.';
-      if((fresh||(advancing&&!queue.hasNext))&&await historyFetch(true,playIntent,true))return true;
+      element('source-status').textContent=auth?'Для «Моей волны» войдите в аккаунт: Настройки → Яндекс Музыка.':'Источник временно недоступен. Текущая очередь сохранена.';
+      if(auth&&fresh){queue.reset([]);choices.clear();bypassSaved.clear();renderQueue();element('source-name').textContent='Моя волна · нужен вход';}
+      if(!auth&&(fresh||(advancing&&!queue.hasNext))&&await historyFetch(true,playIntent,true))return true;
       if(revision!==sourceRevision||epoch!==queue.generation)return false;
       if(auth&&(fresh||!queue.current)){playIntent=false;report('Нужно подключить аккаунт Яндекса');}
       else if(playIntent){const continuation=sourceNeedsFresh?()=>void sourceFetch(true,playIntent):advancing?()=>void advance(playIntent):()=>void sourceFetch(false);deferWave('Ждём Яндекс Музыку',continuation,auth?60000:/Rate limited/.test(text)?10000:1000);}

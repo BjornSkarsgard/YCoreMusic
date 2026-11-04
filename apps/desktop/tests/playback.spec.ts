@@ -1,4 +1,24 @@
 import { test, expect } from './fixtures';
+
+test('confirmed logout removes Wave and never substitutes local history for an authenticated source',async({page})=>{
+ await page.addInitScript(()=>{
+  const w=window as any;w.isTauri=true;w.smartCalls=0;
+  w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
+   const connected=localStorage.getItem('fixture.loggedOut')!=='1';
+   if(command==='diagnostics_status')return {version:'0.0.1',platform:'windows',architecture:'x86_64',storageAvailable:true,yandex:connected?'saved':'missing'};
+   if(command==='source_fetch'){if(!connected)throw 'No saved token. Connect Yandex Music in Settings.';return [{id:'1',title:'Fixture Wave',artist:'Fixture'}];}
+   if(command==='smart_history_fetch'){w.smartCalls++;return [{id:'90',title:'Fixture history',artist:'Fixture',historyVideoId:'Ccccccccccc',weight:1}];}
+   if(command==='search_videos')return [{id:'Aaaaaaaaaaa',title:'Fixture Wave',score:100,reason:'fixture'}];
+   if(command==='auth_command'&&args.action==='disconnect'){localStorage.setItem('fixture.loggedOut','1');return 'idle';}
+  }};
+ });
+ await mockAutomaticPlayer(page);await page.goto('/');await page.locator('#source-start').click();await expect.poll(()=>page.evaluate(()=>(window as any).played[0])).toBe('Aaaaaaaaaaa');
+ await page.locator('[data-panel=settings]').click();await page.locator('#account-disconnect').click();const reloaded=page.waitForEvent('load');await page.locator('#account-disconnect-confirm').click();await reloaded;
+ await expect(page.locator('#account-welcome')).toBeVisible();await page.locator('#account-welcome-later').click();await expect(page.locator('#source-name')).toHaveText('Моя волна · нужен вход');
+ await expect(page.locator('iframe')).toHaveCount(0);await expect(page.locator('#queue-list li')).toHaveCount(0);expect(await page.evaluate(()=>(window as any).smartCalls)).toBe(0);
+ await page.locator('#source-start').click();await expect(page.locator('#source-status')).toContainText('Настройки → Яндекс Музыка');expect(await page.evaluate(()=>(window as any).smartCalls)).toBe(0);await expect(page.locator('iframe')).toHaveCount(0);
+ await page.locator('[data-panel=history]').click();await page.locator('#history-smart').click();await expect(page.locator('#source-name')).toHaveText('Умная история');await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe('Ccccccccccc');
+});
 async function videoEditor(page:import('@playwright/test').Page){if(!await page.locator('#video-dialog').evaluate((dialog:HTMLDialogElement)=>dialog.open))await page.locator('#edit-video').click();}
 async function historyPanel(page:import('@playwright/test').Page){await page.locator('[data-panel=history]').click();}
 test('startup is inert; loading cues, explicit Play plays; replacement removes old player', async ({ page }) => {
