@@ -12,6 +12,7 @@ mod library;
 mod matcher;
 mod media;
 mod power;
+mod scenes;
 mod smart_history;
 mod source;
 mod storage;
@@ -162,8 +163,13 @@ fn main() {
         .manage(auth::Auth::default())
         .manage(matcher::Matcher::default())
         .manage(window_mode::WindowMode::default())
+        .manage(scenes::Scenes::default())
         .invoke_handler(tauri::generate_handler![
             source_fetch,
+            scenes::scene_window,
+            scenes::scene_publish,
+            scenes::scene_snapshot,
+            scenes::scene_control,
             wave_feedback::wave_sync,
             source_stations,
             autostart::autostart_status,

@@ -2,6 +2,7 @@ import {mountDiagnostics} from './diagnostics-ui';
 import {mountAuth} from './auth-ui';
 import {mountQueueScroll} from './queue-scroll';
 import {mountWindowLayout} from './window-layout';
+import {mountScenes} from './scene-ui';
 import {ListeningMeter,type EndReason,type PlaybackSource} from './listening';
 import {mountAutostart} from './autostart-ui';
 import {mountHistory} from './history-ui';
@@ -34,6 +35,7 @@ const lastPlayedVideos=new Map<string,string>();
 let player: YT.Player | undefined;
 let generation = 0;
 let playerReady = false;
+let scenePlayback=-1;
 let activeVideo:QueueInput|undefined;
 interface PlayRecord {event:{playbackId:string;trackId:string;title:string;artist:string;videoId:string;waveRef?:string};recorded:boolean;started:boolean;meter:ListeningMeter;source:PlaybackSource;endReason?:EndReason;durationMs?:number;lastWrite:number;signature?:string;writer?:Promise<void>}
 let activeRecord:PlayRecord|undefined;
@@ -211,6 +213,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
   if(loadKey!==currentLoadKey){currentLoadKey=loadKey;trackDeadline=Date.now()+24000;}
   loadStarted=Date.now();bufferingSince=0;
   playerReady = false;
+  scenePlayback=-1;
   player?.destroy(); player = undefined;
   element('empty').hidden = false;
   report('Загрузка YouTube API…');
@@ -238,6 +241,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
         },
         onStateChange: event => {
           if (current !== generation) return;
+          scenePlayback=event.data;
           if(event.data!==1){observeRecord(false);persistRecord(record,true);}
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
           intentUI();
@@ -806,6 +810,7 @@ mountDiagnostics(state=>{updateAccountConnection(state);if(state==='saved'||stat
 mountAutostart();
 mountShellNavigation();
 mountWindowLayout();
+mountScenes(()=>({generation,videoId:playerReady?activeVideo?.videoId??null:null,title:mediaTitle,artist:mediaArtist,position:playerReady?player?.getCurrentTime()??0:0,duration:playerReady?player?.getDuration()??0:0,playback:playerReady?scenePlayback:-1}));
 updateQueueScroll=mountQueueScroll({eligible:()=>!finiteSource&&!historySource&&!sourceNeedsFresh&&!startingSource&&!!queue.current,generation:()=>queue.generation,count:()=>queue.snapshot.length,ahead:()=>queue.ahead(501).length,load:()=>sourceFetch(false)});
 mountFullscreenControls(document.querySelector<HTMLElement>('.workspace')!,document.querySelector<HTMLElement>('.player-hud')!);
 

@@ -1,0 +1,1 @@
+{"identifier":"video-scene","description":"Local muted video follower can receive scene events only. Native scene commands verify the calling window.","windows":["video-scene"],"permissions":["core:event:allow-listen","core:event:allow-unlisten"]}

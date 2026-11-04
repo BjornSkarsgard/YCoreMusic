@@ -25,7 +25,7 @@ async function execute(script,args=[]) {return request('/session/'+session+'/exe
 async function until(script,timeout=25000) {
   const end=Date.now()+timeout;
   do {if(await execute(script))return;await sleep(250);}while(Date.now()<end);
-  const diagnostic=await execute('return {status:document.getElementById("status")?.textContent,source:document.getElementById("source-status")?.textContent,errors:window.nativeErrors}');
+  const diagnostic=await execute('return {status:document.getElementById("status")?.textContent,source:document.getElementById("source-status")?.textContent,scene:document.getElementById("scene-status")?.textContent,sceneWindow:document.getElementById("scene-window-status")?.textContent,errors:window.nativeErrors}');
   throw new Error('Native condition timed out: '+script+' '+JSON.stringify(diagnostic));
 }
 async function nativeInvoke(cmd,args={}){return request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke(arguments[0],arguments[1]).then(done).catch(()=>done(null));',args:[cmd,args]});}
@@ -278,6 +278,47 @@ try {
     assert.equal(await execute('return document.getElementById("player")===window.controlsFrame'),true);
     assert.equal((await store({type:'history',query:''})).length,rowsBefore,'Layout switch duplicated listening history');
     console.log('Native real YouTube controls layout: continued timeline, same single player/history, pause and return: PASS (muted test; physical sound not asserted)');
+  }
+  if(process.env.ENCORE_SCENE_SMOKE==='1') {
+    const mainHandle=await request('/session/'+session+'/window');
+    const beforeHandles=await request('/session/'+session+'/window/handles');
+    assert.equal(await nativeInvoke('scene_snapshot'),null,'Main cannot impersonate a scene viewer');
+    assert.equal(await nativeInvoke('scene_control',{action:{type:'next'}}),null);
+    await execute('document.querySelector("[data-panel=settings]").click();document.getElementById("scene-open").click();');
+    await until('return !document.getElementById("scene-off").disabled');
+    const sceneHandles=await request('/session/'+session+'/window/handles');assert.equal(sceneHandles.length,beforeHandles.length+1);
+    const sceneHandle=sceneHandles.find(handle=>!beforeHandles.includes(handle));
+    const switchTo=handle=>request('/session/'+session+'/window',{handle});
+    await switchTo(sceneHandle);await until('return !!document.getElementById("scene-title")');
+    assert.equal(await nativeInvoke('storage_command',{request:{type:'status'}}),null,'Scene cannot access personal storage');
+    assert.equal(await nativeInvoke('scene_window',{action:'off'}),null,'Scene cannot replace window configuration');
+    await nativeInvoke('scene_control',{action:{type:'fullscreen'}});
+    const sceneUntil=async(field,value)=>{for(let attempt=0;attempt<40;attempt++){if((await nativeInvoke('scene_control',{action:{type:'status'}}))?.[field]===value)return;await sleep(100);}throw Error('Scene window did not settle: '+field);};
+    await sceneUntil('fullscreen',true);await nativeInvoke('scene_control',{action:{type:'windowed'}});await sceneUntil('fullscreen',false);
+    await nativeInvoke('scene_control',{action:{type:'topmost'}});await sceneUntil('topmost',true);
+    await nativeInvoke('scene_control',{action:{type:'topmost'}});await sceneUntil('topmost',false);
+    if(process.env.ENCORE_CONTROLS_SMOKE==='1') {
+      await until('return document.getElementById("scene-player")?.tagName==="IFRAME"',30000);
+      await switchTo(mainHandle);await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"');
+      await execute('document.getElementById("window-layout").value="controls";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
+      const canHideMain=(await nativeInvoke('desktop_status')).tray_available;
+      if(canHideMain)await nativeInvoke('desktop_close');
+      await switchTo(sceneHandle);
+      const snapshotBefore=await nativeInvoke('scene_snapshot');
+      if(canHideMain){await sleep(6000);const snapshotAfter=await nativeInvoke('scene_snapshot');assert(snapshotAfter.position>=snapshotBefore.position+3,'Hidden main window stopped the authoritative timeline');console.log('Native main hidden in tray while video follower remains open: timeline continued for 6 seconds: PASS (muted test)');}
+      const frame=await request('/session/'+session+'/element',{using:'css selector',value:'#scene-player'});await request('/session/'+session+'/frame',{id:frame});
+      await until('return document.getElementById("movie_player")?.getPlayerState?.()===1',30000);
+      assert.deepEqual(await execute('const player=document.getElementById("movie_player");return {muted:player.isMuted(),volume:player.getVolume()};'),{muted:true,volume:0});
+      await request('/session/'+session+'/frame',{id:null});
+      await nativeInvoke('scene_control',{action:{type:'toggle'}});
+      await switchTo(mainHandle);await nativeInvoke('desktop_action',{action:'open'});await until('return document.getElementById("status").textContent==="Пауза"');
+      await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
+      await switchTo(sceneHandle);await nativeInvoke('scene_control',{action:{type:'hide'}});await until('return !document.querySelector("iframe")');
+      console.log('Native real dual YouTube: muted/zero-volume follower, shared pause, hidden follower destroyed: PASS (physical echo not asserted)');
+    }
+    await switchTo(mainHandle);await click('scene-off');await until('return document.getElementById("scene-off").disabled && !document.getElementById("scene-open").disabled && document.getElementById("scene-window-status").textContent===""');
+    assert.equal((await request('/session/'+session+'/window/handles')).length,beforeHandles.length);
+    console.log('Native isolated scene create/fullscreen/topmost/off and main/storage command guards: PASS');
   }
   if(process.env.ENCORE_LIVE_YOUTUBE==='1') {
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="M7lc1UVf-VE";document.getElementById("load").requestSubmit();');

@@ -1,5 +1,9 @@
 # Мониторы, сцены и визуализаторы
 
+## Текущий срез — 2026-11-05
+
+Настройки → «Окно клипа» открывает одно отдельное VIDEO-окно, которое можно вручную перенести на ТВ. Основное окно независимо переключается в «Только управление». Общая очередь/transport/звук остаются в основном окне, follower всегда muted и не продвигает очередь. Крестик скрывает сцену, tray Open показывает, «Выключить окно» полностью уничтожает. Скрытый follower не держит iframe. Подтверждены Windows native реальные два YouTube, muted/volume0, общая pause, main hidden6с, fullscreen/topmost/off и IPC guards; см. ADR031. Выбор дисплея/persistence/несколько сцен/hotplug/visualizers ещё не реализованы; полную матрицу ниже этот срез не закрывает.
+
 ## Мониторная модель
 `monitor_id` (стабильная Windows идентичность), `name`, `bounds`, `refresh_hz`, `connected`, `scene_mode`, `window_mode`, `position`, `size`, `always_on_top`, `info_visible`, `fps_cap`, `quality`, `visualizer_preset`, `preset_policy`, `intensity`, `reactivity`.
 
