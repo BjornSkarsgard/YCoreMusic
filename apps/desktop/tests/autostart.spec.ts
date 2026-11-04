@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './fixtures';
 
 test('autostart is only changed on explicit input, blocks duplicate writes and verifies OS state',async({page})=>{
  await page.addInitScript(()=>{

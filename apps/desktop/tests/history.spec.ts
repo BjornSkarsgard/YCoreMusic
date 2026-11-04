@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './fixtures';
 
 test('history loads earlier repeated plays without changing playback and resets pagination for search',async({page})=>{
  await page.addInitScript(()=>{

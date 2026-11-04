@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './fixtures';
 for(const failed of [false,true])test('known reactions stay usable during a remote refresh; local '+(failed?'failure rolls back':'save wins'),async({page})=>{
  await page.clock.install();
  await page.addInitScript(({failed})=>{

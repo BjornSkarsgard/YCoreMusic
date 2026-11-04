@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './fixtures';
 
 test('Overview keeps its height and scroll position while another track resolves and alternatives disappear',async({page})=>{
  await page.setViewportSize({width:1200,height:820});

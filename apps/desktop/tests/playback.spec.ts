@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 async function videoEditor(page:import('@playwright/test').Page){if(!await page.locator('#video-dialog').evaluate((dialog:HTMLDialogElement)=>dialog.open))await page.locator('#edit-video').click();}
 async function historyPanel(page:import('@playwright/test').Page){await page.locator('[data-panel=history]').click();}
 test('startup is inert; loading cues, explicit Play plays; replacement removes old player', async ({ page }) => {

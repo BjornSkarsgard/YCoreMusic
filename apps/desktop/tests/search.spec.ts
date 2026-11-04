@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './fixtures';
 
 test('new search blocks stale playback; clearing discards pending results and filters',async({page})=>{
  await page.addInitScript(()=>{

@@ -301,3 +301,9 @@ README приведён к текущему single-window prototype: удале�
 storage/history принимает optional from/until в Unixseconds: from включён,until исключён,пагинацияbeforeId сохранена. Старые клиенты без периода совместимы. Все собственные started_at хранятся в UTC; фильтрация по UTCsecondprefix не округляет наносекунды на границе дня, миграция не требуется.
 
 Проверки: UI62PASS+1opt-in skipped,Rust37app+5probePASS/9ignored,Clippy/buildPASS. Native Windows inclusive today+pagination+futureempty+clear+noautoplay+mini/topmost/maximized/instancePASS. Отдельно проверен25часовой день NewYork и поздний старый период. Linuxrelease DEB/AppImage workflow41867671860PASS, артефакты скачаны в.tools/linux-packages-41867671860; runtimeещё не проверялся. MacARM packaging41870661876запрошен, итог ожидается.
+
+## 2026-11-04: стабильные renderer fixtures и реальный browser embed
+
+Mock renderer scenarios используют общую thumbnail fixture вместо внешних i.ytimg.com запросов. Live spec остаётся без подмены, исправлен под текущий диалог и rangeinput: реальный Chrome YouTube cue/noautoplay/explicitmutedPlay/Pause/seekPASS (15.5сек). Полный mock suite62PASS+1opt-in skipped (28.7сек); это не замена native/runtimeприёмке. Productionкод этим срезом не менялся.
+
+Linux DEB/AppImage release41867671860PASS; скачаны и проверены AR/ELFформаты, SHA256/controlmetadata в.tools/linux-package-result.json. Native Linux/X11 run41871384767 идёт; MacARMpackage41870661876вочереди.

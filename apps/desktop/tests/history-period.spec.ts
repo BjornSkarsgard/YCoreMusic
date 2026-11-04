@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './fixtures';
 test.use({timezoneId:'America/New_York'});
 test('history period uses inclusive local calendar days across DST, resets pagination and rejects stale periods',async({page})=>{
  await page.addInitScript(()=>{

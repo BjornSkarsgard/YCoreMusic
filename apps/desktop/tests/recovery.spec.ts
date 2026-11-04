@@ -1,4 +1,4 @@
-import {test,expect,type Page} from '@playwright/test';
+import {test,expect,type Page} from './fixtures';
 async function network(page:Page,offline:boolean){
  await page.context().setOffline(offline);await expect.poll(()=>page.evaluate(()=>(window as any).networkEvent)).toBe(offline?'offline':'online');
 }

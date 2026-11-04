@@ -1,4 +1,4 @@
-import {test,expect} from '@playwright/test';
+import {test,expect} from './fixtures';
 
 test('diagnostics checks Yandex only on request, separates connection failures and retains usable retry',async({page})=>{
  await page.addInitScript(()=>{
