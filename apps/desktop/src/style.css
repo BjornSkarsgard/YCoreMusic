@@ -24,3 +24,5 @@
 .side-panel>.panel-scroll{flex:1 1 0}
 #video-alternatives{height:clamp(160px,26vh,220px);min-height:clamp(160px,26vh,220px);max-height:clamp(160px,26vh,220px)}
 #video-alternatives[hidden]{display:block!important;visibility:hidden}
+
+#catalogue-results[aria-busy="true"]{opacity:.5}

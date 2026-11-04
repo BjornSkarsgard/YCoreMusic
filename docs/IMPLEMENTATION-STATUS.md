@@ -229,3 +229,9 @@ CI d306f82: Windows/Linux/macOS ARM PASS; macOS Intel остановился н�
 Проверки: TypeScript/build,9unit PASS; renderer44 PASS+1opt-in skipped; Rust28 app+5probe PASS,9ignored;Clippy PASS. Windows native local Smart source + известный клип + реальный END + sticky source +1iframe PASS. Полный native YouTube/CC/fullscreen/tray/media/simulated power/mini/topmost PASS. Реальный current-token feedback GET и exclusions snapshot PASS, реальные feedback writes остаются заблокированы в тестах и не объявляются проверенными. Native cleanup меняет/закрывает приложение только после подтверждения testMode.
 
 Quick-skip threshold и listened-duration classification пока не реализованы (Q06 открыт). Linux/macOS runtime, физические media/sleep/lock hardware tests остаются неподтверждёнными.
+
+## 2026-11-04: поиск без случайного запуска старой выдачи (REQ-002)
+
+Кнопка очистки возвращает фокус в запрос, сбрасывает результаты, фильтры и пагинацию, отменяет pending responses. Пока новый запрос ожидает debounce/ответ, предыдущая выдача и фильтры inert, кнопка дозагрузки отключена. Ошибка объясняет, что остались предыдущие результаты. Убраны лабораторные подписи заголовка и пустого плеера; выбор жанра подписан «Жанр музыки».
+
+TypeScript/build PASS; renderer 45 PASS +1 opt-in skipped, включая stale playback/clear/late response/reuse и стабильную высоту обзора. CI предыдущего Smart History среза целиком PASS. Пользовательский Encore открыт; обычная сборка блокируется Windows. Свежий embedded binary собран в native-test (testMode включается только окружением), скопирован в .tools/search-update-20261104. Hidden updater ждёт выхода обоих обычных executable paths, проверяет исходный/целевой hash, отменяет устаревшее обновление, не запускает/не закрывает приложение. Статус в локальном status.json; установка ещё ожидается.

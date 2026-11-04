@@ -236,7 +236,7 @@ function stopPlayer() {
 function renderQueue() {
   refreshFeedback();
   refreshVideoFavorites();
-  element('track-title').textContent = queue.current?.title ?? 'Ручная проверка видео';
+  element('track-title').textContent = queue.current?.title ?? 'Выберите музыку';
   element('track-artist').textContent = queue.current?.artist ?? '';
   element('queue-list').replaceChildren(...queue.snapshot.map(track => {
     const item=document.createElement('li');item.dataset.ordinal=String(track.ordinal); item.textContent = track.title + ' · ' + track.artist;

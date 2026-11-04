@@ -8,7 +8,7 @@ export interface CatalogueSelection {tracks:Track[];title:string;collection?:Col
 export function collectionPage(entity:CatalogueEntity,page:number):Promise<CatalogueCollection>{return invoke('catalogue_collection',{kind:entity.kind,id:entity.id,owner:entity.owner??null,page});}
 export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
  const root=document.getElementById('catalogue')!;
- root.innerHTML=`<h2>Поиск в Яндекс Музыке</h2><form id="catalogue-search"><label for="catalogue-query">Исполнитель, песня, альбом или плейлист</label><div class="input-row"><input id="catalogue-query" placeholder="Например, рамштайн" autocomplete="off"><button>Найти</button></div></form><p id="catalogue-status" role="status"></p><div id="catalogue-filters" class="catalogue-filters" aria-label="Тип результатов"></div><div id="catalogue-results"></div><button id="catalogue-more" hidden>Ещё результаты</button><section id="catalogue-collection" hidden></section>`;
+ root.innerHTML=`<h2>Поиск в Яндекс Музыке</h2><form id="catalogue-search"><label for="catalogue-query">Исполнитель, песня, альбом или плейлист</label><div class="input-row"><input id="catalogue-query" placeholder="Например, рамштайн" autocomplete="off"><button id="catalogue-clear" type="button" aria-label="Очистить поиск" hidden>×</button><button>Найти</button></div></form><p id="catalogue-status" role="status"></p><div id="catalogue-filters" class="catalogue-filters" aria-label="Тип результатов"></div><div id="catalogue-results"></div><button id="catalogue-more" hidden>Ещё результаты</button><section id="catalogue-collection" hidden></section>`;
  const get=<T extends HTMLElement>(id:string)=>document.getElementById(id) as T;
  let searchRevision=0,collectionRevision=0,page=0,query='',timer:ReturnType<typeof setTimeout>|undefined;
  let filter='Всё';
@@ -18,6 +18,16 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
  let collectionReturn:(()=>void)|undefined;
  let returnFocus:HTMLElement|undefined;
  const scrollPane=()=>root.closest('.panel-scroll') as HTMLElement|null;
+ function setBusy(busy:boolean){
+   get('catalogue-results').inert=busy;
+   get('catalogue-filters').inert=busy;
+   get('catalogue-results').setAttribute('aria-busy',String(busy));
+   get<HTMLButtonElement>('catalogue-more').disabled=busy;
+ }
+ function clearResults(){
+   results={artists:[],tracks:[],albums:[],playlists:[],page:0};page=0;query='';filter='Всё';hasSearchMore=false;
+   get('catalogue-results').replaceChildren();get('catalogue-filters').replaceChildren();get('catalogue-more').hidden=true;setBusy(false);
+ }
  function collectionView(show:boolean){
    browsingCollection=show;
    get('catalogue-results').hidden=show;
@@ -89,10 +99,11 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    clearTimeout(timer);
    const text=get<HTMLInputElement>('catalogue-query').value.trim();
    const revision=++searchRevision;
-   if(text.length<2){get('catalogue-status').textContent='Введите хотя бы два символа.';return;}
-   if(!isTauri()){get('catalogue-status').textContent='Каталог Яндекса доступен в desktop-версии после подключения аккаунта.';return;}
+   get('catalogue-clear').hidden=!get<HTMLInputElement>('catalogue-query').value;
+   if(text.length<2){clearResults();get('catalogue-status').textContent='Введите хотя бы два символа.';return;}
+   if(!isTauri()){setBusy(false);get('catalogue-status').textContent='Каталог Яндекса доступен в desktop-версии после подключения аккаунта.';return;}
    const requestedPage=append?page+1:0;
-   get('catalogue-status').textContent='Поиск в Яндекс Музыке…';get<HTMLButtonElement>('catalogue-more').disabled=true;
+   get('catalogue-status').textContent='Поиск в Яндекс Музыке…';setBusy(true);
    if(!append){++collectionRevision;opened=undefined;collectionView(false);}
    try{
      const response=await invoke<Results>('catalogue_search',{query:text,page:requestedPage});
@@ -101,17 +112,19 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
      if(append&&query===text){results={...response,artists:[...results.artists,...response.artists],tracks:[...results.tracks,...response.tracks],albums:[...results.albums,...response.albums],playlists:[...results.playlists,...response.playlists]};}else results=response;
      page=requestedPage;query=text;render();hasSearchMore=count>0;get('catalogue-more').hidden=browsingCollection||!hasSearchMore;
      get('catalogue-status').textContent=count?(response.corrected?'Результаты Яндекса для «'+response.corrected+'».':'Результаты Яндекс Музыки.'):append?'Больше результатов нет.':'Ничего не найдено.';
-   }catch{if(revision===searchRevision)get('catalogue-status').textContent='Поиск недоступен. Проверьте сеть и подключение аккаунта.';}
-   finally{if(revision===searchRevision)get<HTMLButtonElement>('catalogue-more').disabled=false;}
+   }catch{if(revision===searchRevision)get('catalogue-status').textContent='Поиск недоступен. Проверьте сеть и подключение аккаунта.'+(query?' Показаны предыдущие результаты для «'+query+'».':'');}
+   finally{if(revision===searchRevision)setBusy(false);}
  }
  get<HTMLFormElement>('catalogue-search').onsubmit=event=>{event.preventDefault();void search(false);};
  get('catalogue-more').onclick=()=>void search(true);
+ get('catalogue-clear').onclick=()=>{const input=get<HTMLInputElement>('catalogue-query');input.value='';input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();};
  get('catalogue-query').oninput=()=>{
+   get('catalogue-clear').hidden=!get<HTMLInputElement>('catalogue-query').value;
    collectionReturn=undefined;
-   ++searchRevision;clearTimeout(timer);get<HTMLButtonElement>('catalogue-more').disabled=true;
+   ++searchRevision;clearTimeout(timer);setBusy(true);
    ++collectionRevision;opened=undefined;collectionView(false);
    if(get<HTMLInputElement>('catalogue-query').value.trim().length<2){
-     ++collectionRevision;opened=undefined;get('catalogue-collection').hidden=true;get('catalogue-results').replaceChildren();get('catalogue-more').hidden=true;get('catalogue-status').textContent='Введите хотя бы два символа.';return;
+     ++collectionRevision;opened=undefined;get('catalogue-collection').hidden=true;clearResults();get('catalogue-status').textContent='Введите хотя бы два символа.';return;
    }
    timer=setTimeout(()=>void search(false),400);
  };
