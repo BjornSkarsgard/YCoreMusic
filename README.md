@@ -1,4 +1,9 @@
-# Encore
+# YCore Music
+
+**YCore** · Юкор Мьюзик  
+**Your Music. Your Core, Your World.**
+
+Прежнее имя проекта — Encore. Исполняемый файл Windows — `YCoreMusic.exe`, репозиторий — [BjornSkarsgard/YCoreMusic](https://github.com/BjornSkarsgard/YCoreMusic).
 
 Личный музыкальный телеканал для Windows, Linux и macOS. Рабочий прототип одного окна; полный продукт и платформенная приёмка ещё не завершены. Нативные сценарии проверяются на Windows, Linux/macOS runtime остаётся отдельной задачей.
 
@@ -28,7 +33,7 @@ npm ci --prefix apps/desktop
 npm run desktop --prefix apps/desktop
 ```
 
-`npm run dev --prefix apps/desktop` открывает браузерный preview на http://localhost:1420; реальные интеграции доступны в desktop. Debug build: `npm exec --prefix apps/desktop -- tauri build --debug --no-bundle`, executable — `apps/desktop/src-tauri/target/debug/encore.exe`.
+`npm run dev --prefix apps/desktop` открывает браузерный preview на http://localhost:1420; реальные интеграции доступны в desktop. Debug build: `npm exec --prefix apps/desktop -- tauri build --debug --no-bundle`, executable — `apps/desktop/src-tauri/target/debug/YCoreMusic.exe`.
 
 ## Подключение Яндекс Музыки
 
@@ -55,13 +60,13 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --f
 
 ```powershell
 npm run build --prefix apps/desktop
-cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol --bin encore
+cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol --bin YCoreMusic
 $env:ENCORE_LIVE_YOUTUBE='1'
 $env:ENCORE_LIVE_LIBRARY='1'
 node scripts/native-smoke.mjs
 ```
 
-Используется отдельный instance/profile/SQLite в `.tools`, реальный звук выключен. Настоящие preference writes и OSautostart mutations запрещены тестовым режимом. `ENCORE_AUTOSTART_SMOKE=1` проверяет запуск аргументом в трей, не регистрируя автозапуск; `ENCORE_LIVE_RECOVERY=1` проверяет outage только собственного WebView через CDP. `ENCORE_WAVE_SOAK_MINUTES=60` запускает настоящий неускоренный прогон, отдельный каталог задаёт ENCORE_NATIVE_TEST_DATA_DIR. Тест не завершает пользовательский Encore.
+Используется отдельный instance/profile/SQLite в `.tools`, реальный звук выключен. Настоящие preference writes и OSautostart mutations запрещены тестовым режимом. `ENCORE_AUTOSTART_SMOKE=1` проверяет запуск аргументом в трей, не регистрируя автозапуск; `ENCORE_LIVE_RECOVERY=1` проверяет outage только собственного WebView через CDP. `ENCORE_WAVE_SOAK_MINUTES=60` запускает настоящий неускоренный прогон, отдельный каталог задаёт ENCORE_NATIVE_TEST_DATA_DIR. Тест не завершает пользовательский YCore Music.
 
 ## Установочные пакеты
 

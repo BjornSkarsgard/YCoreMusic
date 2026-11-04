@@ -2,22 +2,24 @@ use serde::Serialize;
 use tauri::Manager;
 use tauri_plugin_autostart::ManagerExt;
 
-pub const ARGUMENT: &str = "--encore-autostart";
+pub const ARGUMENT: &str = "--ycore-autostart";
 pub fn requested<I, S>(args: I) -> bool
 where
     I: IntoIterator<Item = S>,
     S: AsRef<std::ffi::OsStr>,
 {
-    args.into_iter()
-        .any(|argument| argument.as_ref() == std::ffi::OsStr::new(ARGUMENT))
+    args.into_iter().any(|argument| {
+        argument.as_ref() == std::ffi::OsStr::new(ARGUMENT)
+            || argument.as_ref() == std::ffi::OsStr::new("--encore-autostart")
+    })
 }
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let builder = tauri_plugin_autostart::Builder::new()
         .app_name(
             if cfg!(debug_assertions) && std::env::var_os("ENCORE_TEST_DATA_DIR").is_some() {
-                "Encore Native Test"
+                "YCore Music Native Test"
             } else {
-                "Encore"
+                "YCore Music"
             },
         )
         .args([ARGUMENT]);
@@ -103,6 +105,7 @@ mod tests {
             "encore-autostart"
         ]));
         assert!(requested(["--other", ARGUMENT]));
+        assert!(requested(["--encore-autostart"]));
         assert!(requested([std::ffi::OsString::from(ARGUMENT)]));
     }
     #[test]

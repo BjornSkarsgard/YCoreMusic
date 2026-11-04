@@ -115,7 +115,7 @@ fn main() {
         // Separate instance lock and WebView profile; never attach to the user's player.
         context.config_mut().identifier = "io.encore.desktop.test".into();
         if let Some(window) = context.config_mut().app.windows.first_mut() {
-            window.title = "Encore · нативная проверка".into();
+            window.title = "YCore Music · нативная проверка".into();
         }
     }
     tauri::Builder::default()
@@ -199,7 +199,7 @@ fn main() {
             window_mode::window_topmost_state
         ])
         .build(context)
-        .expect("failed to build Encore")
+        .expect("failed to build YCore Music")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Ok(store) = &app.state::<storage::StorageState>().store {

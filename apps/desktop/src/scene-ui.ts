@@ -33,7 +33,7 @@ export function mountScenes(read:()=>Omit<SceneSnapshot,'revision'>){
   finally{publishing=false;if(pending)void publish();}
  }
  async function action(action:'open'|'off'){
-  if(busy)return;if(!isTauri()){status.textContent='Отдельное окно доступно в desktop-версии Encore.';return;}
+  if(busy)return;if(!isTauri()){status.textContent='Отдельное окно доступно в desktop-версии YCore Music.';return;}
   ++windowRevision;busy=true;open.disabled=off.disabled=true;
   try{const value=await invoke<SceneStatus>('scene_window',{action,monitorId:action==='open'?monitor.value||null:null});updated(value);if(enabled)void publish();}
   catch{status.textContent='Не удалось изменить окно клипа. Повторите попытку.';}

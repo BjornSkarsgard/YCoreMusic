@@ -16,7 +16,7 @@ export function mountLibrary(select:(selection:CatalogueSelection)=>void){
   for(const entity of overview.playlists){const b=button('',()=>void open(entity));b.className='catalogue-card library-playlist';const title=document.createElement('strong'),subtitle=document.createElement('span');title.textContent=entity.title;subtitle.textContent=entity.subtitle;b.append(title,subtitle);content.append(b);}
  }
  async function refresh(){
-  if(!isTauri()){status.textContent='Подключите Яндекс в desktop-версии Encore.';return;}
+  if(!isTauri()){status.textContent='Подключите Яндекс в desktop-версии YCore Music.';return;}
   const epoch=++revision;status.textContent='Загрузка твоей музыки…';
   try{const value=await invoke<Overview>('library_overview');if(epoch!==revision)return;overview=value;stale=false;loadedAt=Date.now();home();status.textContent='Твои плейлисты и любимые треки из Яндекс Музыки.';}
   catch(error){if(epoch===revision)status.textContent=/Authorization|credential|token/i.test(String(error))?'Для личных плейлистов и любимых треков войдите: Настройки → Яндекс Музыка. Поиск и чарт доступны без входа.':'Не удалось загрузить медиатеку. Проверьте сеть и подключение Яндекса.';}

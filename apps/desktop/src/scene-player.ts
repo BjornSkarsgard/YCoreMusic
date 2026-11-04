@@ -45,7 +45,7 @@ async function prepare(snapshot:SceneSnapshot){
     // ENDED never chooses or advances a track: only the main coordinator can do that.
     if(event.data===5)synchronize();
    },
-   onError:()=>{if(token===epoch){errorAt=Date.now();ready=false;status.textContent='YouTube не разрешил показать клип в этом окне. Выберите другую версию в Encore.';}},
+   onError:()=>{if(token===epoch){errorAt=Date.now();ready=false;status.textContent='YouTube не разрешил показать клип в этом окне. Выберите другую версию в YCore Music.';}},
    onAutoplayBlocked:()=>{if(token===epoch)status.textContent='Нажмите на это окно, чтобы разрешить показ клипа.';},
   }});
  }catch(error){if(token===epoch){errorAt=Date.now();status.textContent=error instanceof Error?error.message:'Не удалось подготовить клип.';}}
@@ -55,20 +55,20 @@ function receive(snapshot:SceneSnapshot|null,shown=true){
  if(snapshot.revision<revision)return;
  const changed=latest?.generation!==snapshot.generation||latest?.videoId!==snapshot.videoId;
  revision=snapshot.revision;latest=snapshot;visible=shown;
- get('scene-title').textContent=snapshot.title||'Encore';get('scene-artist').textContent=snapshot.artist;
+ get('scene-title').textContent=snapshot.title||'YCore Music';get('scene-artist').textContent=snapshot.artist;
  if(changed)seeking=false;
  if(!seeking){get('scene-elapsed').textContent=clock(snapshot.position);seek.value=String(snapshot.position);}
  get('scene-duration').textContent=clock(snapshot.duration);seek.max=String(snapshot.duration);seek.disabled=!snapshot.videoId||!snapshot.duration;
  get('scene-toggle').textContent=snapshot.playback===1?'Ⅱ':'▶';
  if(changed){errorAt=0;retries=0;}
- if(!visible||!snapshot.videoId){destroy();status.textContent=snapshot.videoId?'':'Выберите музыку в основном окне Encore';return;}
+ if(!visible||!snapshot.videoId){destroy();status.textContent=snapshot.videoId?'':'Выберите музыку в основном окне YCore Music';return;}
  if(errorAt){if(Date.now()-errorAt<15000||retries>=2)return;++retries;errorAt=0;currentKey='';}
  void prepare(snapshot);
 }
 async function control(type:string,position?:number){try{
  const value=await invoke<{fullscreen:boolean;topmost:boolean}>('scene_control',{action:{type,...(position===undefined?{}:{position})}});
  if(value){const fullscreen=document.querySelector<HTMLButtonElement>('[data-control=fullscreen]')!,topmost=document.querySelector<HTMLButtonElement>('[data-control=topmost]')!;fullscreen.textContent=value.fullscreen?'Выйти из полного экрана':'На весь экран';fullscreen.setAttribute('aria-pressed',String(value.fullscreen));topmost.setAttribute('aria-pressed',String(value.topmost));}
-}catch{status.textContent='Не удалось выполнить действие. Повторите в основном окне Encore.';}}
+}catch{status.textContent='Не удалось выполнить действие. Повторите в основном окне YCore Music.';}}
 for(const button of document.querySelectorAll<HTMLButtonElement>('[data-control]'))button.onclick=()=>void control(button.dataset.control!);
 seek.oninput=()=>{seeking=true;get('scene-elapsed').textContent=clock(Number(seek.value));seek.title=clock(Number(seek.value));};
 seek.onchange=()=>{seeking=false;void control('seek',Number(seek.value));};
@@ -91,5 +91,5 @@ async function start(){
  await listen('scene-hidden',()=>{visible=false;destroy();});
  receive(await invoke<SceneSnapshot|null>('scene_snapshot'));
 }
-void start().catch(()=>{status.textContent='Нет связи с основным окном Encore.';});
+void start().catch(()=>{status.textContent='Нет связи с основным окном YCore Music.';});
 window.addEventListener('beforeunload',()=>{clearTimeout(hudTimer);destroy();});

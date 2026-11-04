@@ -977,30 +977,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ef6b89e5b37196644d8796de5268852ff179b44e96276cf4290264843743bb7"
 
 [[package]]
-name = "encore"
-version = "0.0.1"
-dependencies = [
- "chrono",
- "getrandom 0.4.3",
- "keyring",
- "reqwest",
- "rpassword",
- "rusqlite",
- "serde",
- "serde_json",
- "souvlaki",
- "tauri",
- "tauri-build",
- "tauri-plugin-autostart",
- "tauri-plugin-power-monitor",
- "tauri-plugin-single-instance",
- "unicode-normalization",
- "url",
- "windows",
- "zeroize",
-]
-
-[[package]]
 name = "endi"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5519,6 +5495,30 @@ checksum = "ec1cdab258fb55c0da61328dc52c8764709b249011b2cad0454c72f0bf10a1f6"
 dependencies = [
  "libc",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "ycore-music"
+version = "0.0.1"
+dependencies = [
+ "chrono",
+ "getrandom 0.4.3",
+ "keyring",
+ "reqwest",
+ "rpassword",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "souvlaki",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-autostart",
+ "tauri-plugin-power-monitor",
+ "tauri-plugin-single-instance",
+ "unicode-normalization",
+ "url",
+ "windows",
+ "zeroize",
 ]
 
 [[package]]

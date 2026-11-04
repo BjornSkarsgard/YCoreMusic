@@ -44,10 +44,10 @@ jobs:
         run: npx tauri build --debug --no-bundle
       - uses: actions/upload-artifact@v4
         with:
-          name: encore-${{ matrix.os }}-debug
+          name: ycoremusic-${{ matrix.os }}-debug
           path: |
             apps/desktop/src-tauri/target/debug/yandex-probe.exe
             apps/desktop/src-tauri/target/debug/yandex-probe
-            apps/desktop/src-tauri/target/debug/encore.exe
-            apps/desktop/src-tauri/target/debug/encore
+            apps/desktop/src-tauri/target/debug/YCoreMusic.exe
+            apps/desktop/src-tauri/target/debug/YCoreMusic
           if-no-files-found: error

@@ -1,5 +1,9 @@
 # Статус реализации Encore
 
+## Переименование — 2026-11-05
+
+Актуальный продукт **YCore Music**, коротко **YCore**. Repo [BjornSkarsgard/YCoreMusic](https://github.com/BjornSkarsgard/YCoreMusic), Windows binary **YCoreMusic.exe**. UI, tray, SMTC, package/build/CI metadata обновлены, хранилища прежнего Encore сохранены. Rename проверки и сборка PASS (ADR034). Новое Premium Neon Dark оформление — следующий текущий запрос пользователя; расположение блоков и playback/sync/audio logic не менять. Single-player-host WIP в отдельном stash до завершения визуальной задачи.
+
 ## Последнее изменение направления — 2026-11-05, REQ056
 
 Несколько YouTube iframe отменены пользователем: нужен один настоящий плеер, дополнительные картинки — локальные зеркала. Windows DWM spike подтвердил живые кадры при alpha0/clickthrough источнике:90 разных кадров/90samples за32.353с, timeline+33с; destination может содержать локальный WebView без второго YouTube. Нативный hide, напротив, замораживает зеркало. Это ещё не замена плеера в продукте и не полная приёмка hidden/lock/performance/platforms. Следующий шаг — единственный отдельный player host, видимые зеркала и обычное управляющее окно (ADR033). Новое имя приложения выбирает пользователь: Encore занято; до выбора ничего не переименовывать.

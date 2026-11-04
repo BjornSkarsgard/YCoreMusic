@@ -1,6 +1,6 @@
 # Instructions for Codex — Музыкальный телевизор
 
-Ты работаешь над desktop-приложением Encore для Windows, Linux и macOS.
+Ты работаешь над desktop-приложением YCore Music для Windows, Linux и macOS.
 
 ## Перед началом
 1. Прочитай `docs/00-README.md`, `docs/01-PRODUCT-DECISIONS.md`, `docs/02-ARCHITECTURE.md`, `docs/10-RISKS-AND-SPIKES.md`, `docs/11-ROADMAP-AND-ACCEPTANCE.md`.

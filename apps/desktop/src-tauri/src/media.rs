@@ -114,7 +114,7 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         } else {
             "encore"
         },
-        display_name: "Encore",
+        display_name: "YCore Music",
         hwnd,
     })
     .map_err(|_| "Media controls unavailable")?;

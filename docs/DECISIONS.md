@@ -1,3 +1,11 @@
+# ADR-034 — Переименование в YCore Music с сохранением пользовательских данных
+
+2026-11-05. Пользователь утвердил YCore Music / YCore / «Юкор Мьюзик», слоган `Your Music. Your Core, Your World.`, executable `YCoreMusic.exe` и repo `YCoreMusic`. Обновлены productName/mainBinaryName, Cargo package/default target, frontend package, UI/window/tray/SMTC copy, CI artifacts/build commands, README и branding14. GitHub repo переименован BjornSkarsgard/encore→BjornSkarsgard/YCoreMusic, origin обновлён; старый URL остаётся историческим.
+
+Стабильные identifier `io.encore.desktop`, keyring service/account, SQLite filename и localStorage keys не переименовываются: это не пользовательское отображение, а доступ к прежним данным без извлечения токена. Тестовые ENV и IPC topics тоже совместимы. Autostart использует новый brand и --ycore-autostart, прежний аргумент принимается; запись OS не создавалась/не изменялась (legacy Encore Run entry отсутствовала). Running старый пользовательский Encore не закрывается автоматом. Single-player-host рефакторинг сохранён отдельным git stash и не смешан с rename.
+
+Проверки:54 Rustapp PASS/9 optin ignored, Clippy -Dwarnings PASS,12 targeted renderer PASS, native isolated startup/storage/metrics/history/mini/topmost/singleinstance PASS. Windows debug YCoreMusic.exe собран; PE FileDescription/ProductName=YCore Music. Это rename срез, не заявление готовности нового player host или нового Premium Neon Dark оформления.
+
 # ADR-033 — Один YouTube-плеер и локальное DWM-зеркало: прозрачный источник
 
 2026-11-05, REQ056, S13. Пользователь отменил несколько независимых YouTube iframe и предложил локальную копию изображения. Затем предложил не hide исходного окна, а alpha0 + mouse passthrough. Проверен отдельный Windows debug spike, feature mirror-probe, только StorageState.test_mode и label main. Обычная рабочая схема приложения этим spike не заменялась.

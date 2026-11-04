@@ -118,7 +118,7 @@ let powerPaused=false;
 let suspendPosition:number|undefined;
 let mediaRevision=Date.now()*1000;
 let mediaPlayback:'stopped'|'paused'|'playing'='stopped';
-let mediaTitle='Encore',mediaArtist='';
+let mediaTitle='YCore Music',mediaArtist='';
 let lastMediaPublish=0;
 function publishMedia(){
   if(!isTauri())return;
@@ -374,7 +374,7 @@ function skipUnavailable(message:string){
 function sourceFetch(fresh:boolean,autoplay=false):Promise<boolean>{
   if(!fresh&&historySource)return historyFetch(false);
   if(sourceWork)return sourceWork;
-  if(!isTauri()){element('source-status').textContent='Подключите аккаунт в Encore для компьютера.';return Promise.resolve(false);}
+  if(!isTauri()){element('source-status').textContent='Подключите аккаунт в YCore Music для компьютера.';return Promise.resolve(false);}
   if(fresh){
     clearRetry();historyStarting=false;startingSource=true;sourceNeedsFresh=true;
     stopPlayer();queue.reset([...queue.snapshot]);choices.clear();bypassSaved.clear();
@@ -751,7 +751,7 @@ if(isTauri()){
   publishMedia();
   void listen<string>('encore-control',event=>systemControl(event.payload)).catch(()=>{element('storage-status').textContent='Управление из трея пока недоступно.';});
   void invoke<{tray_available:boolean}>('desktop_status').then(status=>{
-    if(status)element('storage-status').textContent=status.tray_available?'Крестик скрывает Encore в трей. Выход — через меню значка.':'Трей недоступен. Закрытие окна завершит приложение.';
+    if(status)element('storage-status').textContent=status.tray_available?'Крестик скрывает YCore Music в трей. Выход — через меню значка.':'Трей недоступен. Закрытие окна завершит приложение.';
   }).catch(()=>{});
 }
 

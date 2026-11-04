@@ -219,7 +219,7 @@ pub async fn auth_command(
                 .map_err(|_| "Cannot locate login profile")?
                 .join("yandex-login");
             let popup = WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::External(url))
-                .title("Вход в Яндекс · Encore")
+                .title("Вход в Яндекс · YCore Music")
                 .inner_size(520.0, 720.0)
                 .incognito(true)
                 .data_directory(login_directory)

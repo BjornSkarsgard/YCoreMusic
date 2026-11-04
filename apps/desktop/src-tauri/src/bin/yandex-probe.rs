@@ -31,7 +31,7 @@ fn run() -> Result<(), &'static str> {
     if !io::stdin().is_terminal() {
         return Err("Interactive terminal required; do not pipe tokens");
     }
-    println!("Encore S1: creates a recommendation session unless --legacy. No playback/feedback. Token stored only with --save-token.");
+    println!("YCore Music S1: creates a recommendation session unless --legacy. No playback/feedback. Token stored only with --save-token.");
     print!("Yandex OAuth token (hidden; enter locally, never in chat): ");
     io::stdout().flush().map_err(|_| "Terminal error")?;
     let token = Zeroizing::new(rpassword::read_password().map_err(|_| "Cannot read hidden input")?);

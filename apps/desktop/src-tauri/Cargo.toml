@@ -1,8 +1,9 @@
 [package]
-name = "encore"
+name = "ycore-music"
 version = "0.0.1"
 edition = "2021"
-default-run = "encore"
+default-run = "YCoreMusic"
+autobins = false
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -29,6 +30,10 @@ zeroize = { version = "1.9.1" }
 [features]
 yandex-probe = []
 mirror-probe = ["tauri/unstable"]
+
+[[bin]]
+name = "YCoreMusic"
+path = "src/main.rs"
 
 [[bin]]
 name = "yandex-probe"

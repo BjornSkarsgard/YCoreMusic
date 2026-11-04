@@ -87,7 +87,7 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|_| "Cannot read database schema; existing file preserved")?;
     if version > 5 {
-        return Err("Database schema is newer than Encore; existing file preserved");
+        return Err("Database schema is newer than YCore Music; existing file preserved");
     }
     if version == 0 {
         let tables:i64=connection.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'",[],|row|row.get(0)).map_err(|_|"Cannot inspect schema")?;

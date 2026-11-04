@@ -5,7 +5,7 @@ import {existsSync,writeFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const root=process.cwd();
 const backgroundSmoke=process.env.ENCORE_AUTOSTART_SMOKE==='1';
-const nativeApp=resolve(root,'apps/desktop/src-tauri/target/native-test/'+(process.platform==='win32'?'encore.exe':'encore'));
+const nativeApp=resolve(root,'apps/desktop/src-tauri/target/native-test/'+(process.platform==='win32'?'YCoreMusic.exe':'YCoreMusic'));
 const nativeDriver=process.env.ENCORE_NATIVE_DRIVER??(process.platform==='win32'?(process.env.ENCORE_EDGE_DRIVER??resolve(root,'.tools/edgedriver/msedgedriver.exe')):'/usr/bin/WebKitWebDriver');
 assert(existsSync(nativeApp),'Build the native-test profile first; see README native smoke instructions.');
 const nativeEnvironment={...process.env,ENCORE_TEST_DATA_DIR:process.env.ENCORE_NATIVE_TEST_DATA_DIR??resolve(root,'.tools/native-test-data')};
@@ -663,7 +663,7 @@ try {
  } catch(error) {
   if(process.platform==='linux'&&isolated){
     const details=[];
-    for(const args of [['-root','_NET_SUPPORTING_WM_CHECK'],['-name','Encore · нативная проверка','_NET_WM_STATE','_NET_WM_WINDOW_TYPE']]){
+    for(const args of [['-root','_NET_SUPPORTING_WM_CHECK'],['-name','YCore Music · нативная проверка','_NET_WM_STATE','_NET_WM_WINDOW_TYPE']]){
       try{details.push(execFileSync('xprop',args,{encoding:'utf8',timeout:3000}));}catch{details.push('X11 property read unavailable');}
     }
     try{

@@ -64,12 +64,12 @@ pub fn action(app: &AppHandle, action: Action) -> Result<(), String> {
     }
 }
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
-    let open_item = MenuItem::with_id(app, "open", "Открыть Encore", true, None::<&str>)?;
+    let open_item = MenuItem::with_id(app, "open", "Открыть YCore Music", true, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", "Воспроизвести / пауза", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Выйти из Encore", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Выйти из YCore Music", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open_item, &toggle, &quit])?;
     let mut builder = TrayIconBuilder::with_id("encore")
-        .tooltip("Encore")
+        .tooltip("YCore Music")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {

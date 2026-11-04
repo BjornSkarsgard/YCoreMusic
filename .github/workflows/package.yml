@@ -54,7 +54,7 @@ jobs:
       - name: Save installation artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: encore-${{ inputs.platform }}-unsigned-packages
+          name: ycoremusic-${{ inputs.platform }}-unsigned-packages
           retention-days: 14
           if-no-files-found: error
           path: |

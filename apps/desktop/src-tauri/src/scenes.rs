@@ -91,7 +91,7 @@ pub async fn scene_window(
                 scene.unminimize().map_err(|_| "Cannot restore scene")?;
             } else {
                 WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("scene.html".into()))
-                    .title("Encore · Клип")
+                    .title("YCore Music · Клип")
                     .inner_size(960.0, 600.0)
                     .min_inner_size(360.0, 260.0)
                     .additional_browser_args(

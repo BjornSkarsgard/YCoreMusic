@@ -7,7 +7,7 @@ export function mountDiscovery(select:(selection:CatalogueSelection)=>void,brows
  root.innerHTML='<div class="library-heading"><h2>Обзор</h2><button id="discovery-refresh">Обновить</button></div><p id="discovery-status" role="status"></p><div id="discovery-content"></div>';
  const status=document.getElementById('discovery-status')!,content=document.getElementById('discovery-content')!;let loaded=false,revision=0;
  async function refresh(){
-  if(!isTauri()){status.textContent='Чарты доступны в приложении Encore, в том числе без входа.';return;}
+  if(!isTauri()){status.textContent='Чарты доступны в приложении YCore Music, в том числе без входа.';return;}
   const epoch=++revision;status.textContent='Загрузка актуального чарта…';
   try{const value=await invoke<Discovery>('discovery_fetch');if(epoch!==revision)return;loaded=true;content.replaceChildren();
    const heading=document.createElement('h3');heading.textContent=value.title;

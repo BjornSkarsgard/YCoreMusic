@@ -26,7 +26,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev libdbus-1-dev webkit2gtk-driver xvfb xauth openbox dbus-x11 fonts-dejavu x11-utils
       - run: npm ci --prefix apps/desktop
       - run: npm run build --prefix apps/desktop
-      - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol --bin encore
+      - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol --bin YCoreMusic
       - run: cargo install tauri-driver --version 2.1.0 --locked
       - name: Native GTK window, isolated storage, history, mini and instance lifecycle
         env:

@@ -329,7 +329,7 @@ mod imp {
                     return Err("Mirror probe already exists".into());
                 }
                 let target = tauri::WindowBuilder::new(app, LABEL)
-                    .title("Encore · DWM mirror probe")
+                    .title("YCore Music · DWM mirror probe")
                     .inner_size(640.0, 360.0)
                     .resizable(false)
                     .always_on_top(true)

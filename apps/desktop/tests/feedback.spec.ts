@@ -25,7 +25,7 @@ for(const failed of [false,true])test('known reactions stay usable during a remo
  if(failed)await expect(page.locator('#feedback-notice')).toContainText('Не удалось сохранить');
  await page.evaluate(()=>(window as any).releaseRead());await expect(like).toHaveAttribute('aria-pressed',String(!failed));await expect(like).toBeEnabled();
 });
-test('returning to Encore refreshes external likes without writes and coalesces rapid focus events',async({page})=>{
+test('returning to YCore Music refreshes external likes without writes and coalesces rapid focus events',async({page})=>{
  await page.clock.install();
  await page.addInitScript(()=>{
   const w=window as any;w.isTauri=true;w.externalState=0;w.externalGeneration=1;w.syncCalls=0;w.reactionWrites=0;
