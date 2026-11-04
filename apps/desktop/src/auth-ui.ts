@@ -1,4 +1,5 @@
 import {invoke,isTauri} from '@tauri-apps/api/core';
+import {showPanel} from './shell';
 
 type Status='idle'|'waiting'|'checking'|'connected'|'cancelled'|'expired'|'denied'|'network_error'|'service_error'|'store_error'|'test_mode';
 const messages:Record<Status,string>={idle:'',waiting:'Заверши вход в отдельном окне Яндекса.',checking:'Проверяем доступ к Яндекс Музыке…',connected:'Яндекс Музыка подключена. Обновляем Encore…',cancelled:'Вход отменён. Прежнее подключение сохранено.',expired:'Время входа истекло. Попробуй ещё раз.',denied:'Доступ не подтверждён. Прежнее подключение сохранено.',network_error:'Не удалось проверить доступ: нет связи с Яндексом. Попробуй ещё раз.',service_error:'Не удалось завершить вход. Попробуй ещё раз.',store_error:'Не удалось сохранить доступ в системном хранилище. Прежнее подключение сохранено.',test_mode:'Изменение подключения отключено в тестовом запуске.'};
@@ -38,4 +39,27 @@ export function mountAuth(onChanged:()=>void){
  };
  if(!isTauri()){connect.disabled=true;disconnect.disabled=true;status.textContent='Вход доступен в приложении Encore.';}
  window.addEventListener('pagehide',()=>{++revision;clearTimeout(timer);});
+ const connection=document.createElement('p');connection.id='account-connection';connection.setAttribute('role','status');root.querySelector('h3')!.after(connection);
+ const prompt=document.createElement('dialog');prompt.id='account-welcome';prompt.setAttribute('aria-labelledby','account-welcome-title');
+ prompt.innerHTML='<h2 id="account-welcome-title">Подключить Яндекс Музыку?</h2><p>Войди, чтобы слушать «Мою волну», искать музыку, открывать свои плейлисты и любимые треки, ставить лайки и дизлайки. Encore будет подбирать к музыке видеоклипы.</p><p>Можно войти позже: <strong>Настройки → Яндекс Музыка → Войти в Яндекс</strong>.</p><label class="setting-toggle"><input id="account-welcome-dismiss" type="checkbox">Больше не предлагать</label><p id="account-welcome-notice" role="status"></p><div class="dialog-actions"><button id="account-welcome-later">Позже</button><button id="account-welcome-login">Войти в Яндекс</button></div>';
+ document.body.append(prompt);
+ const dismissedKey='encore.loginPrompt.dismissed.v1';let consideredPrompt=false;
+ const suppress=prompt.querySelector<HTMLInputElement>('#account-welcome-dismiss')!;
+ suppress.onchange=()=>{try{if(suppress.checked)localStorage.setItem(dismissedKey,'1');else localStorage.removeItem(dismissedKey);}catch{prompt.querySelector('#account-welcome-notice')!.textContent='Не удалось сохранить выбор. При следующем запуске предложение может появиться снова.';}};
+ prompt.querySelector<HTMLButtonElement>('#account-welcome-later')!.onclick=()=>prompt.close();
+ prompt.querySelector<HTMLButtonElement>('#account-welcome-login')!.onclick=()=>{prompt.close();showPanel('settings');connect.click();};
+ return (value:string)=>{
+  if(value==='saved'||value==='connected'){
+   connect.textContent='Сменить аккаунт';disconnect.hidden=false;
+   connection.textContent=value==='connected'?'Яндекс Музыка подключена.':'Доступ к Яндекс Музыке сохранён на этом устройстве.';
+  }else if(value==='missing'){
+   connect.textContent='Войти в Яндекс';disconnect.hidden=true;connection.textContent='Яндекс Музыка не подключена.';
+  }else if(value==='authorization_denied'){
+   connect.textContent='Войти снова';disconnect.hidden=false;connection.textContent='Нужно обновить доступ к Яндекс Музыке.';
+  }
+  if(!consideredPrompt){
+   consideredPrompt=true;let dismissed=false;try{dismissed=localStorage.getItem(dismissedKey)==='1';}catch{/* The reminder can still be dismissed for this launch. */}
+   if(value==='missing'&&!dismissed&&!busy)prompt.showModal();
+  }
+ };
 }

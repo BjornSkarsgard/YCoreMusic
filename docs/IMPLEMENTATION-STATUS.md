@@ -333,3 +333,9 @@ PASS:40app+5probe Rust/9ignored;Clippy;TS/build;полный renderer67PASS+1opt
 ### Исправление живого OAuth callback — 2026-11-05
 
 Пользователь сообщил400 после push-кода. Причина: принудительный redirect_uri verification_code не зарегистрирован у текущего клиента. Публичная metadata https://oauth.yandex.ru/client/23cabbbdc6cd418abb4b39c32c41195d/info подтвердила callback https://music.yandex.ru/. Убрано переопределение redirect_uri, native callback принимает только этот точный origin/root path с прежней проверкой state. Сам токен/личность не читались и не выводились.2authRustPASS;WindowsnativeOAuthopen/cancel/testguard+basicPASS;ClippyPASS. После подтверждённого выхода пользователя debugexe успешно заменён исправленной сборкой. Повторный пользовательский login пока ожидается; не объявлять полный OAuthPASS.
+
+## Состояние аккаунта и стартовое предложение входа — 2026-11-05
+
+Пользователь сообщил успешный вход без прежней400. Исправлен неизменный текст кнопки: saved/connected → «Сменить аккаунт», missing → «Войти в Яндекс», authorization_denied → «Войти снова». Отдельный статус различает сохранённое подключение и проверенный доступ. Снимок OS-store читается локально при старте без network account-check; существующая диагностика отдаёт тот же результат accountUI без отдельного запроса.
+
+Добавлен стартовый диалог только при missing: объяснение, Later/Login, постоянный opt-out и путь Settings→Яндекс Музыка. Напоминание не появляется у saved аккаунта или при opt-out; ручной вход остаётся. Проверены повторный запуск с/без opt-out, saved account после reload, явный вход из приглашения и отмена без autoplay. PASS:72renderer+1opt-in skipped, TS/build, WindowsnativeOAuthopen/cancel/guard+fullbasic. Обычный debugexe успешно обновлён, пользовательские credentials не менялись тестами.

@@ -11,14 +11,18 @@ test('diagnostics checks Yandex only on request, separates connection failures a
    }
   }};
  });
- await page.goto('/');expect(await page.evaluate(()=>(window as any).healthCalls)).toEqual([]);
+ await page.goto('/');expect(await page.evaluate(()=>(window as any).healthCalls)).toEqual([false]);
  await page.locator('[data-panel=settings]').click();await expect(page.locator('#diagnostics-yandex')).toContainText('Доступ ещё не проверен');
  expect(await page.evaluate(()=>(window as any).healthCalls)).toEqual([false]);
+ await expect(page.locator('#account-connect')).toHaveText('Сменить аккаунт');await expect(page.locator('#account-connection')).toContainText('сохранён');
  await page.locator('#diagnostics-check').click();await expect(page.locator('#diagnostics-yandex')).toHaveText('Подключение работает.');
+ await expect(page.locator('#account-connection')).toHaveText('Яндекс Музыка подключена.');
  for(const [state,message] of [['authorization_denied','отклонил доступ'],['network_unavailable','Нет связи'],['rate_limited','просит подождать']]){
   await page.evaluate(state=>(window as any).health=state,state);await page.locator('#diagnostics-check').click();await expect(page.locator('#diagnostics-yandex')).toContainText(message);
  }
  await page.evaluate(()=>(window as any).failHealth=true);await page.locator('#diagnostics-check').click();await expect(page.locator('#diagnostics-status')).toContainText('Не удалось проверить');await expect(page.locator('#diagnostics-check')).toBeEnabled();
  await page.evaluate(()=>{const w=window as any;w.failHealth=false;w.health='connected';});await page.locator('#diagnostics-check').click();await expect(page.locator('#diagnostics-yandex')).toHaveText('Подключение работает.');
  await expect(page.locator('#status')).not.toHaveText('Воспроизведение');
+ await page.evaluate(()=>(window as any).health='missing');await page.locator('#diagnostics-check').click();await expect(page.locator('#account-connect')).toHaveText('Войти в Яндекс');await expect(page.locator('#account-disconnect')).toBeHidden();
+ await page.evaluate(()=>(window as any).health='authorization_denied');await page.locator('#diagnostics-check').click();await expect(page.locator('#account-connect')).toHaveText('Войти снова');await expect(page.locator('#account-disconnect')).toBeVisible();
 });
