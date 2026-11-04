@@ -313,3 +313,9 @@ Linux DEB/AppImage release41867671860PASS; скачаны и проверены 
 NativeLinux41871384767 дошёл до реального GTKокна/noautoplay/autostartargument/diagnostics/SQLite/historydates+cursor+clearPASS. Упал на немедленном чтении topmostfalse после запросаtrue. Проверена реализация TaoLinux: setter отправляет WindowRequest, getter читает ABOVE из последующего WindowStateevent. Runner теперь ждёт подтверждённое состояние с ограничением5сек, не подменяет getter/результат. Повторный Linux прогон ещё ожидается. Windows basic native с этим ожиданиемPASS.
 
 CI получает cache Rustdependencies через rust-cache для уменьшения повторной компиляции (workspaces apps/desktop/src-tauri -> target,cache-on-failure). MacARMпакет пока вочереди, наличиеmacOS runtime не утверждается.
+
+## 2026-11-04: клавиатура раскрывающихся блоков и финальная Windows сборка
+
+Space/Enter на summary сохраняют стандартное раскрытие блока и не запускают/не приостанавливают музыку; guard распространяется также на rolebutton.3целевых keyboardrendererPASS,check/debugbuild/releaseNSISPASS. Windows installer пересобран с периодом истории и этим guard, актуальный hash в.tools/windows-package-result.json. Ранний NSIS из предыдущих записей — более старый snapshot той же версии0.0.1; установка/подпись по-прежнему не выполнялись.
+
+LinuxNative41873691768: startup/autostart/health/SQLite/historyPASS, topmost после5сек остаётсяfalse. ReadinessOpenbox иDISPLAY дляDBus исправлены; ожидание само проблему не решило. Lookup пофиксированному заголовку не нашёл окно (возможна смена titleWebKit).41874314737 добавляет readonly _NET_CLIENT_LIST +PIDfilter только для своих окон и их EWMHstate; итог ожидается. Не считать Linuxmini/topmost/maximized полностью принятыми. MacARMpackage41870661876не получил hostedrunner иcancelled, без failedstep.

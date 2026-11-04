@@ -827,3 +827,11 @@ test('Smart History honors a local dislike in its prepared buffer and accepts a 
  for(let count=0;count<24&&!returned;count++){const before=await page.evaluate(()=>(window as any).played.length);await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBeGreaterThan(before);returned=await page.evaluate(()=>(window as any).played.at(-1)==='Aaaaaaaaaaa');}
  expect(returned).toBe(true);
 });
+
+test('Space on a history period disclosure toggles the disclosure without pausing music',async({page})=>{
+ await mockAutomaticPlayer(page);await page.goto('/');await videoEditor(page);await page.locator('#url').fill('M7lc1UVf-VE');await page.getByRole('button',{name:'Подготовить',exact:true}).click();
+ await expect(page.locator('#play')).toBeEnabled();await page.locator('#play').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await page.locator('[data-panel=history]').click();await page.locator('#history-period-summary').focus();await page.keyboard.press('Space');
+ await expect(page.locator('#history-period')).toHaveAttribute('open','');await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await page.keyboard.press('Enter');await expect(page.locator('#history-period')).not.toHaveAttribute('open','');await expect(page.locator('#status')).toHaveText('Воспроизведение');
+});

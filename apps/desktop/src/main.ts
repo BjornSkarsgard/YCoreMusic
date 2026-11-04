@@ -687,7 +687,7 @@ if(isTauri()){
 // Local to this WebView: typing and native control keys keep their normal behavior.
 document.addEventListener('keydown',event=>{
   if(event.defaultPrevented||event.ctrlKey||event.metaKey||event.altKey||event.shiftKey)return;
-  if(event.target instanceof Element && event.target.closest('input,textarea,select,button,a,[contenteditable]:not([contenteditable="false"]),dialog'))return;
+  if(event.target instanceof Element && event.target.closest('input,textarea,select,button,a,summary,[role="button"],[contenteditable]:not([contenteditable="false"]),dialog'))return;
   if(event.code==='Space'){
     if(!playerReady || event.repeat)return;
     event.preventDefault();systemControl('toggle');
