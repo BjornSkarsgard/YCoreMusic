@@ -1,3 +1,4 @@
+import {mountDiagnostics} from './diagnostics-ui';
 import {mountAutostart} from './autostart-ui';
 import {mountHistory} from './history-ui';
 import {mountDiscovery} from './discovery-ui';
@@ -732,6 +733,7 @@ window.addEventListener('feedback-snapshot',event=>{
 });
 refreshFeedback=mountFeedback(()=>queue.current,()=>void advance(playIntent,true));
 refreshVideoFavorites=mountVideoFavorites(()=>queue.current&&activeVideo?.id===queue.current.id?{trackId:queue.current.id,videoId:activeVideo.videoId,key:queue.generation+':'+queue.current.ordinal}:undefined,id=>void loadVideo(id,playIntent,true),id=>void favoritesChanged(id),id=>choices.get(queue.generation+':'+queue.current?.ordinal)?.items.find(item=>item.id===id)?.title);
+mountDiagnostics();
 mountAutostart();
 mountShellNavigation();
 mountFullscreenControls(document.querySelector<HTMLElement>('.workspace')!,document.querySelector<HTMLElement>('.player-hud')!);

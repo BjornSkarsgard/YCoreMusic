@@ -4,6 +4,7 @@ mod catalogue;
 #[allow(dead_code)]
 mod credentials;
 mod desktop;
+mod diagnostics;
 mod discovery;
 mod feedback;
 mod library;
@@ -161,6 +162,7 @@ fn main() {
             source_fetch,
             source_stations,
             autostart::autostart_status,
+            diagnostics::diagnostics_status,
             autostart::autostart_set,
             smart_history::smart_history_fetch,
             media::media_update,

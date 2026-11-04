@@ -32,6 +32,7 @@ async function network(offline){
   await request('/session/'+session+'/ms/cdp/execute',{cmd:'Network.emulateNetworkConditions',params:{offline,latency:0,downloadThroughput:-1,uploadThroughput:-1}});
   networkEmulated=offline;
 }
+async function desktopUntil(field,expected){for(let n=0;n<50;n++){if((await nativeInvoke('desktop_status'))?.[field]===expected)return;await sleep(100);}throw new Error('Native window state did not settle: '+field);}
 async function mediaUntil(playback){for(let n=0;n<40;n++){const status=await nativeInvoke('media_status');if(status?.available&&status.playback===playback)return;await sleep(100);}throw new Error('Native media status did not become '+playback);}
 async function click(id){await execute('document.getElementById(arguments[0]).click()', [id]);}
 try {
@@ -61,6 +62,11 @@ try {
   assert.equal(await nativeInvoke('autostart_set',{enabled:true}),null,'Isolated tests must not write autostart');
   assert.deepEqual(await nativeInvoke('autostart_status'),autostartBefore);
   console.log('Native autostart read and isolated mutation guard: PASS (no OS setting written)');
+  const diagnostics=await nativeInvoke('diagnostics_status',{checkYandex:false});assert.equal(diagnostics.storageAvailable,true);assert.equal(typeof diagnostics.version,'string');
+  assert.deepEqual(Object.keys(diagnostics).sort(),['architecture','platform','storageAvailable','version','yandex']);
+  if(process.env.ENCORE_LIVE_LIBRARY==='1')assert.equal((await nativeInvoke('diagnostics_status',{checkYandex:true})).yandex,'connected');
+  console.log('Native diagnostics health and identity-free response: PASS');
+
 
   const fixture='native-fixture-'+Date.now();
   await store({type:'save_video',trackId:'123456789',videoId:'M7lc1UVf-VE'});
@@ -344,6 +350,7 @@ try {
     await until('return document.querySelectorAll("#history-list li").length>0');
     await execute('Array.from(document.querySelector("#history-list li").querySelectorAll("button")).find(button=>button.textContent==="Воспроизвести").click()');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',45000);
+    await until('return !document.getElementById("seek").disabled&&Number(document.getElementById("seek").max)>60');
     const recordsBefore=(await store({type:'history',query:'Native recovery fixture'})).length;
     const beforeTitle=await execute('return document.getElementById("track-title").textContent');
     await network(true);await until('return navigator.onLine===false');
@@ -351,13 +358,18 @@ try {
     await until('return document.getElementById("status").textContent.includes("Нет сети")',45000);
     const seconds=Number(process.env.ENCORE_OUTAGE_SECONDS??20);assert(Number.isFinite(seconds)&&seconds>=10&&seconds<=900,'Outage must be between10 and900 seconds');
     for(let waited=0;waited<seconds;waited+=5){await sleep(Math.min(5,seconds-waited)*1000);assert.equal(await execute('return document.getElementById("track-title").textContent'),beforeTitle);}
+    const heldPosition=await execute('return Number(document.getElementById("seek").value)');
     await click('pause');await network(false);await until('return navigator.onLine===true');await sleep(2000);
     assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение','Reconnect ignored Pause');
     await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"',45000);await sleep(1000);
     assert.equal(await execute('return document.getElementById("track-title").textContent'),beforeTitle);
     assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);
     assert.equal((await store({type:'history',query:'Native recovery fixture'})).length,recordsBefore,'Recovery duplicated history');
-    assert(await execute('return Math.abs(Number(document.getElementById("seek").value)-window.recoveryTarget)<12'),'Recovery lost position');
+    const positionTrace=await execute('return {target:window.recoveryTarget,after:Number(document.getElementById("seek").value),log:document.getElementById("log").textContent}');
+    console.log('Native recovery fixture positions: '+JSON.stringify({target:positionTrace.target,held:heldPosition,after:positionTrace.after}));
+    writeFileSync(resolve(root,'.tools/native-recovery-trace.json'),JSON.stringify({...positionTrace,held:heldPosition},null,2));
+    assert(heldPosition>=positionTrace.target-10,'Offline seek did not reach its requested position');
+    assert(Math.abs(positionTrace.after-heldPosition)<12,'Recovery lost the last buffered position');
     await click('pause');console.log('Native actual WebView network outage, stable track/position/history, reconnect after Pause: PASS ('+seconds+'s; OS network unchanged)');
   }
   const soakMinutes=Number(process.env.ENCORE_WAVE_SOAK_MINUTES??0);
@@ -414,11 +426,13 @@ try {
   const restored=await request('/session/'+session+'/window/rect');
   assert.equal(restored.width,rect.width); assert.equal(restored.height,rect.height);
   console.log('Native mini resize/restore and OS topmost flag on/off: PASS');
-  const maximized=await request('/session/'+session+'/window/maximize',{});
+  await request('/session/'+session+'/window/maximize',{});await desktopUntil('maximized',true);
+  const maximized=await request('/session/'+session+'/window/rect');
   await click('mini'); await until('return document.body.classList.contains("compact")');
   const miniFromMaximized=await request('/session/'+session+'/window/rect');
   assert(miniFromMaximized.width<maximized.width);
   await click('mini'); await until('return !document.body.classList.contains("compact")');
+  await desktopUntil('maximized',true);
   const restoredMaximized=await request('/session/'+session+'/window/rect');
   assert.equal(restoredMaximized.width,maximized.width);
   console.log('Native mini from maximized window and restore: PASS');

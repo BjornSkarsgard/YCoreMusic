@@ -12,7 +12,7 @@ export const appShell=`
 <section data-pane="search" hidden><section id="catalogue"></section></section>
 <section data-pane="discovery" hidden><section id="discovery"></section></section><section data-pane="library" hidden><section id="library"></section></section><section data-pane="queue" hidden><p class="panel-description">Следующие композиции</p><ol id="queue-list"></ol></section>
 <section data-pane="history" hidden><details id="history-panel"><summary>История прослушивания</summary><div class="history-actions"><button id="history-smart">▶ Умная история</button><input id="history-query" aria-label="Поиск в истории" placeholder="Название или исполнитель"><button id="history-refresh">Обновить</button><button id="history-clear">Очистить</button></div><p id="history-status" role="status"></p><ol id="history-list"></ol><button id="history-more" hidden>Более ранние прослушивания</button></details></section>
-<section data-pane="settings" hidden><h2>Encore</h2><p class="panel-description">Аудиовыход выбирает система. Режим поверх окон включается кнопкой в верхней панели.</p><section id="autostart-settings"></section><p id="storage-status" role="status"></p><details><summary>Журнал работы</summary><pre id="log"></pre></details></section>
+<section data-pane="settings" hidden><h2>Encore</h2><p class="panel-description">Аудиовыход выбирает система. Режим поверх окон включается кнопкой в верхней панели.</p><section id="autostart-settings"></section><section id="diagnostics"></section><p id="storage-status" role="status"></p><details><summary>Журнал работы</summary><pre id="log"></pre></details></section>
 </div><section id="video-alternatives" aria-label="Другие видео для текущей песни" hidden><h3>Другие видео</h3><div id="alternative-list"></div></section></aside>
 </main>
 <dialog id="video-dialog"><div class="dialog-heading"><h2>Клип для этой песни</h2><button id="close-video-dialog" aria-label="Закрыть">${icon('close')}</button></div><form id="load"><label for="url">YouTube-ссылка или ID</label><div class="input-row"><input id="url" placeholder="Ссылка на подходящий клип" autocomplete="off" required><button class="primary">Подготовить</button></div></form><button id="find-video" disabled>Автоподбор на этот раз</button><h3>Избранные клипы</h3><p id="favorite-status" role="status"></p><div id="favorite-list"></div><h3>Подбор клипов</h3><div id="candidate-list" aria-label="Найденные клипы"></div></dialog>
@@ -25,7 +25,7 @@ export function showPanel(name:string){
  document.getElementById('panel-title')!.textContent=names[name]??name;
  if(name==='discovery')document.getElementById('discovery')?.dispatchEvent(new Event('discovery-open'));
  if(name==='library')document.getElementById('library')?.dispatchEvent(new Event('library-open'));
- if(name==='settings')document.getElementById('autostart-settings')?.dispatchEvent(new Event('settings-open'));
+ if(name==='settings')for(const id of ['autostart-settings','diagnostics'])document.getElementById(id)?.dispatchEvent(new Event('settings-open'));
  if(name==='history')(document.getElementById('history-panel') as HTMLDetailsElement).open=true;
 }
 export function mountShellNavigation(){

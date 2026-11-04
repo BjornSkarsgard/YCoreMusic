@@ -28,6 +28,7 @@ pub struct Status {
     pub tray_available: bool,
     pub visible: bool,
     pub minimized: bool,
+    pub maximized: bool,
     pub quitting: bool,
 }
 pub fn open(app: &AppHandle) -> Result<(), String> {
@@ -134,6 +135,9 @@ pub fn desktop_status(window: tauri::WebviewWindow) -> Result<Status, String> {
         minimized: window
             .is_minimized()
             .map_err(|_| "Cannot read minimized state")?,
+        maximized: window
+            .is_maximized()
+            .map_err(|_| "Cannot read maximized state")?,
         quitting: state.quitting.load(Ordering::Acquire),
     })
 }
