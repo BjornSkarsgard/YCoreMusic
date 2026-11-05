@@ -28,8 +28,10 @@ zeroize = { version = "1.9.1" }
 
 
 [features]
+default = ["single-player-host"]
 yandex-probe = []
 mirror-probe = ["tauri/unstable"]
+single-player-host = []
 
 [[bin]]
 name = "YCoreMusic"

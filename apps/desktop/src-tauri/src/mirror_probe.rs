@@ -43,6 +43,9 @@ pub enum Action {
     OpenSurface,
     Update,
     Capture,
+    CaptureMain,
+    CaptureScene,
+    CloseHostPanel,
     Conceal,
     Reveal,
     Close,
@@ -69,6 +72,7 @@ pub async fn mirror_probe(
     action: Action,
     crop: Option<Crop>,
     save: Option<bool>,
+    target_label: Option<String>,
 ) -> Result<Report, String> {
     if window.label() != "main"
         || !cfg!(debug_assertions)
@@ -78,11 +82,24 @@ pub async fn mirror_probe(
     }
     #[cfg(all(target_os = "windows", debug_assertions, feature = "mirror-probe"))]
     {
-        imp::run(&window, &state, action, crop, save.unwrap_or(false))
+        if target_label
+            .as_deref()
+            .is_some_and(|label| !crate::scenes::is_scene(label))
+        {
+            return Err("Only owned scene surfaces may be verified".into());
+        }
+        imp::run(
+            &window,
+            &state,
+            action,
+            crop,
+            save.unwrap_or(false),
+            target_label.as_deref(),
+        )
     }
     #[cfg(not(all(target_os = "windows", debug_assertions, feature = "mirror-probe")))]
     {
-        let _ = (state, action, crop, save);
+        let _ = (state, action, crop, save, target_label);
         Err("Windows-only mirror probe".into())
     }
 }
@@ -213,10 +230,14 @@ mod imp {
         unsafe { DwmUpdateThumbnailProperties(handle, &props) }
             .map_err(|_| "DWM rejected mirror properties".to_string())
     }
-    fn pixels(main: &WebviewWindow) -> Result<(Vec<u8>, i32, i32), String> {
+    fn pixels(
+        main: &WebviewWindow,
+        label: &str,
+        crop: Option<Crop>,
+    ) -> Result<(Vec<u8>, i32, i32), String> {
         let target = main
             .app_handle()
-            .get_window(LABEL)
+            .get_window(label)
             .ok_or("Mirror window is missing")?;
         let hwnd = target.hwnd().map_err(|_| "Cannot read mirror handle")?;
         let mut rect = RECT::default();
@@ -225,11 +246,48 @@ mod imp {
         if !unsafe { ClientToScreen(hwnd, &mut origin) }.as_bool() {
             return Err("Cannot locate mirror client area".into());
         }
-        let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
+        let (width, height) = if let Some(crop) = crop {
+            let scale = target
+                .scale_factor()
+                .map_err(|_| "Cannot read capture DPI")?;
+            if !crop.valid(
+                f64::from(rect.right - rect.left) / scale,
+                f64::from(rect.bottom - rect.top) / scale,
+            ) {
+                return Err("Capture crop is outside its own window".into());
+            }
+            origin.x += (crop.x * scale).round() as i32;
+            origin.y += (crop.y * scale).round() as i32;
+            (
+                (crop.width * scale).round() as i32,
+                (crop.height * scale).round() as i32,
+            )
+        } else {
+            (rect.right - rect.left, rect.bottom - rect.top)
+        };
         if !(1..=4096).contains(&width) || !(1..=4096).contains(&height) {
             return Err("Invalid mirror capture size".into());
         }
         // Read only this application's probe client rectangle, never the desktop.
+        // Screen coordinates can be covered by another app even when this HWND
+        // is marked visible/topmost. Refuse capture before reading any pixels.
+        for (x, y) in [
+            (0, 0),
+            (width - 1, 0),
+            (0, height - 1),
+            (width - 1, height - 1),
+            (width / 2, height / 2),
+        ] {
+            let hit = unsafe {
+                WindowFromPoint(POINT {
+                    x: origin.x + x,
+                    y: origin.y + y,
+                })
+            };
+            if unsafe { GetAncestor(hit, GA_ROOT) } != hwnd {
+                return Err("Owned video verification area is covered".into());
+            }
+        }
         unsafe {
             let screen = GetDC(None);
             if screen.is_invalid() {
@@ -313,9 +371,17 @@ mod imp {
         action: Action,
         crop: Option<Crop>,
         save: bool,
+        target_label: Option<&str>,
     ) -> Result<Report, String> {
         let app = main.app_handle();
         match action {
+            Action::CloseHostPanel => {
+                main.app_handle()
+                    .get_webview_window(crate::player_host::LABEL)
+                    .ok_or("Video host missing")?
+                    .close()
+                    .map_err(|_| "Cannot close video settings")?;
+            }
             Action::Conceal => conceal(main, state)?,
             Action::Reveal => reveal(main, state)?,
             Action::Open | Action::OpenSurface => {
@@ -407,7 +473,7 @@ mod imp {
                     target.destroy().map_err(|_| "Cannot close mirror probe")?;
                 }
             }
-            Action::Capture => {}
+            Action::Capture | Action::CaptureMain | Action::CaptureScene => {}
         }
         let mut report = Report {
             source_visible: main.is_visible().unwrap_or(false),
@@ -436,8 +502,16 @@ mod imp {
                 }
             }
         }
-        if matches!(action, Action::Capture) {
-            let (data, width, height) = pixels(main)?;
+        if matches!(
+            action,
+            Action::Capture | Action::CaptureMain | Action::CaptureScene
+        ) {
+            let label = match action {
+                Action::CaptureMain => "main",
+                Action::CaptureScene => target_label.unwrap_or("video-scene"),
+                _ => LABEL,
+            };
+            let (data, width, height) = pixels(main, label, crop)?;
             let mut hash = 0xcbf29ce484222325u64;
             let mut non_black = 0;
             for pixel in data.as_chunks::<4>().0 {

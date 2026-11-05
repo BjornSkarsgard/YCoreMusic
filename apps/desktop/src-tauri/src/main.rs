@@ -13,11 +13,13 @@ mod matcher;
 mod media;
 mod mirror_probe;
 mod monitors;
+mod player_host;
 mod power;
 mod scenes;
 mod smart_history;
 mod source;
 mod storage;
+mod video_mirror;
 mod wave_feedback;
 use tauri::Manager;
 mod window_mode;
@@ -105,6 +107,16 @@ async fn catalogue_collection(
 }
 fn main() {
     let mut context = tauri::generate_context!();
+    if player_host::supported() {
+        // All WebViews sharing a WebView2 environment must use identical browser
+        // arguments. App-level play intent still prevents startup/wake autoplay.
+        for window in &mut context.config_mut().app.windows {
+            let args = window
+                .additional_browser_args
+                .get_or_insert_with(String::new);
+            args.push_str(" --autoplay-policy=no-user-gesture-required");
+        }
+    }
     let background_launch = autostart::requested(std::env::args_os().skip(1));
     if background_launch {
         if let Some(window) = context.config_mut().app.windows.first_mut() {
@@ -167,14 +179,22 @@ fn main() {
         .manage(window_mode::WindowMode::default())
         .manage(scenes::Scenes::default())
         .manage(mirror_probe::MirrorProbe::default())
+        .manage(player_host::Host::default())
         .invoke_handler(tauri::generate_handler![
             source_fetch,
             scenes::scene_window,
+            scenes::scene_windows,
             scenes::scene_publish,
             scenes::scene_snapshot,
             scenes::scene_control,
             monitors::monitor_list,
             mirror_probe::mirror_probe,
+            player_host::player_host_status,
+            player_host::player_host_load,
+            player_host::player_host_ready,
+            player_host::player_host_command,
+            player_host::player_host_event,
+            player_host::player_host_mirror,
             wave_feedback::wave_sync,
             source_stations,
             autostart::autostart_status,

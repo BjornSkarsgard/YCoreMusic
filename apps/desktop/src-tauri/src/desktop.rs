@@ -105,6 +105,9 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 pub fn closing(window: &tauri::Window, event: &tauri::WindowEvent) {
+    if crate::player_host::closing(window, event) {
+        return;
+    }
     if crate::scenes::closing(window, event) {
         return;
     }

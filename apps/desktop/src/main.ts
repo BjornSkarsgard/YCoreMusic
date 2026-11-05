@@ -5,6 +5,8 @@ import {mountAuth} from './auth-ui';
 import {mountQueueScroll} from './queue-scroll';
 import {mountWindowLayout} from './window-layout';
 import {mountScenes} from './scene-ui';
+import {hostAvailable,createPlayer} from './player-host';
+import {mountVideoMirror} from './video-mirror';
 import {ListeningMeter,type EndReason,type PlaybackSource} from './listening';
 import {mountAutostart} from './autostart-ui';
 import {mountHistory} from './history-ui';
@@ -157,7 +159,8 @@ function enabled(value: boolean) {
   for (const id of ['play', 'pause', 'back', 'forward','youtube-settings']) element<HTMLButtonElement>(id).disabled = !value;
   if(playIntent||historyStarting)element<HTMLButtonElement>('pause').disabled=false;
 }
-function api(): Promise<void> {
+async function api(): Promise<void> {
+  if(await hostAvailable())return;
   if (window.YT?.Player) return Promise.resolve();
   if (apiPromise) return apiPromise;
   apiPromise = new Promise<void>((resolve, reject) => {
@@ -227,7 +230,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
       if (current === generation && !ready) { ++generation; enabled(false); playerReady = false; player?.destroy(); player = undefined; report('Видео не подготовилось вовремя. Проверьте сеть и повторите загрузку.'); if(networkOffline||restore?.recovery)recoverPlayback();else if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); }
     }, automatic?12000:20000);
     if (!document.getElementById('player')) { const mount = document.createElement('div'); mount.id = 'player'; document.querySelector('.screen')!.prepend(mount); }
-    player = new YT.Player('player', {
+    player = createPlayer('player', {
       width: '100%', height: '100%',
       playerVars: { autoplay: 0, playsinline: 1, controls:youtubeControls?1:0,fs:0,disablekb:1,rel:0,iv_load_policy:3,cc_load_policy:1,origin: location.origin },
       events: {
@@ -813,6 +816,8 @@ mountAutostart();
 mountShellNavigation();
 mountVisualControls();
 mountWindowLayout();
+void mountVideoMirror(document.querySelector<HTMLElement>('.screen')!,()=>[...document.querySelectorAll<HTMLDialogElement>('dialog[open]'),...(document.fullscreenElement&&document.querySelector('.workspace.hud-visible')?[document.querySelector<HTMLElement>('.player-hud')!]:[])],()=>!!element('empty').hidden);
+document.addEventListener('player-host-panel-closed',()=>{if(youtubeControls)element('youtube-settings').click();});
 mountScenes(()=>({generation,videoId:playerReady?activeVideo?.videoId??null:null,title:mediaTitle,artist:mediaArtist,position:playerReady?player?.getCurrentTime()??0:0,duration:playerReady?player?.getDuration()??0:0,playback:playerReady?scenePlayback:-1}));
 updateQueueScroll=mountQueueScroll({eligible:()=>!finiteSource&&!historySource&&!sourceNeedsFresh&&!startingSource&&!!queue.current,generation:()=>queue.generation,count:()=>queue.snapshot.length,ahead:()=>queue.ahead(501).length,load:()=>sourceFetch(false)});
 mountFullscreenControls(document.querySelector<HTMLElement>('.workspace')!,document.querySelector<HTMLElement>('.player-hud')!);

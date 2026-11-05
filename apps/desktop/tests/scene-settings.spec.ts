@@ -7,6 +7,7 @@ test('late initial window status cannot disable a newly opened scene; open and o
    if(command==='source_fetch'||command==='smart_history_fetch')return [];
    if(command==='monitor_list')return [{id:'monitor-tv',name:'TV',stable:true,width:3840,height:2160}];
    if(command==='scene_publish'){w.published.push(args.snapshot);return;}
+   if(command==='scene_windows'){w.windowCalls.push('list');return new Promise(resolve=>w.initialStatus=resolve);}
    if(command==='scene_window'){
     w.windowCalls.push(args.action);
     if(args.action==='status')return new Promise(resolve=>w.initialStatus=resolve);
@@ -18,13 +19,13 @@ test('late initial window status cannot disable a newly opened scene; open and o
  await page.locator('#scene-open').click();await expect(page.locator('#scene-open')).toBeDisabled();
  await page.evaluate(()=>{document.getElementById('scene-open')!.click();(window as any).windowResolve({enabled:true,visible:true,topmost:false});});
  await expect(page.locator('#scene-off')).toBeEnabled();
- await page.evaluate(()=>(window as any).initialStatus({enabled:false,visible:false,topmost:false}));
+ await page.evaluate(()=>(window as any).initialStatus([]));
  await expect(page.locator('#scene-off')).toBeEnabled();await expect.poll(()=>page.evaluate(()=>(window as any).published.length)).toBeGreaterThan(0);
- expect(await page.evaluate(()=>(window as any).windowCalls)).toEqual(['status','open']);
+ expect(await page.evaluate(()=>(window as any).windowCalls)).toEqual(['list','open']);
  await page.locator('#scene-off').click();await expect(page.locator('#scene-open')).toBeDisabled();
  await page.evaluate(()=>(window as any).windowResolve({enabled:false,visible:false,topmost:false}));await expect(page.locator('#scene-open')).toBeEnabled();await expect(page.locator('#scene-off')).toBeDisabled();
  const count=await page.evaluate(()=>(window as any).published.length);await page.waitForTimeout(650);expect(await page.evaluate(()=>(window as any).published.length)).toBe(count);
- expect(await page.evaluate(()=>(window as any).windowCalls)).toEqual(['status','open','off']);
+ expect(await page.evaluate(()=>(window as any).windowCalls)).toEqual(['list','open','off']);
 });
 
 test('monitor selection is explicit and a missing display remains selected instead of moving to another screen',async({page})=>{
@@ -64,6 +65,22 @@ test('screens are discoverable without settings, require an explicit screen and 
  await page.evaluate(()=>(window as any).failDisplays=true);await page.locator('#monitor-refresh').click();await expect(page.locator('#monitor-status')).toContainText('Не удалось');await expect(page.locator('#scene-open')).toBeDisabled();
  await page.evaluate(()=>(window as any).failDisplays=false);await page.locator('#monitor-refresh').click();await expect(page.locator('#scene-open')).toBeEnabled();
  await page.locator('#screens-controls').evaluate((button:HTMLButtonElement)=>button.click());await expect(page.locator('#screens-dialog')).not.toBeVisible();await expect(page.locator('#window-layout')).toHaveValue('controls');
- expect(await page.evaluate(()=>(window as any).sceneActions)).toEqual(['status']);
+ expect(await page.evaluate(()=>(window as any).sceneActions)).toEqual([]);
  await page.locator('[data-panel=settings]').click();await page.getByRole('button',{name:'Настроить экраны'}).click();await expect(page.locator('#screens-dialog')).toBeVisible();
+});
+
+test('opening another monitor keeps the first clip enabled and Off only targets the selected monitor',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.sceneActions=[];w.scenePublishes=0;w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
+  if(command==='source_fetch'||command==='smart_history_fetch'||command==='scene_windows')return [];
+  if(command==='monitor_list')return ['a','b'].map(id=>({id,name:'Экран '+id,stable:true,width:1920,height:1080}));
+  if(command==='scene_publish'){w.scenePublishes++;return;}
+  if(command==='scene_window'){w.sceneActions.push(args);return {enabled:args.action==='open',visible:true,screenId:args.monitorId};}
+ }};});
+ await page.goto('/');await page.locator('#screens').click();
+ await page.locator('#scene-monitor').selectOption('a');await page.locator('#scene-open').click();await expect(page.locator('#scene-off')).toBeEnabled();
+ await page.locator('#scene-monitor').selectOption('b');await expect(page.locator('#scene-off')).toBeDisabled();await page.locator('#scene-open').click();await expect(page.locator('#scene-off')).toBeEnabled();
+ await page.locator('#scene-off').click();await expect(page.locator('#scene-off')).toBeDisabled();await page.locator('#scene-monitor').selectOption('a');await expect(page.locator('#scene-off')).toBeEnabled();
+ await expect(page.locator('#scene-open')).toHaveText('Показать окно снова');
+ const count=await page.evaluate(()=>(window as any).scenePublishes);await expect.poll(()=>page.evaluate(()=>(window as any).scenePublishes)).toBeGreaterThan(count);
+ expect(await page.evaluate(()=>(window as any).sceneActions)).toEqual([{action:'open',monitorId:'a'},{action:'open',monitorId:'b'},{action:'off',monitorId:'b'}]);
 });

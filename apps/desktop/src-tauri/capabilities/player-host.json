@@ -1,0 +1,1 @@
+{"identifier":"player-host","description":"The local sole video engine receives transport events. It cannot access accounts, storage or source commands.","windows":["player-host"],"permissions":["core:event:allow-listen","core:event:allow-unlisten"]}

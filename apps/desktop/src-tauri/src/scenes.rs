@@ -3,8 +3,30 @@ use std::sync::Mutex;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const LABEL: &str = "video-scene";
+fn label_for(monitor_id: Option<&str>) -> Result<String, String> {
+    match monitor_id {
+        None => Ok(LABEL.into()),
+        Some(id)
+            if id.len() == 24
+                && id.starts_with("monitor-")
+                && id[8..].bytes().all(|c| c.is_ascii_hexdigit()) =>
+        {
+            Ok(format!("{LABEL}-{id}"))
+        }
+        _ => Err("Invalid display identity".into()),
+    }
+}
+pub fn is_scene(label: &str) -> bool {
+    label == LABEL
+        || label
+            .strip_prefix("video-scene-")
+            .is_some_and(|id| label_for(Some(id)).is_ok())
+}
 #[derive(Default)]
-pub struct Scenes(Mutex<Option<Snapshot>>);
+pub struct Scenes {
+    snapshot: Mutex<Option<Snapshot>>,
+    operations: tauri::async_runtime::Mutex<()>,
+}
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Snapshot {
@@ -37,6 +59,8 @@ impl Snapshot {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
+    label: Option<String>,
+    screen_id: Option<String>,
     enabled: bool,
     visible: bool,
     topmost: bool,
@@ -45,6 +69,10 @@ pub struct Status {
 }
 fn status(window: Option<WebviewWindow>) -> Status {
     Status {
+        label: window.as_ref().map(|w| w.label().to_owned()),
+        screen_id: window
+            .as_ref()
+            .and_then(|w| w.label().strip_prefix("video-scene-").map(str::to_owned)),
         monitor_id: window.as_ref().and_then(crate::monitors::current_id),
         enabled: window.is_some(),
         visible: window
@@ -69,6 +97,7 @@ pub enum WindowAction {
 #[tauri::command]
 pub async fn scene_window(
     window: WebviewWindow,
+    state: tauri::State<'_, Scenes>,
     action: WindowAction,
     monitor_id: Option<String>,
 ) -> Result<Status, String> {
@@ -76,8 +105,13 @@ pub async fn scene_window(
         return Err("Untrusted window".into());
     }
     let app = window.app_handle();
+    let label = label_for(monitor_id.as_deref())?;
+    let _operation = state.operations.lock().await;
     match action {
         WindowAction::Open => {
+            if !crate::player_host::supported() {
+                return Err("Local video mirrors are not available on this platform yet".into());
+            }
             if let Some(id) = monitor_id.as_deref() {
                 if !crate::monitors::list(&window)?
                     .iter()
@@ -86,11 +120,11 @@ pub async fn scene_window(
                     return Err("Selected display is disconnected".into());
                 }
             }
-            if let Some(scene) = app.get_webview_window(LABEL) {
+            if let Some(scene) = app.get_webview_window(&label) {
                 scene.show().map_err(|_| "Cannot show scene")?;
                 scene.unminimize().map_err(|_| "Cannot restore scene")?;
             } else {
-                WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("scene.html".into()))
+                WebviewWindowBuilder::new(app, &label, WebviewUrl::App("scene.html".into()))
                     .title("YCore Music · Клип")
                     .inner_size(960.0, 600.0)
                     .min_inner_size(360.0, 260.0)
@@ -119,20 +153,24 @@ pub async fn scene_window(
                     .map_err(|_| "Cannot create scene window")?;
             }
             if let Some(id) = monitor_id.as_deref() {
-                if let Some(scene) = app.get_webview_window(LABEL) {
+                if let Some(scene) = app.get_webview_window(&label) {
                     crate::monitors::place(&scene, id)?;
                 }
             }
         }
         WindowAction::Off => {
-            if let Some(scene) = app.get_webview_window(LABEL) {
+            if let Some(scene) = app.get_webview_window(&label) {
+                app.state::<crate::player_host::Host>()
+                    .mirrors
+                    .remove(&label);
                 scene.destroy().map_err(|_| "Cannot disable scene")?;
                 // Destruction is queued on the platform event loop. Do not report the
                 // stale window registry entry as still enabled after a successful Off.
                 let app = app.clone();
+                let closing_label = label.clone();
                 tauri::async_runtime::spawn_blocking(move || {
                     for _ in 0..100 {
-                        if app.get_webview_window(LABEL).is_none() {
+                        if app.get_webview_window(&closing_label).is_none() {
                             return Ok(());
                         }
                         std::thread::sleep(std::time::Duration::from_millis(20));
@@ -145,7 +183,21 @@ pub async fn scene_window(
         }
         WindowAction::Status => {}
     }
-    Ok(status(app.get_webview_window(LABEL)))
+    Ok(status(app.get_webview_window(&label)))
+}
+
+#[tauri::command]
+pub fn scene_windows(window: WebviewWindow) -> Result<Vec<Status>, String> {
+    if window.label() != "main" {
+        return Err("Untrusted window".into());
+    }
+    Ok(window
+        .app_handle()
+        .webview_windows()
+        .into_values()
+        .filter(|w| is_scene(w.label()))
+        .map(|w| status(Some(w)))
+        .collect())
 }
 
 #[tauri::command]
@@ -160,7 +212,7 @@ pub fn scene_publish(
     if !snapshot.valid() {
         return Err("Invalid scene snapshot".into());
     }
-    let mut latest = state.0.lock().map_err(|_| "Scene unavailable")?;
+    let mut latest = state.snapshot.lock().map_err(|_| "Scene unavailable")?;
     if latest
         .as_ref()
         .is_some_and(|last| last.revision >= snapshot.revision)
@@ -169,7 +221,12 @@ pub fn scene_publish(
     }
     *latest = Some(snapshot.clone());
     drop(latest);
-    if let Some(scene) = window.app_handle().get_webview_window(LABEL) {
+    for scene in window
+        .app_handle()
+        .webview_windows()
+        .into_values()
+        .filter(|w| is_scene(w.label()))
+    {
         let visible = scene.is_visible().unwrap_or(false) && !scene.is_minimized().unwrap_or(false);
         scene
             .emit(
@@ -186,10 +243,14 @@ pub fn scene_snapshot(
     window: WebviewWindow,
     state: tauri::State<'_, Scenes>,
 ) -> Result<Option<Snapshot>, String> {
-    if window.label() != LABEL {
+    if !is_scene(window.label()) {
         return Err("Untrusted window".into());
     }
-    Ok(state.0.lock().map_err(|_| "Scene unavailable")?.clone())
+    Ok(state
+        .snapshot
+        .lock()
+        .map_err(|_| "Scene unavailable")?
+        .clone())
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
@@ -207,7 +268,7 @@ pub enum Control {
 
 #[tauri::command]
 pub fn scene_control(window: WebviewWindow, action: Control) -> Result<Status, String> {
-    if window.label() != LABEL {
+    if !is_scene(window.label()) {
         return Err("Untrusted window".into());
     }
     match action {
@@ -257,11 +318,15 @@ pub fn scene_control(window: WebviewWindow, action: Control) -> Result<Status, S
 }
 
 pub fn closing(window: &tauri::Window, event: &tauri::WindowEvent) -> bool {
-    if window.label() != LABEL {
+    if !is_scene(window.label()) {
         return false;
     }
     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
         api.prevent_close();
+        window
+            .state::<crate::player_host::Host>()
+            .mirrors
+            .remove(window.label());
         let _ = window.hide();
         let _ = window.emit("scene-hidden", ());
     }
@@ -271,6 +336,25 @@ pub fn closing(window: &tauri::Window, event: &tauri::WindowEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn scene_identity_is_bound_to_a_display_and_never_a_source_or_account_window() {
+        let first = label_for(Some("monitor-0123456789abcdef")).unwrap();
+        let second = label_for(Some("monitor-fedcba9876543210")).unwrap();
+        assert_ne!(first, second);
+        assert!(is_scene(&first));
+        assert!(is_scene(&second));
+        for label in [
+            "main",
+            "player-host",
+            "auth",
+            "video-scene-auth",
+            "video-scene-monitor-../../",
+            "video-scene-monitor-0123",
+        ] {
+            assert!(!is_scene(label));
+        }
+        assert!(label_for(Some("missing-display")).is_err());
+    }
     #[test]
     fn snapshot_rejects_arbitrary_urls_and_invalid_timeline() {
         let mut value = Snapshot {

@@ -25,7 +25,7 @@ async function execute(script,args=[]) {return request('/session/'+session+'/exe
 async function until(script,timeout=25000) {
   const end=Date.now()+timeout;
   do {if(await execute(script))return;await sleep(250);}while(Date.now()<end);
-  const diagnostic=await execute('return {status:document.getElementById("status")?.textContent,source:document.getElementById("source-status")?.textContent,scene:document.getElementById("scene-status")?.textContent,sceneWindow:document.getElementById("scene-window-status")?.textContent,errors:window.nativeErrors}');
+  const diagnostic=await execute('return {status:document.getElementById("status")?.textContent,source:document.getElementById("source-status")?.textContent,scene:document.getElementById("scene-status")?.textContent,sceneWindow:document.getElementById("scene-window-status")?.textContent,hostFailure:document.body.dataset.playerHostFailure,errors:window.nativeErrors}');
   throw new Error('Native condition timed out: '+script+' '+JSON.stringify(diagnostic));
 }
 async function nativeInvoke(cmd,args={}){return request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke(arguments[0],arguments[1]).then(done).catch(()=>done(null));',args:[cmd,args]});}
@@ -274,6 +274,101 @@ try {
     // Keep the native helper's settled parent/controller size for later mini tests.
     await sleep(500);
     console.log('Native theme across '+displays.length+' connected monitors, actual Windows DPI scales '+JSON.stringify(scales)+': PASS');
+  }
+  if(process.env.ENCORE_SINGLE_HOST_SMOKE==='1') {
+    assert.equal((await nativeInvoke('player_host_status')).supported,true,'Build with --features single-player-host');
+    const verificationDisplays=await nativeInvoke('monitor_list');const verificationDisplay=verificationDisplays.find(display=>!display.primary)??verificationDisplays[0];
+    if(verificationDisplay)await nativeInvoke('window_test_monitor',{monitorId:verificationDisplay.id});
+    await nativeInvoke('window_topmost',{enabled:true});await nativeInvoke('desktop_action',{action:'open'});await sleep(600);
+    const mainHandle=await request('/session/'+session+'/window');
+    await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
+    await until('return !document.getElementById("play").disabled',35000);
+    assert.equal(await execute('return document.querySelectorAll("iframe").length'),0,'The controller must never contain a YouTube iframe');
+    const handles=await request('/session/'+session+'/window/handles');assert.equal(handles.length,2,'Only controller and sole engine should exist');
+    const sourceHandle=handles.find(handle=>handle!==mainHandle);const switchTo=handle=>request('/session/'+session+'/window',{handle});
+    await switchTo(sourceHandle);await until('return document.querySelectorAll("iframe").length===1');
+    assert.equal(await nativeInvoke('storage_command',{request:{type:'status'}}),null,'Sole engine cannot access personal storage');
+    assert.equal(await nativeInvoke('source_fetch',{fresh:true}),null,'Sole engine cannot create recommendation sessions');
+    const readEngine=async script=>{await switchTo(sourceHandle);const frame=await request('/session/'+session+'/element',{using:'css selector',value:'iframe'});await request('/session/'+session+'/frame',{id:frame});try{return await execute(script);}finally{await request('/session/'+session+'/frame',{id:null});await switchTo(mainHandle);}};
+    assert.notEqual(await readEngine('return document.getElementById("movie_player")?.getPlayerState?.()'),1,'Engine must cue without autoplay');
+    await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"',30000);
+    await until('return Number(document.getElementById("seek").value)>1',20000);
+    assert.equal((await nativeInvoke('player_host_status')).players,1);
+    assert.equal((await nativeInvoke('player_host_status')).sourceAlpha,0);assert.equal((await nativeInvoke('player_host_status')).clickThrough,true);
+    const epoch=(await nativeInvoke('player_host_status')).epoch;
+    await execute('document.getElementById("seek").value="30";document.getElementById("seek").dispatchEvent(new Event("input"));document.getElementById("seek").dispatchEvent(new Event("change"));');
+    await until('return Number(document.getElementById("seek").value)>31',20000);
+    await nativeInvoke('window_topmost',{enabled:true});await sleep(500);
+    const center=await execute('const r=document.querySelector(".screen").getBoundingClientRect();return {x:r.x+r.width/2-80,y:r.y+r.height/2-80,width:160,height:160}');
+    const first=await nativeInvoke('mirror_probe',{action:'capture_main',crop:center});let second;
+    for(let attempt=0;attempt<12;attempt++){await sleep(200);second=await nativeInvoke('mirror_probe',{action:'capture_main',crop:center,save:true});if(second?.frameHash!==first?.frameHash)break;}
+    if(!first||first.nonBlackRatio<=.02||second?.frameHash===first.frameHash){
+      await switchTo(sourceHandle);writeFileSync(resolve(root,'.tools/player-host-source.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));await switchTo(mainHandle);
+      writeFileSync(resolve(root,'.tools/player-host-controller.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
+    }
+    assert(first&&Math.max(first.nonBlackRatio??0,second?.nonBlackRatio??0)>.02&&second?.frameHash!==first.frameHash,'Main mirror must contain changing real video: '+JSON.stringify({first,second,host:await nativeInvoke('player_host_status'),engine:await readEngine('const p=document.getElementById("movie_player");return {position:p.getCurrentTime(),state:p.getPlayerState(),duration:p.getDuration(),quality:p.getPlaybackQuality(),expectedVideo:p.getVideoData()?.video_id==="aqz-KE-bpKQ"};')}));
+    const dialogCrop=await execute('const dialog=document.createElement("dialog");dialog.id="native-mirror-dialog";dialog.style="background:rgb(255,0,0);color:rgb(255,0,0);width:180px;height:120px;padding:0;border:0";document.body.append(dialog);dialog.showModal();const r=dialog.getBoundingClientRect();return {x:r.x+r.width/2-20,y:r.y+r.height/2-20,width:40,height:40};');
+    let dialogPixels;for(let attempt=0;attempt<30;attempt++){dialogPixels=await nativeInvoke('mirror_probe',{action:'capture_main',crop:dialogCrop});if(dialogPixels?.centerRgb?.[0]>240&&dialogPixels.centerRgb[1]<20)break;await sleep(100);}
+    if(!(dialogPixels?.centerRgb?.[0]>240&&dialogPixels.centerRgb[1]<20)){await nativeInvoke('mirror_probe',{action:'capture_main',save:true});console.log('Native dialog crop '+JSON.stringify({crop:dialogCrop,actual:await execute('const d=document.getElementById("native-mirror-dialog");return {rect:d.getBoundingClientRect().toJSON(),dpi:devicePixelRatio};')}));}
+    assert(dialogPixels?.centerRgb?.[0]>240&&dialogPixels.centerRgb[1]<20,'Native mirror must leave the HTML dialog uncovered: '+JSON.stringify({pixels:dialogPixels,host:await nativeInvoke('player_host_status'),failure:await execute('return document.body.dataset.videoMirrorFailure')}));
+    await execute('document.getElementById("native-mirror-dialog").close();document.getElementById("native-mirror-dialog").remove();');
+    await nativeInvoke('window_topmost',{enabled:false});
+    await click('pause');await until('return document.getElementById("status").textContent==="Пауза"');
+    for(let attempt=0;attempt<30;attempt++){if(await readEngine('return document.getElementById("movie_player").getPlayerState()')===2)break;await sleep(100);}
+    const paused=await readEngine('const p=document.getElementById("movie_player");return p.getPlayerState()===2?p.getCurrentTime():null;');assert.notEqual(paused,null,'The actual engine must confirm Pause before stability sampling');await sleep(800);const afterPause=await readEngine('const p=document.getElementById("movie_player");return {position:p.getCurrentTime(),state:p.getPlayerState()};');assert.equal(afterPause.state,2);assert(Math.abs(afterPause.position-paused)<.15,'Paused engine drifted: '+JSON.stringify({paused,afterPause}));
+    await click('forward');await until('return Number(document.getElementById("seek").value)>='+Math.floor(paused+4));
+    await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"');
+    if(await execute('return !document.getElementById("captions").disabled && document.getElementById("captions").options.length>1')){
+      await execute('const select=document.getElementById("captions");select.selectedIndex=1;select.dispatchEvent(new Event("change"));');
+      let captionsOn=false;for(let attempt=0;attempt<30;attempt++){if(await readEngine('return document.getElementById("movie_player")?.isSubtitlesOn?.()')===true){captionsOn=true;break;}await sleep(100);}assert(captionsOn,'Source engine must apply caption selection from controller');
+      await execute('document.getElementById("captions").value="off";document.getElementById("captions").dispatchEvent(new Event("change"));');
+    }else console.log('Native current clip offers no caption tracks; actual caption on/off is not asserted in this run');
+    const settingsRows=(await store({type:'history',query:''})).length;
+    await click('youtube-settings');await until('return document.getElementById("status").textContent==="Воспроизведение"',30000);
+    assert.equal((await nativeInvoke('player_host_status')).sourceAlpha,255);assert.equal((await nativeInvoke('player_host_status')).players,1);
+    await nativeInvoke('mirror_probe',{action:'close_host_panel'});await until('return document.getElementById("youtube-settings").getAttribute("aria-pressed")==="false" && document.getElementById("status").textContent==="Воспроизведение"',30000);
+    assert.equal((await nativeInvoke('player_host_status')).sourceAlpha,0);assert.equal((await nativeInvoke('player_host_status')).clickThrough,true);assert.equal((await store({type:'history',query:''})).length,settingsRows,'Panel transition must retain one listening record');
+    await nativeInvoke('desktop_action',{action:'open'});await execute('document.getElementById("fullscreen").scrollIntoView({block:"center"})');await sleep(250);
+    const fullscreenPoint=await execute('const r=document.getElementById("fullscreen").getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};');
+    // Native WebView2 window switching can leave EdgeDriver's OS mouse origin at
+    // the former window. Dispatch a trusted click in this controller's viewport.
+    for(const type of ['mousePressed','mouseReleased'])await request('/session/'+session+'/ms/cdp/execute',{cmd:'Input.dispatchMouseEvent',params:{type,...fullscreenPoint,button:'left',clickCount:1}});
+    await until('return !!document.fullscreenElement');
+    await request('/session/'+session+'/actions',{actions:[{type:'pointer',id:'native-host-hud',parameters:{pointerType:'mouse'},actions:[{type:'pointerMove',duration:50,origin:'viewport',x:100,y:100}]}]});
+    await until('return document.querySelector(".workspace").classList.contains("hud-visible")');
+    const hudCrop=await execute('const hud=document.querySelector(".player-hud");hud.style.background="rgb(255,0,0)";const r=hud.getBoundingClientRect();return {x:r.x+r.width/2-16,y:r.y+6-16,width:32,height:32};');
+    await sleep(400);const hudPixels=await nativeInvoke('mirror_probe',{action:'capture_main',crop:hudCrop});assert(hudPixels?.centerRgb?.[0]>240&&hudPixels.centerRgb[1]<20,'Fullscreen controls must remain above mirrored video');
+    await execute('document.querySelector(".player-hud").style.background="";document.exitFullscreen();');await until('return !document.fullscreenElement');
+    const mirrorEpoch=(await nativeInvoke('player_host_status')).epoch;
+    const sceneDisplay=(await nativeInvoke('monitor_list'))[0];await click('screens');await until('return !document.getElementById("monitor-refresh").disabled');await execute('document.getElementById("scene-monitor").value=arguments[0];document.getElementById("scene-monitor").dispatchEvent(new Event("change"));',[sceneDisplay.id]);await until('return !document.getElementById("scene-open").disabled');await click('scene-open');await until('return !document.getElementById("scene-off").disabled');await click('screens-close');
+    const withScene=await request('/session/'+session+'/window/handles');assert.equal(withScene.length,3);const sceneHandle=withScene.find(handle=>!handles.includes(handle));
+    await switchTo(sceneHandle);await until('return !!document.getElementById("scene-title")');assert.equal(await execute('return document.querySelectorAll("iframe").length'),0,'Video window must only mirror the engine');
+    await switchTo(mainHandle);
+    const firstScenes=await nativeInvoke('scene_windows');assert.equal(firstScenes.length,1);assert.equal(firstScenes[0].screenId,sceneDisplay.id);
+    const extraDisplay=verificationDisplays.find(display=>display.id!==sceneDisplay.id&&display.id!==verificationDisplay?.id)??verificationDisplays.find(display=>display.id!==sceneDisplay.id);
+    if(extraDisplay){
+      const extra=await nativeInvoke('scene_window',{action:'open',monitorId:extraDisplay.id});assert(extra?.enabled&&extra.screenId===extraDisplay.id,'Second monitor must open an independent local mirror');
+      const both=await nativeInvoke('scene_windows');assert.equal(both.length,2);assert(both.some(value=>value.label===firstScenes[0].label&&value.monitorId===firstScenes[0].monitorId),'Opening another monitor must not move the first window');
+      const allHandles=await request('/session/'+session+'/window/handles');const extraHandle=allHandles.find(handle=>!withScene.includes(handle));assert(extraHandle);
+      await switchTo(extraHandle);await until('return !!document.getElementById("scene-title")');assert.equal(await execute('return document.querySelectorAll("iframe,script[src*=youtube]").length'),0);
+      await nativeInvoke('scene_control',{action:{type:'topmost'}});await sleep(500);
+      const extraCrop=await execute('return {x:innerWidth/2-64,y:innerHeight/2-64,width:128,height:128}');
+      await switchTo(mainHandle);
+      const extraFirst=await nativeInvoke('mirror_probe',{action:'capture_scene',targetLabel:extra.label,crop:extraCrop});let extraSecond;
+      for(let attempt=0;attempt<20;attempt++){await sleep(200);extraSecond=await nativeInvoke('mirror_probe',{action:'capture_scene',targetLabel:extra.label,crop:extraCrop});if(extraFirst&&extraSecond&&extraFirst.frameHash!==extraSecond.frameHash)break;}
+      assert(extraFirst&&extraSecond&&Math.max(extraFirst.nonBlackRatio,extraSecond.nonBlackRatio)>.02&&extraFirst.frameHash!==extraSecond.frameHash,'A second monitor must show changing real local video');
+      assert.equal((await nativeInvoke('player_host_status')).players,1);assert.equal((await nativeInvoke('player_host_status')).epoch,mirrorEpoch);
+      assert.equal((await nativeInvoke('scene_window',{action:'off',monitorId:extraDisplay.id})).enabled,false);
+      const remaining=await nativeInvoke('scene_windows');assert.equal(remaining.length,1);assert.equal(remaining[0].label,firstScenes[0].label);
+      console.log('Native two independent monitor mirrors, changing real second-screen pixels, zero extra YouTube frames and targeted Off: PASS');
+    }
+    await switchTo(mainHandle);await execute('document.getElementById("window-layout").value="controls";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
+    if((await nativeInvoke('desktop_status')).tray_available){const before=await execute('return Number(document.getElementById("seek").value)');await nativeInvoke('desktop_close');await sleep(3500);assert((await execute('return Number(document.getElementById("seek").value)'))>=before+2,'Hiding controller must not stop the sole engine');await nativeInvoke('desktop_action',{action:'open'});}
+    assert.equal((await nativeInvoke('player_host_status')).epoch,mirrorEpoch,'Layout and mirrors must not recreate the engine');
+    await switchTo(sceneHandle);await nativeInvoke('scene_control',{action:{type:'toggle'}});await switchTo(mainHandle);await until('return document.getElementById("status").textContent==="Пауза"');
+    await click('scene-off');await until('return document.getElementById("scene-off").disabled && !document.getElementById("scene-open").disabled');
+    await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
+    console.log('Native sole YouTube engine: noautoplay, one iframe, main/video mirrors, IPC guards, play/pause/seek, controls/tray continuity and shared pause: PASS (volume0)');
   }
   if(process.env.ENCORE_CONTROLS_SMOKE==='1') {
     await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
@@ -677,6 +772,11 @@ try {
     console.log('Native normal Quit finalizes persisted listening before process exit: PASS');
   }
  } catch(error) {
+  if(isolated&&session&&process.env.ENCORE_SINGLE_HOST_SMOKE==='1'){
+    const diagnostic=await execute('const e=document.getElementById("fullscreen"),r=e?.getBoundingClientRect();return {fullscreen:!!document.fullscreenElement,rect:r?.toJSON(),viewport:{width:innerWidth,height:innerHeight},hit:r?document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML?.slice(0,300):null,mirrorFailure:document.body.dataset.videoMirrorFailure};').catch(()=>null);
+    console.log('Owned native host verification state: '+JSON.stringify(diagnostic));
+    const screenshot=await request('/session/'+session+'/screenshot').catch(()=>null);if(screenshot)writeFileSync(resolve(root,'.tools/player-host-failure.png'),Buffer.from(screenshot,'base64'));
+  }
   if(process.platform==='linux'&&isolated){
     const details=[];
     for(const args of [['-root','_NET_SUPPORTING_WM_CHECK'],['-name','YCore Music · нативная проверка','_NET_WM_STATE','_NET_WM_WINDOW_TYPE']]){

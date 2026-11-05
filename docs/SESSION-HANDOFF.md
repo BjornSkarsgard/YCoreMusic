@@ -1,5 +1,15 @@
 # YCore Music — активный контекст, 2026-11-05
 
+## Возобновлена автономная работа: REQ-056/057 Windows mirrors
+
+Обновление: повторный native session10978 завершился PASS целиком, затем readScenes refresh прошёл targeted4PASS. Normal debug YCoreMusic.exe успешно собран на прежнем пути. Ничего не poll по старым session IDs. Следующий этап — hotplug/persistence; stash НЕ применять. Подробности в docs16.
+
+Пользователь «работай самостоятельно по списку, меня не жди». Сначала 90e4084 добавлена кнопка Экраны/main-modal с шагами monitor→content, фокус/Esc/stickyfooter и блокировка disconnected. Затем выборочно восстановлены host WIP файлы из stash (НЕ pop), адаптированы к YCore/theme. Windows теперь один технический player-host (source) + DWM mirrors main и независимых video-scene-monitor-{hash}; никакого sceneYT. Default Cargofeature single-player-host поддерживаетWindows, наLinux/macOS остаётсяодинвстроенныйплеер, сцены не подменять2iframe. Служебное окноOS-visiblealpha0/clickthrough/noactivate/skipTaskbar. ПорядокTaurisetters→UIthreadnativealpha исправил реальныйrace. HosttransportserializedPromise, nativeepoch/sequenceguards. Sourcecapтолькоeventlisten, nativeguards не дают аккаунты/storage/source. Nativepixelprobe теперь проверяет принадлежность области перед GetDC, отказывается от перекрытых областей.
+
+Уже прошёл полный nativeENCORE_SINGLE_HOST_SMOKE: реальныйaqzvolume0,1sourceiframe,0main/scene,2дополнительныхмонитора,движущиесяпикселивторогозеркала,targetedOffсохраняетпервое,sourceepochнепересоздаётсяотокон/CONTROLS/tray,реальныеpause/seek,qualitypanelalpha255→0,HTMLdialog/fullHUDнеперекрыты,mini/maximized/topmost/singleinstance. Windows10build19045, неWin11. CCнетуэтогоклипа—неутверждатьliveCCpass. После добавления Promise сериализации идёт повторный native session10978; poll. Fullrenderer100PASS/1skip, Rust60PASS/9ignored,fmtClippyPASS; затем readScenes refresh добавлен (нужноtargetedrerun). Normalbinary ещё не пересобран после host. Документы16/ADR036/status обновлены. Следующий шаг: дождаться native, normalbuild,push,проверитьCI; затемhotplug/persistenceсцен и S6realcapture длявизуализаторов. Stashисторическийнеприменятьповторно.
+
+Новая поддержка Mac обсуждалась: userпошутил«пустьэкспериментальной» и сразуотменилшутку. ПриоритетыНЕменять, macOS остаётсявплане, реальнуюготовностьопределятьпроверками. GitHub ужеимеетIntel/ARMmacjobs; свояMacмашинапоканенужнадлясборок, физическиесцены/звукпозжетестироватьнаудалённом/уbetausers. ПКневыключать, нормальныйuserпроцесснеубивать, subagentsнеразрешены.
+
 ## Последнее уточнение: вывод на телевизор трудно найти
 
 Пользователь: функция спрятана в настройках. Требуется заметный вход из основного окна в управление экранами, далее шаги REQ-057 «экран → клип/визуализатор → тип». Зафиксировано в docs01/docs11. Конкретное расположение ещё выбрать; существующую сетку без необходимости не перестраивать. Это про доступные мониторы/телевизоры, не согласование Chromecast/AirPlay/сетевого casting. Сейчас запись задачи, не реализация.
