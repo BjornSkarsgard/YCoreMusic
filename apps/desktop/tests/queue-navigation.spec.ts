@@ -44,7 +44,7 @@ test('jumping back defeats a pending Next while its new batch still appends to t
  await page.locator('#queue-list li[data-ordinal="1"] button').click();await expect(page.locator('#track-title')).toHaveText('Song 2');
  await page.locator('#queue-next').click();await page.locator('#queue-list li[data-ordinal="0"] button').click();await expect(page.locator('#track-title')).toHaveText('Song 1');
  await page.evaluate(()=>(window as any).releaseMore());await expect.poll(()=>page.locator('#queue-list li').count()).toBeGreaterThan(2);await expect(page.locator('#queue-list li[aria-current=true]')).toHaveAttribute('data-ordinal','0');
- expect(await page.evaluate(()=>(window as any).played.at(-1))).toBe('vvvvvvvvvv1');
+ await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe('vvvvvvvvvv1');
 });
 test('scrolling near the bottom loads one batch without autoplay, cursor change or scroll reset',async({page})=>{
  await setup(page,{initial:30,holdMore:true,failFirst:false,holdMatch:false});const pane=page.locator('.panel-scroll');
