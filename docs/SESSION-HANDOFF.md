@@ -1,5 +1,13 @@
 # YCore Music — активный контекст, 2026-11-05
 
+## Следующий готовый срез: persistence и simulated hotplug
+
+Новый scene_layout.rs + интеграция main/scenes/desktop готовы: scene-layouts.json per stableID, размер/позиция logical относительно workarea, mode/topmost/hidden, atomicwrite, future/corrupt blocked, 1s reconcile, no reassignment on unplug, revisionguard позднегоrestore противOff. UI offlineoption+выключение+ошибка сохранения. Нормальная debug сборка успешно обновлена по прежнему пути. Rust62PASS/9ignored,fmtClippyPASS, renderer101PASS/1skip (102total). Native ENCORE_SINGLE_HOST_SMOKE=1 + ENCORE_SCENE_LAYOUT_SMOKE=1 ПОЛНОСТЬЮ PASS: simulateddisconnectreconnectбезOSchanges, realQuit→relaunch→windowrestoredнапрежнеммониторе,noautoplay,targetedOff,mini/topmost/singleinstance. Все sessions37807/83348/65109/82405 завершены, не poll. Физический HDMI unplug НЕпроверен. Docs17/ADR037/status добавлены. Сохранять этотсрезcommit/pushсейчас.
+
+5f459a6 (singleengine) CI42075812252: Windows/обаmacjobsPASS, Ubuntuещёinprogress. Macнеобъявлятьruntimeготовым. Старыйstash@{0}историческийНЕpop. Userпо-прежнемуавтономно«меня нежди».
+
+Далее по списку: realS6 audio capture spike длявизуализаторов (ничегофейкового) или REQ063предпочтения/исключенияклипов. УжеисследованMicrosoftofficialprocessloopback sample https://learn.microsoft.com/en-us/samples/microsoft/windows-classic-samples/applicationloopbackaudio-sample/ пишетbuild20348+, наштестWin10build19045. Это НЕдоказанныйблокер: OBSможетподдерживатьbackportна19041+, нужнофактическипроверитьActivateAudioInterfaceAsync, анеотключатьпоодномуномеруbuild. Volume0вYTможетобнулитьloopbackдоOSmixer—реальныйспайкобязателен, отдельныйпрототипнепереустраиватьзвукрабочегопродуктабезрезультата. Пока UIvisualizerdisabledчестно.
+
 ## Возобновлена автономная работа: REQ-056/057 Windows mirrors
 
 Обновление: повторный native session10978 завершился PASS целиком, затем readScenes refresh прошёл targeted4PASS. Normal debug YCoreMusic.exe успешно собран на прежнем пути. Ничего не poll по старым session IDs. Следующий этап — hotplug/persistence; stash НЕ применять. Подробности в docs16.

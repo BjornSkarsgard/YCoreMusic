@@ -84,3 +84,18 @@ test('opening another monitor keeps the first clip enabled and Off only targets 
  const count=await page.evaluate(()=>(window as any).scenePublishes);await expect.poll(()=>page.evaluate(()=>(window as any).scenePublishes)).toBeGreaterThan(count);
  expect(await page.evaluate(()=>(window as any).sceneActions)).toEqual([{action:'open',monitorId:'a'},{action:'open',monitorId:'b'},{action:'off',monitorId:'b'}]);
 });
+
+test('a saved disconnected screen can be switched off and persistence errors remain visible',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
+  if(command==='source_fetch'||command==='smart_history_fetch')return [];
+  if(command==='monitor_list')return [{id:'main',name:'Main',stable:true,width:1920,height:1080}];
+  if(command==='scene_windows')return w.sceneOff?[]:[{enabled:true,visible:false,screenId:'missing',detached:true}];
+  if(command==='scene_layout_status')return {persistenceError:true,waiting:1};
+  if(command==='scene_window'){w.sceneOff=args.monitorId==='missing'&&args.action==='off';return {enabled:false,visible:false};}
+ }};});
+ await page.goto('/');await page.locator('#screens').click();await page.locator('#scene-monitor').selectOption('missing');
+ await expect(page.locator('#scene-open')).toBeDisabled();await expect(page.locator('#scene-off')).toBeEnabled();await expect(page.locator('#scene-window-status')).toContainText('Экран отключён');
+ await expect(page.locator('#scene-layout-status')).toContainText('Не удалось сохранить');await page.locator('#scene-off').click();await expect(page.locator('#scene-off')).toBeDisabled();
+ expect(await page.evaluate(()=>(window as any).sceneOff)).toBe(true);expect(errors).toEqual([]);
+});

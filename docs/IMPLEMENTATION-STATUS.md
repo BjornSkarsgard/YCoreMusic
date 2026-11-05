@@ -1,5 +1,9 @@
 # Статус реализации YCore Music
 
+## Восстановление сцен — 2026-11-05
+
+Добавлены сохранение независимых окон по стабильному monitor ID, восстановление без autoplay, hidden/OFF/tray intent и ожидание отключённого экрана без переноса на другой. Native тест прошёл настоящее приложение Quit→новый запуск и симулированный disconnect/reconnect с реальными окнами/видео; настройки ОС не менялись. Физический HDMI hotplug ещё не проверен. Пределы, поля и команды — [17-SCENE-LAYOUT-RECOVERY.md](17-SCENE-LAYOUT-RECOVERY.md). Визуализаторы/S6 и остальные пункты backlog следующие; заявления старых разделов о незавершённой persistence относятся к предыдущему срезу.
+
 ## Один плеер и независимые зеркала экранов — 2026-11-05
 
 REQ-056 реализован на Windows: единственный YouTube engine в прозрачном click-through окне, main и сцены — DWM-зеркала. REQ-057: заметная кнопка «Экраны», явный выбор монитора, независимые окна клипа по monitor ID, targeted Off без переноса остальных, CONTROLS в основном окне. Два дополнительных окна на реальных мониторах проверены с меняющимися пикселями, 0 дополнительных iframe и одним source; play/pause/seek, quality-panel→alpha0, HUD/dialog, tray/mini/topmost/singleinstance PASS. Renderer100PASS/1skip, Rust60PASS/9ignored, fmt/ClippyPASS. Подробности/границы и команды в [16-SINGLE-PLAYER-MIRRORS.md](16-SINGLE-PLAYER-MIRRORS.md). Sourcehost по умолчанию только Windows; Linux/macOS пока один встроенный плеер без дополнительных зеркал. Визуализаторы/S6, hotplug и persistence ещё не реализованы. Старые записи ниже — история промежуточных срезов; stash повторно не применять.

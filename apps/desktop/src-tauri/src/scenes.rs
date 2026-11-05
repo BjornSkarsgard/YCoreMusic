@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const LABEL: &str = "video-scene";
-fn label_for(monitor_id: Option<&str>) -> Result<String, String> {
+pub(crate) fn label_for(monitor_id: Option<&str>) -> Result<String, String> {
     match monitor_id {
         None => Ok(LABEL.into()),
         Some(id)
@@ -26,6 +26,7 @@ pub fn is_scene(label: &str) -> bool {
 pub struct Scenes {
     snapshot: Mutex<Option<Snapshot>>,
     operations: tauri::async_runtime::Mutex<()>,
+    pub(crate) layouts: Mutex<crate::scene_layout::Layouts>,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -59,16 +60,20 @@ impl Snapshot {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Status {
-    label: Option<String>,
-    screen_id: Option<String>,
-    enabled: bool,
-    visible: bool,
-    topmost: bool,
-    fullscreen: bool,
-    monitor_id: Option<String>,
+    pub(crate) label: Option<String>,
+    pub(crate) screen_id: Option<String>,
+    pub(crate) enabled: bool,
+    pub(crate) visible: bool,
+    pub(crate) topmost: bool,
+    pub(crate) fullscreen: bool,
+    pub(crate) monitor_id: Option<String>,
+    pub(crate) detached: bool,
 }
 fn status(window: Option<WebviewWindow>) -> Status {
     Status {
+        detached: window
+            .as_ref()
+            .is_some_and(crate::scene_layout::is_detached),
         label: window.as_ref().map(|w| w.label().to_owned()),
         screen_id: window
             .as_ref()
@@ -97,35 +102,48 @@ pub enum WindowAction {
 #[tauri::command]
 pub async fn scene_window(
     window: WebviewWindow,
-    state: tauri::State<'_, Scenes>,
     action: WindowAction,
     monitor_id: Option<String>,
 ) -> Result<Status, String> {
     if window.label() != "main" {
         return Err("Untrusted window".into());
     }
+    change(&window, action, monitor_id, None).await
+}
+pub(crate) async fn change(
+    window: &WebviewWindow,
+    action: WindowAction,
+    monitor_id: Option<String>,
+    restore: Option<crate::scene_layout::Restore>,
+) -> Result<Status, String> {
     let app = window.app_handle();
+    let state = window.state::<Scenes>();
     let label = label_for(monitor_id.as_deref())?;
     let _operation = state.operations.lock().await;
+    if restore
+        .as_ref()
+        .is_some_and(|restore| !crate::scene_layout::restore_current(&state, restore))
+    {
+        return Ok(status(app.get_webview_window(&label)));
+    }
     match action {
         WindowAction::Open => {
             if !crate::player_host::supported() {
                 return Err("Local video mirrors are not available on this platform yet".into());
             }
             if let Some(id) = monitor_id.as_deref() {
-                if !crate::monitors::list(&window)?
+                if !crate::monitors::list(window)?
                     .iter()
                     .any(|display| display.id == id)
                 {
                     return Err("Selected display is disconnected".into());
                 }
             }
-            if let Some(scene) = app.get_webview_window(&label) {
-                scene.show().map_err(|_| "Cannot show scene")?;
-                scene.unminimize().map_err(|_| "Cannot restore scene")?;
-            } else {
+            let existed = app.get_webview_window(&label).is_some();
+            if !existed {
                 WebviewWindowBuilder::new(app, &label, WebviewUrl::App("scene.html".into()))
                     .title("YCore Music · Клип")
+                    .visible(false)
                     .inner_size(960.0, 600.0)
                     .min_inner_size(360.0, 260.0)
                     .additional_browser_args(
@@ -152,13 +170,25 @@ pub async fn scene_window(
                     .build()
                     .map_err(|_| "Cannot create scene window")?;
             }
-            if let Some(id) = monitor_id.as_deref() {
-                if let Some(scene) = app.get_webview_window(&label) {
-                    crate::monitors::place(&scene, id)?;
+            if let Some(scene) = app.get_webview_window(&label) {
+                if let Some(restore) = restore.as_ref() {
+                    crate::scene_layout::restore_window(&scene, restore)?;
+                } else {
+                    if let Some(id) = monitor_id.as_deref() {
+                        if !existed || crate::monitors::current_id(&scene).as_deref() != Some(id) {
+                            crate::monitors::place(&scene, id)?;
+                        }
+                        crate::scene_layout::remember(&scene, id)?;
+                    }
+                    scene.show().map_err(|_| "Cannot show scene")?;
+                    scene.unminimize().map_err(|_| "Cannot restore scene")?;
                 }
             }
         }
         WindowAction::Off => {
+            if let Some(id) = monitor_id.as_deref() {
+                crate::scene_layout::forget(window, id);
+            }
             if let Some(scene) = app.get_webview_window(&label) {
                 app.state::<crate::player_host::Host>()
                     .mirrors
@@ -191,13 +221,15 @@ pub fn scene_windows(window: WebviewWindow) -> Result<Vec<Status>, String> {
     if window.label() != "main" {
         return Err("Untrusted window".into());
     }
-    Ok(window
+    let mut values: Vec<_> = window
         .app_handle()
         .webview_windows()
         .into_values()
         .filter(|w| is_scene(w.label()))
         .map(|w| status(Some(w)))
-        .collect())
+        .collect();
+    crate::scene_layout::append_pending(&window, &mut values);
+    Ok(values)
 }
 
 #[tauri::command]
@@ -323,6 +355,7 @@ pub fn closing(window: &tauri::Window, event: &tauri::WindowEvent) -> bool {
     }
     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
         api.prevent_close();
+        crate::scene_layout::hidden(window);
         window
             .state::<crate::player_host::Host>()
             .mirrors

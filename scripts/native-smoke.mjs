@@ -1,7 +1,7 @@
 // Opt-in Windows / Linux X11 desktop integration test. No credentials or API bodies are logged.
 import { spawn,execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import {existsSync,writeFileSync} from 'node:fs';
+import {existsSync,writeFileSync,readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const root=process.cwd();
 const backgroundSmoke=process.env.ENCORE_AUTOSTART_SMOKE==='1';
@@ -280,7 +280,7 @@ try {
     const verificationDisplays=await nativeInvoke('monitor_list');const verificationDisplay=verificationDisplays.find(display=>!display.primary)??verificationDisplays[0];
     if(verificationDisplay)await nativeInvoke('window_test_monitor',{monitorId:verificationDisplay.id});
     await nativeInvoke('window_topmost',{enabled:true});await nativeInvoke('desktop_action',{action:'open'});await sleep(600);
-    const mainHandle=await request('/session/'+session+'/window');
+    let mainHandle=await request('/session/'+session+'/window');
     await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
     await until('return !document.getElementById("play").disabled',35000);
     assert.equal(await execute('return document.querySelectorAll("iframe").length'),0,'The controller must never contain a YouTube iframe');
@@ -334,7 +334,7 @@ try {
     // the former window. Dispatch a trusted click in this controller's viewport.
     for(const type of ['mousePressed','mouseReleased'])await request('/session/'+session+'/ms/cdp/execute',{cmd:'Input.dispatchMouseEvent',params:{type,...fullscreenPoint,button:'left',clickCount:1}});
     await until('return !!document.fullscreenElement');
-    await request('/session/'+session+'/actions',{actions:[{type:'pointer',id:'native-host-hud',parameters:{pointerType:'mouse'},actions:[{type:'pointerMove',duration:50,origin:'viewport',x:100,y:100}]}]});
+    await request('/session/'+session+'/ms/cdp/execute',{cmd:'Input.dispatchMouseEvent',params:{type:'mouseMoved',x:100,y:100}});
     await until('return document.querySelector(".workspace").classList.contains("hud-visible")');
     const hudCrop=await execute('const hud=document.querySelector(".player-hud");hud.style.background="rgb(255,0,0)";const r=hud.getBoundingClientRect();return {x:r.x+r.width/2-16,y:r.y+6-16,width:32,height:32};');
     await sleep(400);const hudPixels=await nativeInvoke('mirror_probe',{action:'capture_main',crop:hudCrop});assert(hudPixels?.centerRgb?.[0]>240&&hudPixels.centerRgb[1]<20,'Fullscreen controls must remain above mirrored video');
@@ -358,6 +358,19 @@ try {
       for(let attempt=0;attempt<20;attempt++){await sleep(200);extraSecond=await nativeInvoke('mirror_probe',{action:'capture_scene',targetLabel:extra.label,crop:extraCrop});if(extraFirst&&extraSecond&&extraFirst.frameHash!==extraSecond.frameHash)break;}
       assert(extraFirst&&extraSecond&&Math.max(extraFirst.nonBlackRatio,extraSecond.nonBlackRatio)>.02&&extraFirst.frameHash!==extraSecond.frameHash,'A second monitor must show changing real local video');
       assert.equal((await nativeInvoke('player_host_status')).players,1);assert.equal((await nativeInvoke('player_host_status')).epoch,mirrorEpoch);
+      if(process.env.ENCORE_SCENE_LAYOUT_SMOKE==='1'){
+        await sleep(1200);
+        const layoutPath=resolve(nativeEnvironment.ENCORE_TEST_DATA_DIR,'scene-layouts.json');
+        const saved=JSON.parse(readFileSync(layoutPath,'utf8'));assert.equal(saved.version,1);assert(saved.scenes[extraDisplay.id]&&saved.scenes[sceneDisplay.id]);
+        assert.equal(await nativeInvoke('scene_test_connected',{ids:verificationDisplays.filter(display=>display.id!==extraDisplay.id).map(display=>display.id)}),null);
+        let disconnected;for(let attempt=0;attempt<40;attempt++){disconnected=(await nativeInvoke('scene_windows')).find(value=>value.screenId===extraDisplay.id);if(disconnected?.detached&&!disconnected.visible)break;await sleep(100);}
+        assert(disconnected?.detached&&!disconnected.visible,'An unavailable display must hide only its own scene');
+        await nativeInvoke('desktop_action',{action:'open'});assert.equal((await nativeInvoke('scene_windows')).find(value=>value.screenId===extraDisplay.id).visible,false,'Tray Open must not move a detached scene to another monitor');
+        await nativeInvoke('scene_test_connected',{ids:null});let restored;
+        for(let attempt=0;attempt<40;attempt++){restored=(await nativeInvoke('scene_windows')).find(value=>value.screenId===extraDisplay.id);if(restored?.visible&&!restored.detached)break;await sleep(100);}
+        assert(restored?.visible&&!restored.detached);assert.equal(restored.monitorId,extraDisplay.id);assert.equal(restored.label,extra.label);assert.equal((await nativeInvoke('player_host_status')).epoch,mirrorEpoch);
+        console.log('Native saved scene layouts and simulated display disconnect/reconnect without OS changes or engine restart: PASS');
+      }
       assert.equal((await nativeInvoke('scene_window',{action:'off',monitorId:extraDisplay.id})).enabled,false);
       const remaining=await nativeInvoke('scene_windows');assert.equal(remaining.length,1);assert.equal(remaining[0].label,firstScenes[0].label);
       console.log('Native two independent monitor mirrors, changing real second-screen pixels, zero extra YouTube frames and targeted Off: PASS');
@@ -366,7 +379,20 @@ try {
     if((await nativeInvoke('desktop_status')).tray_available){const before=await execute('return Number(document.getElementById("seek").value)');await nativeInvoke('desktop_close');await sleep(3500);assert((await execute('return Number(document.getElementById("seek").value)'))>=before+2,'Hiding controller must not stop the sole engine');await nativeInvoke('desktop_action',{action:'open'});}
     assert.equal((await nativeInvoke('player_host_status')).epoch,mirrorEpoch,'Layout and mirrors must not recreate the engine');
     await switchTo(sceneHandle);await nativeInvoke('scene_control',{action:{type:'toggle'}});await switchTo(mainHandle);await until('return document.getElementById("status").textContent==="Пауза"');
-    await click('scene-off');await until('return document.getElementById("scene-off").disabled && !document.getElementById("scene-open").disabled');
+    if(process.env.ENCORE_SCENE_LAYOUT_SMOKE==='1'){
+      await nativeInvoke('desktop_action',{action:'quit'}).catch(()=>null);await request('/session/'+session,undefined,'DELETE').catch(()=>{});
+      const restarted=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:nativeApp}}}});session=restarted.sessionId;
+      await until('return !!document.getElementById("play")');mainHandle=await request('/session/'+session+'/window');
+      appPid=(await nativeInvoke('desktop_status')).process_id;assert.equal((await store({type:'status'})).testMode,true);
+      await execute('if(document.getElementById("account-welcome")?.open)document.getElementById("account-welcome-later").click();');
+      let restored;for(let attempt=0;attempt<60;attempt++){restored=(await nativeInvoke('scene_windows')).find(value=>value.screenId===sceneDisplay.id);if(restored?.visible&&!restored.detached)break;await sleep(100);}
+      assert(restored?.visible&&!restored.detached);assert.equal(restored.monitorId,sceneDisplay.id);
+      assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение','Full restart restores scenes without autoplay');
+      await click('screens');await until('return !document.getElementById("monitor-refresh").disabled');await execute('document.getElementById("scene-monitor").value=arguments[0];document.getElementById("scene-monitor").dispatchEvent(new Event("change"));',[sceneDisplay.id]);
+      await click('monitor-refresh');await until('return !document.getElementById("scene-off").disabled');
+      await click('scene-off');await until('return document.getElementById("scene-off").disabled && !document.getElementById("scene-open").disabled');await click('screens-close');
+      assert.equal((await nativeInvoke('scene_windows')).length,0);console.log('Native full application restart restores the saved screen without autoplay; targeted Off survives reload: PASS');
+    }else {await click('scene-off');await until('return document.getElementById("scene-off").disabled && !document.getElementById("scene-open").disabled');}
     await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
     console.log('Native sole YouTube engine: noautoplay, one iframe, main/video mirrors, IPC guards, play/pause/seek, controls/tray continuity and shared pause: PASS (volume0)');
   }

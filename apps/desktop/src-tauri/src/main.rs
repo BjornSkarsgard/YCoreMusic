@@ -15,6 +15,7 @@ mod mirror_probe;
 mod monitors;
 mod player_host;
 mod power;
+mod scene_layout;
 mod scenes;
 mod smart_history;
 mod source;
@@ -162,6 +163,7 @@ fn main() {
                 storage::Store::open(&directory.join("encore.sqlite"))
             });
             app.manage(storage::StorageState { store, test_mode });
+            scene_layout::install(app.handle(), background_launch);
             let _ = desktop::install(app.handle());
             if background_launch && !app.state::<desktop::DesktopState>().tray_available() {
                 if let Some(window) = app.get_webview_window("main") {
@@ -184,6 +186,8 @@ fn main() {
             source_fetch,
             scenes::scene_window,
             scenes::scene_windows,
+            scene_layout::scene_test_connected,
+            scene_layout::scene_layout_status,
             scenes::scene_publish,
             scenes::scene_snapshot,
             scenes::scene_control,

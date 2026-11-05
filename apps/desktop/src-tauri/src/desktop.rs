@@ -32,7 +32,11 @@ pub struct Status {
     pub quitting: bool,
 }
 pub fn open(app: &AppHandle) -> Result<(), String> {
+    crate::scene_layout::request_show_all(app);
     for window in app.webview_windows().values() {
+        if crate::scenes::is_scene(window.label()) && !crate::scene_layout::can_show(window) {
+            continue;
+        }
         if !window
             .is_visible()
             .map_err(|_| "Cannot read window visibility")?
