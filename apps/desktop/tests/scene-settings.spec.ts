@@ -5,6 +5,7 @@ test('late initial window status cannot disable a newly opened scene; open and o
   const w=window as any;w.isTauri=true;w.windowCalls=[];w.published=[];
   w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
    if(command==='source_fetch'||command==='smart_history_fetch')return [];
+   if(command==='monitor_list')return [{id:'monitor-tv',name:'TV',stable:true,width:3840,height:2160}];
    if(command==='scene_publish'){w.published.push(args.snapshot);return;}
    if(command==='scene_window'){
     w.windowCalls.push(args.action);
@@ -13,7 +14,7 @@ test('late initial window status cannot disable a newly opened scene; open and o
    }
   }};
  });
- await page.goto('/');await page.locator('[data-panel=settings]').click();
+ await page.goto('/');await page.getByRole('button',{name:'Экраны и телевизор',exact:true}).click();await page.locator('#scene-monitor').selectOption('monitor-tv');
  await page.locator('#scene-open').click();await expect(page.locator('#scene-open')).toBeDisabled();
  await page.evaluate(()=>{document.getElementById('scene-open')!.click();(window as any).windowResolve({enabled:true,visible:true,topmost:false});});
  await expect(page.locator('#scene-off')).toBeEnabled();
@@ -38,11 +39,31 @@ test('monitor selection is explicit and a missing display remains selected inste
    }
   }};
  });
- await page.goto('/');await page.locator('[data-panel=settings]').click();await expect(page.locator('#scene-monitor option')).toHaveCount(2);
+ await page.goto('/');await page.getByRole('button',{name:'Экраны и телевизор',exact:true}).click();await expect(page.locator('#scene-monitor option')).toHaveCount(2);
  expect(await page.evaluate(()=>(window as any).selectedDisplays)).toEqual([]);
  await page.locator('#scene-monitor').selectOption('monitor-tv');await page.locator('#scene-open').click();await expect(page.locator('#scene-off')).toBeEnabled();
  expect(await page.evaluate(()=>(window as any).selectedDisplays)).toEqual(['monitor-tv']);
  await page.evaluate(()=>(window as any).disconnected=true);await page.locator('#monitor-refresh').click();await expect(page.locator('#monitor-status')).toContainText('Экран отключён');
- await expect(page.locator('#scene-monitor')).toHaveValue('monitor-tv');await page.locator('#scene-open').click();await expect(page.locator('#scene-window-status')).toContainText('Не удалось');
- expect(await page.evaluate(()=>(window as any).selectedDisplays)).toEqual(['monitor-tv','monitor-tv']);
+ await expect(page.locator('#scene-monitor')).toHaveValue('monitor-tv');await expect(page.locator('#scene-open')).toBeDisabled();
+ expect(await page.evaluate(()=>(window as any).selectedDisplays)).toEqual(['monitor-tv']);
+});
+
+test('screens are discoverable without settings, require an explicit screen and restore focus without changing playback',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.sceneActions=[];w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
+  if(command==='source_fetch'||command==='smart_history_fetch')return [];
+  if(command==='monitor_list'){if(w.failDisplays)throw Error('offline');return [{id:'tv',name:'TV <script>',stable:true,width:3840,height:2160,refreshHz:60}];}
+  if(command==='scene_window'){w.sceneActions.push(args.action);return {enabled:false,visible:false};}
+ }};});
+ await page.setViewportSize({width:800,height:650});await page.goto('/');
+ const trigger=page.getByRole('button',{name:'Экраны и телевизор',exact:true});await expect(trigger).toBeVisible();await trigger.click();
+ await expect(page.getByRole('dialog',{name:'Экраны и телевизор'})).toBeVisible();await expect(page.locator('#scene-open')).toBeDisabled();
+ await page.locator('#scene-monitor').selectOption('tv');await expect(page.locator('#scene-open')).toBeEnabled();await expect(page.getByRole('button',{name:/Визуализатор/})).toBeDisabled();
+ await page.screenshot({path:'../../.tools/ycore-screens-800.png'});
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(800);
+ await page.keyboard.press('Escape');await expect(trigger).toBeFocused();await trigger.click();await expect(page.locator('#scene-monitor')).toHaveValue('tv');
+ await page.evaluate(()=>(window as any).failDisplays=true);await page.locator('#monitor-refresh').click();await expect(page.locator('#monitor-status')).toContainText('Не удалось');await expect(page.locator('#scene-open')).toBeDisabled();
+ await page.evaluate(()=>(window as any).failDisplays=false);await page.locator('#monitor-refresh').click();await expect(page.locator('#scene-open')).toBeEnabled();
+ await page.locator('#screens-controls').evaluate((button:HTMLButtonElement)=>button.click());await expect(page.locator('#screens-dialog')).not.toBeVisible();await expect(page.locator('#window-layout')).toHaveValue('controls');
+ expect(await page.evaluate(()=>(window as any).sceneActions)).toEqual(['status']);
+ await page.locator('[data-panel=settings]').click();await page.getByRole('button',{name:'Настроить экраны'}).click();await expect(page.locator('#screens-dialog')).toBeVisible();
 });

@@ -1,29 +1,43 @@
 import {invoke,isTauri} from '@tauri-apps/api/core';
+import {icon} from './icons';
 export interface SceneSnapshot {revision:number;generation:number;videoId:string|null;title:string;artist:string;position:number;duration:number;playback:number}
 interface SceneStatus {enabled:boolean;visible:boolean;topmost:boolean}
 interface Display {id:string;name:string;stable:boolean;primary:boolean;width:number;height:number;scaleFactor:number;refreshHz:number|null}
 export function mountScenes(read:()=>Omit<SceneSnapshot,'revision'>){
  const root=document.createElement('section');root.id='scene-settings';
- root.innerHTML='<h3>Окно клипа</h3><p class="panel-description">Откройте отдельное окно на телевизоре или другом экране. В основном окне можно выбрать «Только управление». Звук остаётся общим.</p><label class="field-label" for="scene-monitor">Экран для клипа</label><select id="scene-monitor" aria-label="Экран для клипа"><option value="">Разместить вручную</option></select><button id="monitor-refresh">Обновить экраны</button><p id="monitor-status" role="status"></p><div class="scene-actions"><button id="scene-open">Открыть окно клипа</button><button id="scene-off" disabled>Выключить окно</button></div><p id="scene-window-status" role="status"></p>';
+ root.innerHTML=`<h3>Экраны и телевизор</h3><p class="panel-description">Выберите, где показывать клип. Управление экранами также доступно кнопкой «Экраны» в верхней панели.</p><button id="screens-settings">${icon('monitor')}<span>Настроить экраны</span></button>`;
  document.getElementById('autostart-settings')!.before(root);
+ const dialog=document.createElement('dialog');dialog.id='screens-dialog';dialog.setAttribute('aria-labelledby','screens-title');
+ dialog.innerHTML=`<div class="dialog-heading"><h2 id="screens-title">Экраны и телевизор</h2><button id="screens-close" aria-label="Закрыть управление экранами">${icon('close')}</button></div><p>Клип на большом экране, управление — под рукой. Вывод звука выбирает система.</p><section class="screen-step"><h3><span>1</span> Выберите экран</h3><label class="sr-only" for="scene-monitor">Экран для клипа</label><select id="scene-monitor" aria-label="Экран для клипа"><option value="">Выберите экран</option></select><button id="monitor-refresh">${icon('sync')}<span>Обновить экраны</span></button><p id="monitor-status" role="status"></p><details class="screen-help"><summary>Телевизора нет в списке?</summary><p>Подключите его как дополнительный экран компьютера и включите расширение рабочего стола в системе. Затем обновите список. Сетевая трансляция на телевизор здесь пока не поддерживается.</p></details></section><section class="screen-step" id="scene-content-step" aria-disabled="true"><h3><span>2</span> Что показывать</h3><div class="screen-content-choices"><button id="scene-video-choice" aria-pressed="true" disabled>${icon('play')}<span>Клип<small>Текущее видео и общее управление</small></span></button><button disabled aria-describedby="visualizer-unavailable">${icon('wave')}<span>Визуализатор<small>В разработке</small></span></button></div><p id="visualizer-unavailable">Визуализаторы появятся после проверки анализа звука.</p><p class="scene-limit">Пока доступно одно отдельное окно клипа. Выбор другого экрана перенесёт его туда.</p></section><div class="scene-actions"><button id="scene-open" class="primary" disabled>Показать клип на экране</button><button id="scene-off" disabled>Выключить окно</button></div><p id="scene-window-status" role="status"></p><details class="screen-help"><summary>Оставить в основном окне только управление</summary><p>В верхней панели выберите «Только управление». Поиск, списки и кнопки останутся в основном окне.</p><button id="screens-controls">Оставить только управление</button></details>`;
+ const steps=document.createElement('div');steps.className='screens-scroll';steps.append(...dialog.querySelectorAll('.screen-step'),dialog.querySelector(':scope > .screen-help')!);
+ const footer=document.createElement('div');footer.className='screens-footer';footer.append(dialog.querySelector('.scene-actions')!,dialog.querySelector('#scene-window-status')!);dialog.append(steps,footer);
+ document.body.append(dialog);
+ let opener:HTMLElement|null=null;
+ function show(){if(dialog.open)return;opener=document.activeElement as HTMLElement;dialog.showModal();void refreshMonitors();}
+ document.getElementById('screens')!.onclick=show;document.getElementById('screens-settings')!.onclick=show;
+ document.getElementById('screens-close')!.onclick=()=>dialog.close();
+ dialog.addEventListener('close',()=>{opener?.focus();});
+ document.getElementById('screens-controls')!.onclick=()=>{const layout=document.getElementById('window-layout') as HTMLSelectElement;layout.value='controls';layout.dispatchEvent(new Event('change'));dialog.close();};
  const open=document.getElementById('scene-open') as HTMLButtonElement,off=document.getElementById('scene-off') as HTMLButtonElement,status=document.getElementById('scene-window-status')!;
  let enabled=false,busy=false,publishing=false,pending=false,revision=Date.now()*1000,windowRevision=0;
  const monitor=document.getElementById('scene-monitor') as HTMLSelectElement,refresh=document.getElementById('monitor-refresh') as HTMLButtonElement,monitorStatus=document.getElementById('monitor-status')!;
- let readingMonitors=false;
+ let readingMonitors=false,displays:Display[]=[],listValid=false;
+ function syncActions(){const selected=listValid&&displays.some(display=>display.id===monitor.value);open.disabled=busy||readingMonitors||!selected;off.disabled=busy||!enabled;monitor.disabled=busy;document.getElementById('scene-video-choice')!.toggleAttribute('disabled',busy||!selected);document.getElementById('scene-content-step')!.setAttribute('aria-disabled',String(!selected));}
+ monitor.onchange=()=>{status.textContent='';syncActions();};
  async function refreshMonitors(){
-  if(!isTauri()||readingMonitors)return;readingMonitors=true;refresh.disabled=true;
+  if(!isTauri()){monitorStatus.textContent='Управление экранами доступно в установленном YCore Music.';return;}if(readingMonitors||busy)return;readingMonitors=true;refresh.disabled=true;syncActions();
   try{
-   const displays=await invoke<Display[]>('monitor_list');if(!Array.isArray(displays))return;
-   const selected=monitor.value;monitor.replaceChildren(new Option('Разместить вручную',''));
+   const result=await invoke<Display[]>('monitor_list');if(!Array.isArray(result))throw Error('Invalid display list');displays=result;listValid=true;
+   const selected=monitor.value;monitor.replaceChildren(new Option('Выберите экран',''));
    for(const display of displays)monitor.append(new Option(display.name+' · '+display.width+'×'+display.height+(display.refreshHz?' · '+display.refreshHz+' Гц':'')+(display.primary?' · основной':''),display.id));
    if(selected&&!displays.some(display=>display.id===selected)){const absent=new Option('Выбранный экран отключён',selected);absent.disabled=true;monitor.append(absent);monitorStatus.textContent='Экран отключён. Выберите другой или подключите его и обновите список.';}
-   else monitorStatus.textContent=displays.some(display=>!display.stable)?'Для части экранов система не предоставила постоянный идентификатор.':'';
+   else monitorStatus.textContent=!displays.length?'Экраны не найдены. Подключите экран и обновите список.':displays.some(display=>!display.stable)?'Для части экранов система не предоставила постоянный идентификатор.':'';
    monitor.value=selected;
-  }catch{monitorStatus.textContent='Не удалось получить список экранов. Можно разместить окно вручную.';}
-  finally{readingMonitors=false;refresh.disabled=false;}
+  }catch{listValid=false;monitorStatus.textContent='Не удалось получить список экранов. Повторите обновление.';}
+  finally{readingMonitors=false;refresh.disabled=false;syncActions();}
  }
  refresh.onclick=()=>void refreshMonitors();root.addEventListener('settings-open',()=>void refreshMonitors());
- function updated(value:SceneStatus){enabled=value.enabled;off.disabled=!enabled||busy;open.disabled=busy;status.textContent=enabled?'Окно клипа включено. Крестик скрывает его, «Выключить окно» закрывает полностью.':'';}
+ function updated(value:SceneStatus){enabled=value.enabled;syncActions();status.textContent=enabled?'Окно клипа включено. Крестик скрывает его, «Выключить окно» закрывает полностью.':'';}
  async function publish(){
   if(!enabled||!isTauri())return;
   if(publishing){pending=true;return;}
@@ -33,11 +47,11 @@ export function mountScenes(read:()=>Omit<SceneSnapshot,'revision'>){
   finally{publishing=false;if(pending)void publish();}
  }
  async function action(action:'open'|'off'){
-  if(busy)return;if(!isTauri()){status.textContent='Отдельное окно доступно в desktop-версии YCore Music.';return;}
-  ++windowRevision;busy=true;open.disabled=off.disabled=true;
+  if(busy||action==='open'&&(readingMonitors||!listValid||!displays.some(display=>display.id===monitor.value)))return;if(!isTauri()){status.textContent='Отдельное окно доступно в desktop-версии YCore Music.';return;}
+  ++windowRevision;busy=true;refresh.disabled=true;syncActions();
   try{const value=await invoke<SceneStatus>('scene_window',{action,monitorId:action==='open'?monitor.value||null:null});updated(value);if(enabled)void publish();}
   catch{status.textContent='Не удалось изменить окно клипа. Повторите попытку.';}
-  finally{busy=false;open.disabled=false;off.disabled=!enabled;}
+  finally{busy=false;refresh.disabled=false;syncActions();}
  }
  open.onclick=()=>void action('open');off.onclick=()=>void action('off');
  if(isTauri())void invoke<SceneStatus>('scene_window',{action:'status'}).then(value=>{if(value&&windowRevision===0)updated(value);}).catch(()=>{});

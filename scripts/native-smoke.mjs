@@ -342,9 +342,9 @@ try {
     assert.equal(await nativeInvoke('scene_window',{action:'open',monitorId:'missing-display'}),null,'Disconnected display must not open a replacement scene');
     assert.equal(await nativeInvoke('scene_snapshot'),null,'Main cannot impersonate a scene viewer');
     assert.equal(await nativeInvoke('scene_control',{action:{type:'next'}}),null);
-    await execute('document.querySelector("[data-panel=settings]").click();');
+    await click('screens');
     await until('return document.getElementById("scene-monitor").options.length>1');
-    await execute('document.getElementById("scene-monitor").value=arguments[0];document.getElementById("scene-open").click();',[targetDisplay.id]);
+    await execute('document.getElementById("scene-monitor").value=arguments[0];document.getElementById("scene-monitor").dispatchEvent(new Event("change"));document.getElementById("scene-open").click();',[targetDisplay.id]);
     await until('return !document.getElementById("scene-off").disabled');
     for(let attempt=0;attempt<30;attempt++){if((await nativeInvoke('scene_window',{action:'status'}))?.monitorId===targetDisplay.id)break;await sleep(100);}
     assert.equal((await nativeInvoke('scene_window',{action:'status'})).monitorId,targetDisplay.id);
