@@ -1,5 +1,20 @@
 import {test,expect} from './fixtures';
 
+test('visualizer settings belong to the selected monitor and explicit FPS respects its refresh rate',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.scenes={};w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
+  if(command==='source_fetch'||command==='smart_history_fetch')return [];
+  if(command==='monitor_list')return [{id:'a',name:'A',stable:true,width:1920,height:1080,refreshHz:60},{id:'b',name:'B',stable:true,width:1920,height:1080,refreshHz:144}];
+  if(command==='scene_windows')return Object.values(w.scenes);
+  if(command==='scene_window'){return w.scenes[args.monitorId]={enabled:true,visible:true,screenId:args.monitorId,options:args.options};}
+ }};});
+ await page.goto('/');await page.locator('#screens').click();await page.locator('#scene-monitor').selectOption('a');await page.locator('#scene-visualizer-choice').click();
+ await expect(page.locator('#visualizer-options')).toBeVisible();expect(await page.locator('#visualizer-fps option').allTextContents()).toEqual(['Частота экрана','30 кадров/с','60 кадров/с']);
+ await page.locator('#visualizer-fps').selectOption('30');await page.locator('#visualizer-quality').selectOption('low');await page.locator('#scene-open').click();await expect(page.locator('#scene-open')).toBeEnabled();
+ await page.locator('#scene-monitor').selectOption('b');await expect(page.locator('#scene-video-choice')).toHaveAttribute('aria-pressed','true');await page.locator('#scene-visualizer-choice').click();await page.locator('#visualizer-fps').selectOption('144');await page.locator('#scene-open').click();await expect(page.locator('#scene-open')).toBeEnabled();
+ await page.locator('#scene-monitor').selectOption('a');await expect(page.locator('#scene-visualizer-choice')).toHaveAttribute('aria-pressed','true');await expect(page.locator('#visualizer-fps')).toHaveValue('30');await expect(page.locator('#visualizer-quality')).toHaveValue('low');
+ expect(await page.evaluate(()=>(window as any).scenes.b.options)).toEqual({content:'visualizer',fps:144,quality:'high'});
+});
+
 test('late initial window status cannot disable a newly opened scene; open and off coalesce while pending',async({page})=>{
  await page.addInitScript(()=>{
   const w=window as any;w.isTauri=true;w.windowCalls=[];w.published=[];
@@ -58,7 +73,7 @@ test('screens are discoverable without settings, require an explicit screen and 
  await page.setViewportSize({width:800,height:650});await page.goto('/');
  const trigger=page.getByRole('button',{name:'Экраны и телевизор',exact:true});await expect(trigger).toBeVisible();await trigger.click();
  await expect(page.getByRole('dialog',{name:'Экраны и телевизор'})).toBeVisible();await expect(page.locator('#scene-open')).toBeDisabled();
- await page.locator('#scene-monitor').selectOption('tv');await expect(page.locator('#scene-open')).toBeEnabled();await expect(page.getByRole('button',{name:/Визуализатор/})).toBeDisabled();
+ await page.locator('#scene-monitor').selectOption('tv');await expect(page.locator('#scene-open')).toBeEnabled();await expect(page.getByRole('button',{name:/Визуализатор/})).toBeEnabled();
  await page.screenshot({path:'../../.tools/ycore-screens-800.png'});
  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(800);
  await page.keyboard.press('Escape');await expect(trigger).toBeFocused();await trigger.click();await expect(page.locator('#scene-monitor')).toHaveValue('tv');
@@ -82,7 +97,7 @@ test('opening another monitor keeps the first clip enabled and Off only targets 
  await page.locator('#scene-off').click();await expect(page.locator('#scene-off')).toBeDisabled();await page.locator('#scene-monitor').selectOption('a');await expect(page.locator('#scene-off')).toBeEnabled();
  await expect(page.locator('#scene-open')).toHaveText('Показать окно снова');
  const count=await page.evaluate(()=>(window as any).scenePublishes);await expect.poll(()=>page.evaluate(()=>(window as any).scenePublishes)).toBeGreaterThan(count);
- expect(await page.evaluate(()=>(window as any).sceneActions)).toEqual([{action:'open',monitorId:'a'},{action:'open',monitorId:'b'},{action:'off',monitorId:'b'}]);
+ expect(await page.evaluate(()=>(window as any).sceneActions)).toEqual([{action:'open',monitorId:'a',options:{content:'video',fps:0,quality:'high'}},{action:'open',monitorId:'b',options:{content:'video',fps:0,quality:'high'}},{action:'off',monitorId:'b'}]);
 });
 
 test('a saved disconnected screen can be switched off and persistence errors remain visible',async({page})=>{

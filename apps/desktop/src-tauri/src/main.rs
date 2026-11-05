@@ -1,4 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+mod audio_analysis;
+#[cfg(all(target_os = "windows", feature = "audio-analysis"))]
+mod audio_capture;
+mod audio_probe;
+#[cfg(all(target_os = "windows", feature = "audio-analysis"))]
+mod audio_spectrum;
 mod auth;
 mod autostart;
 mod catalogue;
@@ -182,8 +188,14 @@ fn main() {
         .manage(scenes::Scenes::default())
         .manage(mirror_probe::MirrorProbe::default())
         .manage(player_host::Host::default())
+        .manage(audio_probe::AudioProbeState::default())
+        .manage(audio_analysis::Analysis::default())
         .invoke_handler(tauri::generate_handler![
             source_fetch,
+            audio_probe::audio_probe,
+            audio_probe::audio_probe_mute,
+            audio_analysis::analysis_watch,
+            scenes::scene_options,
             scenes::scene_window,
             scenes::scene_windows,
             scene_layout::scene_test_connected,

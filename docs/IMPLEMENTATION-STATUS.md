@@ -1,5 +1,29 @@
 # Статус реализации YCore Music
 
+## Spectrum и общий аудиоанализ — 2026-11-06
+
+Windows: process-loopback только дерева dedicated player-host, Float32 stereo44100;
+общий FFT2048/Hann,48 логарифмических полос, около30 updates/sec. Один capture
+на все видимые сцены, leases3sec, нативная проверка видимости. Нет микрофона,
+системного микса, PCM-файлов, смены endpoint или громкости в продуктовой логике.
+«Экраны»: монитор → Клип/Spectrum → per-monitor FPS/quality. WebGL с Canvas2D
+fallback при ошибке/context lost; скрытая сцена останавливает rAF. Настройки
+сохраняются с совместимыми defaults старых scene-layouts.
+
+PASS: Rust68/9ignored, TS13, renderer106/1opt-in skipped, Clippy debugprobe и
+release, no-default-features check, frontend build, normal debug custom-protocol.
+Native real YouTube: Spectrum WebGL,7frames/maxband0.001132,0iframe в сцене;
+VIDEO↔Spectrum сохраняет engine epoch и один плеер. Два независимых реальных
+зеркала, транспорт/tray/mini/topmost/instance тоже PASS. Тестовый источник
+временно1%, finally0. Пользовательский процесс не закрывался.
+
+Остаётся: Ambient/Liquid/Particles, основной visualizer layout, физическая
+hardware matrix, отдельный тест звука другого процесса. Volume0 даёт0;
+pre-volume анализ не решён, S6 PARTIAL. Linux/macOS audio analysis не реализован.
+Новые файлы: audio_analysis.rs,audio_capture.rs,audio_probe.rs,audio_spectrum.rs,
+spectrum.ts,S6-AUDIO-SPIKE.md. Изменены Cargo,main/scenes/scene_layout,
+scene-player/scene-ui/scene.css,tests,native runner. Детали: S6-AUDIO-SPIKE.md.
+
 ## Предпочтительный и исключённые клипы — 2026-11-05
 
 CI6d47336: Windows/Ubuntu/IntelMac PASS; AppleSilicon renderer выявил преждевременную проверку lastPlayed после обновления метаданных очереди. Проверка исправлена на ожидание фактического Play (не меняет coordinator), targeted5повторов PASS. Полный CI повторяется после commit исправления.

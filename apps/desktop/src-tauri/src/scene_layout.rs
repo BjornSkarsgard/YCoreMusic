@@ -21,6 +21,8 @@ pub struct Placement {
     fullscreen: bool,
     topmost: bool,
     hidden: bool,
+    #[serde(default)]
+    options: scenes::VisualOptions,
 }
 impl Placement {
     fn valid(&self) -> bool {
@@ -31,6 +33,7 @@ impl Placement {
             && self.top.abs() < 100_000.0
             && (100.0..=20000.0).contains(&self.width)
             && (100.0..=20000.0).contains(&self.height)
+            && self.options.valid()
     }
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -137,6 +140,7 @@ fn capture(
         fullscreen: false,
         topmost: false,
         hidden: false,
+        options: scenes::VisualOptions::default(),
     });
     if !maximized && !fullscreen {
         let position = window
@@ -238,6 +242,38 @@ pub fn forget(window: &WebviewWindow, id: &str) {
         layout.persist();
     }
 }
+pub fn options(window: &WebviewWindow) -> scenes::VisualOptions {
+    let Some(id) = window.label().strip_prefix("video-scene-") else {
+        return scenes::VisualOptions::default();
+    };
+    window
+        .state::<Scenes>()
+        .layouts
+        .lock()
+        .ok()
+        .and_then(|layout| layout.config.scenes.get(id).map(|p| p.options))
+        .unwrap_or_default()
+}
+pub fn set_options(
+    window: &WebviewWindow,
+    id: &str,
+    options: scenes::VisualOptions,
+) -> Result<(), String> {
+    let state = window.state::<Scenes>();
+    let mut layout = state
+        .layouts
+        .lock()
+        .map_err(|_| "Scene settings unavailable")?;
+    let placement = layout
+        .config
+        .scenes
+        .get_mut(id)
+        .ok_or("Scene settings unavailable")?;
+    placement.options = options;
+    layout.revision += 1;
+    layout.persist();
+    Ok(())
+}
 pub fn hidden(window: &tauri::Window) {
     let Some(id) = window.label().strip_prefix("video-scene-") else {
         return;
@@ -315,6 +351,7 @@ pub fn append_pending(main: &WebviewWindow, values: &mut Vec<scenes::Status>) {
                     fullscreen: p.fullscreen,
                     monitor_id: None,
                     detached: true,
+                    options: p.options,
                 });
             }
         }
@@ -406,6 +443,7 @@ pub async fn reconcile(main: &WebviewWindow) -> Result<(), String> {
                 scenes::WindowAction::Open,
                 Some(id.clone()),
                 Some(restore),
+                None,
             )
             .await?;
             let mut layout = state
@@ -523,6 +561,7 @@ mod tests {
             fullscreen: true,
             topmost: true,
             hidden: false,
+            options: scenes::VisualOptions::default(),
         }
     }
     #[test]
@@ -540,6 +579,32 @@ mod tests {
         value.scenes.clear();
         value.scenes.insert("auth".into(), placement());
         assert!(!value.valid());
+    }
+    #[test]
+    fn legacy_layouts_default_to_video_and_visualizer_options_stay_per_monitor() {
+        let original = placement();
+        let mut legacy = serde_json::to_value(&original).unwrap();
+        legacy.as_object_mut().unwrap().remove("options");
+        let restored: Placement = serde_json::from_value(legacy).unwrap();
+        assert_eq!(restored.options, scenes::VisualOptions::default());
+        let mut spectrum = original.clone();
+        spectrum.options.content = scenes::Content::Visualizer;
+        spectrum.options.fps = 30;
+        spectrum.options.quality = scenes::Quality::Low;
+        let config = Config {
+            version: 1,
+            scenes: BTreeMap::from([
+                ("monitor-0123456789abcdef".into(), spectrum.clone()),
+                ("monitor-fedcba9876543210".into(), original.clone()),
+            ]),
+        };
+        let restored: Config =
+            serde_json::from_slice(&serde_json::to_vec(&config).unwrap()).unwrap();
+        assert!(restored.valid());
+        assert_eq!(restored.scenes["monitor-0123456789abcdef"], spectrum);
+        assert_eq!(restored.scenes["monitor-fedcba9876543210"], original);
+        spectrum.options.fps = 999;
+        assert!(!spectrum.valid());
     }
     #[test]
     fn atomic_settings_roundtrip_preserves_independent_monitors_and_targeted_off() {

@@ -5,7 +5,7 @@ import {existsSync,writeFileSync,readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const root=process.cwd();
 const backgroundSmoke=process.env.ENCORE_AUTOSTART_SMOKE==='1';
-const nativeApp=resolve(root,'apps/desktop/src-tauri/target/native-test/'+(process.platform==='win32'?'YCoreMusic.exe':'YCoreMusic'));
+const nativeApp=process.env.ENCORE_NATIVE_APP??resolve(root,'apps/desktop/src-tauri/target/native-test/'+(process.platform==='win32'?'YCoreMusic.exe':'YCoreMusic'));
 const nativeDriver=process.env.ENCORE_NATIVE_DRIVER??(process.platform==='win32'?(process.env.ENCORE_EDGE_DRIVER??resolve(root,'.tools/edgedriver/msedgedriver.exe')):'/usr/bin/WebKitWebDriver');
 assert(existsSync(nativeApp),'Build the native-test profile first; see README native smoke instructions.');
 const nativeEnvironment={...process.env,ENCORE_TEST_DATA_DIR:process.env.ENCORE_NATIVE_TEST_DATA_DIR??resolve(root,'.tools/native-test-data')};
@@ -299,6 +299,37 @@ try {
     await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"',30000);
     await until('return Number(document.getElementById("seek").value)>1',20000);
     assert.equal((await nativeInvoke('player_host_status')).players,1);
+    if(process.env.ENCORE_AUDIO_PROBE==='1'){
+      assert.equal(await readEngine('return document.getElementById("movie_player").getVolume()'),0,'The audio experiment must remain silent');
+      const audio=await nativeInvoke('audio_probe');assert(audio&&audio.scope==='own_process_tree'&&audio.filesWritten===false);
+      writeFileSync(resolve(root,'.tools/audio-probe-volume0.json'),JSON.stringify(audio,null,2));
+      console.log('Native S6 own-process capture at YouTube volume0 (probe result, not visualizer completion): '+JSON.stringify(audio));
+      if(audio.available){
+        try{
+          let muted=await nativeInvoke('audio_probe_mute',{muted:true});
+          if(!Number.isInteger(muted)||muted<1){
+            // Chromium can omit a render session while its player gain is zero.
+            // Prime only the isolated test clip very briefly at one percent.
+            assert.equal(await readEngine('const p=document.getElementById("movie_player");p.setVolume(1);return p.getVolume();'),1);await sleep(150);
+            muted=await nativeInvoke('audio_probe_mute',{muted:true});
+          }
+          assert(Number.isInteger(muted)&&muted>0,'Own render sessions must be verified muted before raising the test player level: '+JSON.stringify(muted));
+          assert.equal(await readEngine('const p=document.getElementById("movie_player");p.unMute();p.setVolume(10);return p.getVolume();'),10);
+          await sleep(300);const signal=await nativeInvoke('audio_probe');assert(signal?.scope==='own_process_tree'&&signal.filesWritten===false);
+          writeFileSync(resolve(root,'.tools/audio-probe-session-muted.json'),JSON.stringify(signal,null,2));
+          console.log('Native S6 own-process capture at YouTube10 with only own OS sessions muted: '+JSON.stringify(signal));
+        }finally{
+          const level=await readEngine('const p=document.getElementById("movie_player");p.setVolume(0);return p.getVolume();');assert.equal(level,0,'Restore the source to zero before restoring its session mute');
+          const restored=await nativeInvoke('audio_probe_mute',{muted:false});assert(Number.isInteger(restored)&&restored>=0,'Restore only the own session mute states saved by the probe: '+JSON.stringify(restored));
+        }
+        try{
+          assert.equal(await readEngine('const p=document.getElementById("movie_player");p.unMute();p.setVolume(1);return p.getVolume();'),1);
+          const signal=await nativeInvoke('audio_probe');assert(signal?.available&&signal.scope==='own_process_tree');
+          writeFileSync(resolve(root,'.tools/audio-probe-quiet-signal.json'),JSON.stringify(signal,null,2));
+          console.log('Native S6 real YouTube signal at one percent (no recording): '+JSON.stringify(signal));
+        }finally{assert.equal(await readEngine('const p=document.getElementById("movie_player");p.setVolume(0);return p.getVolume();'),0);}
+      }
+    }
     assert.equal((await nativeInvoke('player_host_status')).sourceAlpha,0);assert.equal((await nativeInvoke('player_host_status')).clickThrough,true);
     const epoch=(await nativeInvoke('player_host_status')).epoch;
     await execute('document.getElementById("seek").value="30";document.getElementById("seek").dispatchEvent(new Event("input"));document.getElementById("seek").dispatchEvent(new Event("change"));');
@@ -350,6 +381,24 @@ try {
     await switchTo(sceneHandle);await until('return !!document.getElementById("scene-title")');assert.equal(await execute('return document.querySelectorAll("iframe").length'),0,'Video window must only mirror the engine');
     await switchTo(mainHandle);
     const firstScenes=await nativeInvoke('scene_windows');assert.equal(firstScenes.length,1);assert.equal(firstScenes[0].screenId,sceneDisplay.id);
+    if(process.env.ENCORE_SPECTRUM_SMOKE==='1'){
+      const visualOptions={content:'visualizer',fps:30,quality:'medium'};
+      const updated=await nativeInvoke('scene_window',{action:'open',monitorId:sceneDisplay.id,options:visualOptions});assert.deepEqual(updated?.options,visualOptions);
+      await switchTo(sceneHandle);await until('return document.getElementById("scene").classList.contains("visualizer")');
+      assert.deepEqual(await nativeInvoke('scene_options'),visualOptions);
+      await execute('window.spectrumStats={frames:0,max:0};const id=window.__TAURI_INTERNALS__.transformCallback(e=>{if(e.payload.available){window.spectrumStats.frames++;window.spectrumStats.max=Math.max(window.spectrumStats.max,...e.payload.bands);}});window.__TAURI_INTERNALS__.invoke("plugin:event|listen",{event:"audio-analysis",target:{kind:"Any"},handler:id});');
+      try{
+        await readEngine('const p=document.getElementById("movie_player");p.unMute();p.setVolume(1);return p.getVolume();');
+        await switchTo(sceneHandle);await until('return window.spectrumStats.frames>3 && window.spectrumStats.max>0.000001',15000);
+        const stats=await execute('return {stats:window.spectrumStats,renderer:document.querySelector(".spectrum-canvas").dataset.renderer,iframes:document.querySelectorAll("iframe").length}');assert.equal(stats.iframes,0);assert(['webgl','canvas2d'].includes(stats.renderer));
+        writeFileSync(resolve(root,'.tools/native-spectrum.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
+        console.log('Native Spectrum with real own-process audio and one YouTube engine: '+JSON.stringify(stats));
+      }finally{await readEngine('const p=document.getElementById("movie_player");p.setVolume(0);return p.getVolume();');}
+      await switchTo(mainHandle);assert.equal((await nativeInvoke('player_host_status')).epoch,mirrorEpoch);
+      await nativeInvoke('scene_window',{action:'open',monitorId:sceneDisplay.id,options:{content:'video',fps:30,quality:'medium'}});
+      await switchTo(sceneHandle);await until('return !document.getElementById("scene").classList.contains("visualizer")');await switchTo(mainHandle);
+      assert.equal((await nativeInvoke('player_host_status')).players,1);
+    }
     const extraDisplay=verificationDisplays.find(display=>display.id!==sceneDisplay.id&&display.id!==verificationDisplay?.id)??verificationDisplays.find(display=>display.id!==sceneDisplay.id);
     if(extraDisplay){
       const extra=await nativeInvoke('scene_window',{action:'open',monitorId:extraDisplay.id});assert(extra?.enabled&&extra.screenId===extraDisplay.id,'Second monitor must open an independent local mirror');

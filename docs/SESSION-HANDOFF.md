@@ -1,4 +1,24 @@
-# YCore Music — активный контекст, 2026-11-05
+# YCore Music — активный контекст, 2026-11-06
+
+## Актуально: Spectrum готов; далее остальные визуализаторы
+
+Нижние записи исторические. Windows Spectrum: own player-host loopback → общий
+FFT → WebGL/Canvas2D; Экраны → монитор → визуализатор; per-monitor FPS/quality,
+persistence и остановка скрытых сцен. Volume0 даёт0, pre-volume не решён.
+Следующие Ambient/Liquid/Particles и основной visualizer layout, затем hardware
+приёмка. Не уходить на посторонние лёгкие задачи.
+
+PASS: Rust68/9ignored, TS13, renderer106/1skip, Clippy debugprobe/release,
+no-default check, build. Native55625 завершён exit0: реальный Spectrum,
+VIDEO↔Spectrum без нового engine, два зеркала/transport/tray/mini/instance.
+Normal debug YCoreMusic.exe пересобран с custom-protocol/defaults, без probe.
+Все exec sessions завершены. Пользовательский native-test/deps/YCoreMusic.exe
+PID3296 запущен из Explorer: не закрывать. Stash не pop.
+
+Лимит при последнем чтении96% использовано. До обновления не начинать новый
+крупный этап. Reset самому не включать; старое ночное выключение ПК не актуально.
+CI bd94aa9/42085242519: Windows/Ubuntu/IntelMac PASS, AppleSilicon cancelled
+без failedstep. Новую CI после push проверить отдельно.
 
 ## Сейчас: REQ063 завершён; дальше СТРОГО визуализаторы/S6
 

@@ -3,10 +3,13 @@ import {test,expect} from './fixtures';
 test.beforeEach(async({page})=>{
  await page.addInitScript(()=>{
   const w=window as any;w.isTauri=true;w.handlers={};w.callbacks={};w.controls=[];w.mirrors=[];let id=0;
-  w.send=(snapshot:any)=>w.handlers['scene-snapshot']({payload:{snapshot,visible:true}});
+  w.send=(snapshot:any,visible=true)=>w.handlers['scene-snapshot']({payload:{snapshot,visible}});
+  w.spectrumFrames=0;const raf=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=(callback:FrameRequestCallback)=>raf(time=>{if(callback.name==='draw')w.spectrumFrames++;callback(time);});
   w.__TAURI_INTERNALS__={transformCallback:(callback:any)=>{w.callbacks[++id]=callback;return id;},invoke:async(command:string,args:any)=>{
    if(command==='plugin:event|listen'){w.handlers[args.event]=w.callbacks[args.handler];return ++id;}
    if(command==='scene_snapshot')return null;
+   if(command==='scene_options')return {content:'video',fps:0,quality:'high'};
+   if(command==='analysis_watch'){w.watching=args.active;return;}
    if(command==='player_host_status')return {supported:true,epoch:0};
    if(command==='player_host_mirror'){w.mirrors.push(args.surface);return;}
    if(command==='scene_control'){w.controls.push(args.action);return {fullscreen:args.action.type==='fullscreen',topmost:args.action.type==='topmost'};}
@@ -14,6 +17,30 @@ test.beforeEach(async({page})=>{
  });
  await page.route('https://www.youtube.com/**',route=>route.abort());
  await page.goto('/scene.html');await expect(page.locator('body')).toHaveClass(/native-player-host/);
+});
+
+test('Spectrum uses real supplied bands, disables the video mirror, and stops rendering when hidden',async({page})=>{
+ const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+ await page.evaluate(value=>{const w=window as any;w.send(value);w.handlers['scene-options']({payload:{content:'visualizer',fps:30,quality:'medium'}});},snapshot());
+ const canvas=page.locator('.spectrum-canvas');await expect(canvas).toBeVisible();
+ await expect.poll(()=>page.evaluate(()=>(window as any).watching)).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>(window as any).mirrors.at(-1)?.visible)).toBe(false);
+ await page.waitForTimeout(100);const silent=await canvas.screenshot({path:'../../.tools/spectrum-test-silent.png'});
+ await page.evaluate(()=>{const w=window as any;const send=()=>w.handlers['audio-analysis']({payload:{available:true,bands:Array(48).fill(.2)}});send();w.audioTimer=setInterval(send,50);});
+ await page.waitForTimeout(200);const active=await canvas.screenshot({path:'../../.tools/spectrum-test-active.png'});expect(errors).toEqual([]);expect(active.equals(silent),JSON.stringify(await page.evaluate(()=>{const canvas=document.querySelector('canvas')!;const gl=canvas.getContext('webgl');return {frames:(window as any).spectrumFrames,renderer:canvas.dataset.renderer,size:[canvas.width,canvas.height],hidden:document.hidden,error:gl?.getError()};}))).toBe(false);
+ await page.evaluate(()=>clearInterval((window as any).audioTimer));
+ await page.evaluate(value=>(window as any).send(value,false),snapshot(2));await page.waitForTimeout(50);
+ const frames=await page.evaluate(()=>(window as any).spectrumFrames);await page.waitForTimeout(300);expect(await page.evaluate(()=>(window as any).spectrumFrames)).toBe(frames);
+ await expect.poll(()=>page.evaluate(()=>(window as any).watching)).toBe(false);
+ await page.evaluate(value=>(window as any).send(value,true),snapshot(3));await expect.poll(()=>page.evaluate(()=>(window as any).spectrumFrames)).toBeGreaterThan(frames);
+ await page.evaluate(()=>{(window as any).handlers['scene-options']({payload:{content:'video',fps:30,quality:'medium'}});});await expect(canvas).toBeHidden();
+ await expect.poll(()=>page.evaluate(()=>(window as any).mirrors.at(-1)?.visible)).toBe(true);await expect(page.locator('iframe')).toHaveCount(0);
+});
+
+test('a lost graphics context falls back to Canvas2D without playback commands',async({page})=>{
+ await page.evaluate(()=>{const w=window as any;w.handlers['scene-options']({payload:{content:'visualizer',fps:60,quality:'high'}});const canvas=document.querySelector('canvas')!;if(canvas.dataset.renderer==='webgl')canvas.dispatchEvent(new Event('webglcontextlost',{cancelable:true}));});
+ await expect(page.locator('.spectrum-canvas')).toHaveAttribute('data-renderer','canvas2d');
+ expect(await page.evaluate(()=>(window as any).controls)).toEqual([]);
 });
 const snapshot=(revision=1,generation=1,videoId:string|null='Aaaaaaaaaaa',playback=1,position=10)=>({revision,generation,videoId,title:generation===1?'First':'Second',artist:'Fixture',position,duration:120,playback});
 

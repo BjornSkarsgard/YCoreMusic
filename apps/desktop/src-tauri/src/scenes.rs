@@ -3,6 +3,35 @@ use std::sync::Mutex;
 use tauri::{Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
 const LABEL: &str = "video-scene";
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum Content {
+    #[default]
+    Video,
+    Visualizer,
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum Quality {
+    Low,
+    Medium,
+    #[default]
+    High,
+    Ultra,
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct VisualOptions {
+    pub content: Content,
+    pub quality: Quality,
+    /// Zero means the display's rAF/VSync, not an automatic performance policy.
+    pub fps: u16,
+}
+impl VisualOptions {
+    pub fn valid(&self) -> bool {
+        matches!(self.fps, 0 | 30 | 60 | 90 | 120 | 144 | 165 | 180 | 240)
+    }
+}
 pub(crate) fn label_for(monitor_id: Option<&str>) -> Result<String, String> {
     match monitor_id {
         None => Ok(LABEL.into()),
@@ -68,9 +97,14 @@ pub struct Status {
     pub(crate) fullscreen: bool,
     pub(crate) monitor_id: Option<String>,
     pub(crate) detached: bool,
+    pub(crate) options: VisualOptions,
 }
 fn status(window: Option<WebviewWindow>) -> Status {
     Status {
+        options: window
+            .as_ref()
+            .map(crate::scene_layout::options)
+            .unwrap_or_default(),
         detached: window
             .as_ref()
             .is_some_and(crate::scene_layout::is_detached),
@@ -104,17 +138,50 @@ pub async fn scene_window(
     window: WebviewWindow,
     action: WindowAction,
     monitor_id: Option<String>,
+    options: Option<VisualOptions>,
 ) -> Result<Status, String> {
     if window.label() != "main" {
         return Err("Untrusted window".into());
     }
-    change(&window, action, monitor_id, None).await
+    if let Some(options) = options {
+        if !options.valid() {
+            return Err("Invalid visualizer settings".into());
+        }
+        if options.content == Content::Visualizer
+            && !cfg!(all(target_os = "windows", feature = "audio-analysis"))
+        {
+            return Err("Visualizer analysis is not available on this platform yet".into());
+        }
+        if options.fps > 0 {
+            if let Some(display) = crate::monitors::list(&window)?
+                .iter()
+                .find(|d| Some(&d.id) == monitor_id.as_ref())
+            {
+                if display
+                    .refresh_hz
+                    .is_some_and(|hz| f64::from(options.fps) > f64::from(hz) + 0.5)
+                {
+                    return Err("FPS exceeds display refresh rate".into());
+                }
+            }
+        }
+    }
+    change(&window, action, monitor_id, None, options).await
+}
+
+#[tauri::command]
+pub fn scene_options(window: WebviewWindow) -> Result<VisualOptions, String> {
+    if !is_scene(window.label()) {
+        return Err("Untrusted window".into());
+    }
+    Ok(crate::scene_layout::options(&window))
 }
 pub(crate) async fn change(
     window: &WebviewWindow,
     action: WindowAction,
     monitor_id: Option<String>,
     restore: Option<crate::scene_layout::Restore>,
+    options: Option<VisualOptions>,
 ) -> Result<Status, String> {
     let app = window.app_handle();
     let state = window.state::<Scenes>();
@@ -182,6 +249,10 @@ pub(crate) async fn change(
                     }
                     scene.show().map_err(|_| "Cannot show scene")?;
                     scene.unminimize().map_err(|_| "Cannot restore scene")?;
+                    if let (Some(id), Some(options)) = (monitor_id.as_deref(), options) {
+                        crate::scene_layout::set_options(window, id, options)?;
+                        let _ = scene.emit("scene-options", options);
+                    }
                 }
             }
         }
