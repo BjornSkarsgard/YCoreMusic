@@ -126,6 +126,11 @@ try {
   await store({type:'remove_video',trackId:'123456789'});
   assert.equal(await store({type:'get_video',trackId:'123456789'}),null);
   console.log('Native isolated SQLite override/history/idempotency/clear: PASS');
+  const preferenceTrack='9990000111';
+  await store({type:'prefer_video',trackId:preferenceTrack,videoId:'Aaaaaaaaaaa'});assert.equal((await store({type:'get_videos',trackId:preferenceTrack})).preferredVideoId,'Aaaaaaaaaaa');
+  await store({type:'exclude_video',trackId:preferenceTrack,videoId:'Aaaaaaaaaaa',excluded:true});const excludedPreference=await store({type:'get_videos',trackId:preferenceTrack});assert.equal(excludedPreference.preferredVideoId,null);assert.deepEqual(excludedPreference.excludedVideoIds,['Aaaaaaaaaaa']);
+  await store({type:'exclude_video',trackId:preferenceTrack,videoId:'Aaaaaaaaaaa',excluded:false});await store({type:'remove_video',trackId:preferenceTrack});
+  console.log('Native local clip preference/exclusion/restore without music feedback: PASS');
   console.log('Native listening/source/terminal reason/history UI and late checkpoint after clear: PASS');
   // Exercise the real storage bridge and history UI only after testMode confirmation.
   for(let i=0;i<105;i++)await store({type:'record',event:{...event,playbackId:fixture+'-page-'+i}});

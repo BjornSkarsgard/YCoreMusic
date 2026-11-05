@@ -766,6 +766,40 @@ test('favorite replay alternates videos, deletion keeps playback and Pause cance
  await page.evaluate(()=>{const w=window as any;w.holdFavorite=true;w.activePlayer.options.events.onStateChange({data:0});});await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseFavorite)).toBe('function');await page.locator('#pause').click();await page.evaluate(()=>(window as any).releaseFavorite());await expect(page.locator('#play')).toBeEnabled();expect(await page.evaluate(()=>(window as any).played.length)).toBe(count);await expect(page.locator('#track-title')).toHaveText('Same song');
 });
 
+test('preferred clip repeats explicitly, exclusion replaces only the video and can be undone without Yandex dislike',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.favorites=['Aaaaaaaaaaa','Bbbbbbbbbbb'];w.preferred=null;w.excluded=[];w.lastFavorite='Bbbbbbbbbbb';w.feedbackWrites=[];
+  w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
+   if(command==='source_fetch')return [{id:'123',title:'Same song',artist:'Fixture'}];
+   if(command==='search_videos')return ['Aaaaaaaaaaa','Bbbbbbbbbbb'].map(id=>({id,title:id,score:100,reason:'fixture'}));
+   if(command==='feedback_command'&&args.request?.type==='set')w.feedbackWrites.push(args.request);
+   if(command==='storage_command'){const r=args.request;
+    if(r.type==='get_videos')return {videos:w.favorites.map((videoId:string)=>({videoId,unavailable:false})),lastVideoId:w.lastFavorite,preferredVideoId:w.preferred,excludedVideoIds:[...w.excluded]};
+    if(r.type==='record')w.lastFavorite=r.event.videoId;
+    if(r.type==='prefer_video')w.preferred=r.videoId;
+    if(r.type==='exclude_video'){w.excluded=r.excluded?[...w.excluded,r.videoId]:w.excluded.filter((id:string)=>id!==r.videoId);if(r.excluded&&w.preferred===r.videoId)w.preferred=null;}
+   }
+  }};
+ });
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();expect(await page.evaluate(()=>(window as any).loaded.at(-1))).toBe('Aaaaaaaaaaa');
+ await videoEditor(page);await page.locator('#prefer-video').click();await expect(page.locator('#prefer-video')).toHaveAttribute('aria-pressed','true');await page.locator('#close-video-dialog').click();
+ await page.locator('#repeat').click();await page.locator('#play').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ const count=await page.evaluate(()=>(window as any).played.length);await page.evaluate(()=>(window as any).activePlayer.options.events.onStateChange({data:0}));await expect.poll(()=>page.evaluate(()=>(window as any).played.length)).toBeGreaterThan(count);expect(await page.evaluate(()=>(window as any).played.at(-1))).toBe('Aaaaaaaaaaa');
+ await videoEditor(page);await page.locator('#exclude-video').click();await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe('Bbbbbbbbbbb');await expect(page.locator('#track-title')).toHaveText('Same song');
+ await expect(page.locator('#excluded-clips')).toBeVisible();await page.locator('#excluded-clips summary').click();await page.getByRole('button',{name:'Вернуть в подбор Aaaaaaaaaaa',exact:true}).click();await expect(page.locator('#excluded-clips')).not.toBeVisible();
+ expect(await page.evaluate(()=>(window as any).excluded)).toEqual([]);expect(await page.evaluate(()=>(window as any).feedbackWrites)).toEqual([]);expect(await page.evaluate(()=>(window as any).preferred)).toBe(null);
+ await page.locator('#prefer-video').click();await expect(page.locator('#prefer-video')).toHaveAttribute('aria-pressed','true');await page.locator('#prefer-video').click();await expect(page.locator('#prefer-video')).toHaveAttribute('aria-pressed','false');await expect(page.locator('#status')).toHaveText('Воспроизведение');
+});
+
+test('excluded videos are filtered from history, automatic matching and alternative cards',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
+  if(command==='source_fetch')return [{id:'123',title:'Song',artist:'Fixture',historyVideoId:'Aaaaaaaaaaa'}];
+  if(command==='search_videos')return [{id:'Aaaaaaaaaaa',title:'Excluded live',score:100,reason:'fixture'},{id:'Bbbbbbbbbbb',title:'Allowed official',score:90,reason:'fixture'}];
+  if(command==='storage_command'&&args.request.type==='get_videos')return {videos:[],lastVideoId:null,preferredVideoId:null,excludedVideoIds:['Aaaaaaaaaaa']};
+ }};});
+ await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();expect(await page.evaluate(()=>(window as any).loaded)).toEqual(['Bbbbbbbbbbb']);
+ await expect(page.locator('#alternative-list')).toContainText('Allowed official');await expect(page.locator('#alternative-list')).not.toContainText('Excluded live');
+});
+
 test('unavailable favorite is retained and another saved clip is tried before automatic search',async({page})=>{
  await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.failedVideos=[];w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
   if(cmd==='source_fetch')return [{id:'123',title:'Same song',artist:'Fixture'}];

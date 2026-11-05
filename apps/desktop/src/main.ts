@@ -12,7 +12,7 @@ import {mountAutostart} from './autostart-ui';
 import {mountHistory} from './history-ui';
 import {mountDiscovery} from './discovery-ui';
 import {mountVideoFavorites} from './favorite-ui';
-import {savedVideos} from './favorite-store';
+import {savedVideos,allowedVideos,videoExcluded,invalidateVideoPolicy,videoPolicyVersion} from './favorite-store';
 import {favoriteOrder,type SavedVideos} from './video-favorites';
 import {historyBatch,type SmartCandidate} from './smart-history';
 import {mountFeedback} from './feedback-ui';
@@ -136,7 +136,7 @@ const excludedTracks=new Set<string>();
 const pendingReactionStates=new Map<string,number>();
 const unavailableHistoryTracks=new Set<string>();
 let activeCollection:CollectionContext|undefined;
-interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number;durationSeconds?:number;reason:string;saved?:boolean;historical?:boolean;needsReview?:boolean}
+interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number;durationSeconds?:number;reason:string;saved?:boolean;preferred?:boolean;historical?:boolean;needsReview?:boolean}
 const choices=new Map<string,{items:Candidate[];index:number;alternativesLoaded?:boolean;favoriteChosen?:boolean}>();
 const searching=new Set<string>();
 const bypassSaved=new Set<string>();
@@ -489,19 +489,22 @@ function renderAlternatives(items?:Candidate[],epoch=queue.generation,ordinal=qu
   }));
 }
 function favoriteCandidates(saved:SavedVideos,title:string,existing:Candidate[]=[]):Candidate[]{
-  return saved.videos.filter(video=>!video.unavailable).map(video=>({...existing.find(item=>item.id===video.videoId),id:video.videoId,title:existing.find(item=>item.id===video.videoId)?.title??title,score:1000,reason:'Ваш избранный клип',saved:true}));
+  return saved.videos.filter(video=>!video.unavailable&&!saved.excludedVideoIds?.includes(video.videoId)).map(video=>({...existing.find(item=>item.id===video.videoId),id:video.videoId,title:existing.find(item=>item.id===video.videoId)?.title??title,score:1000,reason:video.videoId===saved.preferredVideoId?'Ваш предпочтительный клип':'Ваш избранный клип',saved:true,preferred:video.videoId===saved.preferredVideoId}));
 }
 async function favoritesChanged(trackId:string){
+  invalidateVideoPolicy(trackId);
   unavailableHistoryTracks.delete(trackId);historyExhausted=false;
   const epoch=queue.generation;
   try{
     const saved=await savedVideos(trackId);if(epoch!==queue.generation)return;
     for(const track of queue.snapshot){if(track.id!==trackId)continue;
       const key=epoch+':'+track.ordinal,entry=choices.get(key),existing=entry?.items??[];
-      const favorites=favoriteCandidates(saved,track.title,existing),items=[...favorites,...existing.filter(item=>!item.saved&&!favorites.some(saved=>saved.id===item.id))];
+      const favorites=favoriteOrder(favoriteCandidates(saved,track.title,existing),lastPlayedVideos.get(track.id)),items=allowedVideos(trackId,[...favorites,...existing.filter(item=>!item.saved&&!favorites.some(saved=>saved.id===item.id))]);
       const active=track.ordinal===queue.current?.ordinal?activeVideo?.videoId:undefined;
+      if(track.videoId&&videoExcluded(track.id,track.videoId))queue.clearVideo(track.ordinal);
+      if(active&&videoExcluded(track.id,active))stopPlayer('video_change');
       if(!items.length){choices.delete(key);if(active)renderCandidates([],epoch,track.ordinal);continue;}
-      choices.set(key,{items,index:active?items.findIndex(item=>item.id===active):0,favoriteChosen:!!active,alternativesLoaded:false});
+      choices.set(key,{items,index:Math.max(0,active?items.findIndex(item=>item.id===active):0),favoriteChosen:!!active,alternativesLoaded:false});
       if(track.ordinal===queue.current?.ordinal)renderCandidates(items,epoch,track.ordinal);
     }
     prepareAhead();
@@ -516,9 +519,12 @@ async function repeatVideo(id:string,automatic:boolean){
       const key=epoch+':'+track.ordinal,existing=choices.get(key)?.items??[];
       const favorites=favoriteOrder(favoriteCandidates(saved,track.title,existing),lastPlayedVideos.get(track.id)??saved.lastVideoId);
       if(favorites.length){
-        const items=[...favorites,...existing.filter(item=>!item.saved&&!favorites.some(favorite=>favorite.id===item.id))];
+        const items=allowedVideos(track.id,[...favorites,...existing.filter(item=>!item.saved&&!favorites.some(favorite=>favorite.id===item.id))]);
         choices.set(key,{items,index:0,favoriteChosen:true});
         void loadVideo(favorites[0].id,playIntent,true);return;
+      }
+      if(videoExcluded(track.id,id)){
+        queue.clearVideo(track.ordinal);stopPlayer('video_change');choices.delete(key);prepareAhead();return;
       }
     }catch{/* Keep the current working video when local favorites cannot be read. */}
   }
@@ -537,7 +543,7 @@ function ensureAlternatives(){
   void invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist}).then(found=>{
     if(epoch!==queue.generation||choices.get(key)!==captured||!Array.isArray(found))return;
     const favorites=captured.items.filter(item=>item.saved||item.historical).map(saved=>{const metadata=found.find(item=>item.id===saved.id);return {...metadata,...saved,title:metadata?.title??saved.title,views:metadata?.views,durationSeconds:metadata?.durationSeconds};});
-    captured.items=[...favorites,...found.filter(item=>!favorites.some(saved=>saved.id===item.id))];
+    captured.items=allowedVideos(track.id,[...favorites,...found.filter(item=>!favorites.some(saved=>saved.id===item.id))]);
     const active=queue.current?.ordinal===track.ordinal?activeVideo?.videoId:track.videoId;if(active)captured.index=captured.items.findIndex(item=>item.id===active);
     if(queue.current?.ordinal===track.ordinal)renderCandidates(captured.items,epoch,track.ordinal);
   }).catch(()=>{}).finally(()=>{searching.delete(work);prepareAhead();});
@@ -594,18 +600,18 @@ function prepareAhead(){
     }
     if(searching.has(key)||searching.size>=3)continue;
     searching.add(key);
-    const matchKey=track.id+'|'+track.title+'|'+track.artist+'|'+(track.historyVideoId??'');
+    const policyVersion=videoPolicyVersion(track.id),matchKey=track.id+'|'+track.title+'|'+track.artist+'|'+(track.historyVideoId??'')+'|'+policyVersion;
     let job=matchJobs.get(matchKey);
     if(!job){job=(async()=>{
-      if(/^\d+$/.test(track.id)&&!bypassSaved.has(key)){
-        try{const saved=await savedVideos(track.id);if(!lastPlayedVideos.has(track.id)&&saved.lastVideoId)lastPlayedVideos.set(track.id,saved.lastVideoId);const favorites=favoriteCandidates(saved,track.title);if(favorites.length)return favorites;}catch{/* Match without a saved override. */}
+      if(/^\d+$/.test(track.id)){
+        try{const saved=await savedVideos(track.id);if(!lastPlayedVideos.has(track.id)&&saved.lastVideoId)lastPlayedVideos.set(track.id,saved.lastVideoId);const favorites=favoriteCandidates(saved,track.title);if(favorites.length&&!bypassSaved.has(key))return favorites;}catch{/* Retain the last known local exclusions if storage cannot be read. */}
       }
-      if(track.historyVideoId&&!bypassSaved.has(key))return [{id:track.historyVideoId,title:track.title,score:100,reason:'Клип из вашей истории',historical:true}];
+      if(track.historyVideoId&&!bypassSaved.has(key)&&!videoExcluded(track.id,track.historyVideoId))return [{id:track.historyVideoId,title:track.title,score:100,reason:'Клип из вашей истории',historical:true}];
       if(!track.title.trim()||!track.artist.trim())return [];
-      return invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist});
+      return allowedVideos(track.id,await invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist}));
     })();matchJobs.set(matchKey,job);void job.finally(()=>matchJobs.delete(matchKey)).catch(()=>{});}
     void job.then(items=>{
-      if(epoch!==queue.generation)return;
+      if(epoch!==queue.generation||policyVersion!==videoPolicyVersion(track.id))return;
       choices.set(key,{items:Array.isArray(items)?items:[],index:0,alternativesLoaded:!items?.some(item=>item.saved||item.historical)});
     }).catch(()=>{if(epoch===queue.generation)searchErrors.set(key,Date.now());}).finally(()=>{
       searching.delete(key);
@@ -809,7 +815,7 @@ window.addEventListener('feedback-snapshot',event=>{
   historyExhausted=false;if(!finiteSource)prepareAhead();
 });
 refreshFeedback=mountFeedback(()=>queue.current,()=>void advance(playIntent,true,'dislike'));
-refreshVideoFavorites=mountVideoFavorites(()=>queue.current&&activeVideo?.id===queue.current.id?{trackId:queue.current.id,videoId:activeVideo.videoId,key:queue.generation+':'+queue.current.ordinal}:undefined,id=>void loadVideo(id,playIntent,true),id=>void favoritesChanged(id),id=>choices.get(queue.generation+':'+queue.current?.ordinal)?.items.find(item=>item.id===id)?.title);
+refreshVideoFavorites=mountVideoFavorites(()=>queue.current?{trackId:queue.current.id,videoId:activeVideo?.id===queue.current.id?activeVideo.videoId:undefined,key:queue.generation+':'+queue.current.ordinal}:undefined,id=>void loadVideo(id,playIntent,true),id=>void favoritesChanged(id),id=>choices.get(queue.generation+':'+queue.current?.ordinal)?.items.find(item=>item.id===id)?.title);
 const updateAccountConnection=mountAuth(()=>window.location.reload());
 mountDiagnostics(state=>{updateAccountConnection(state);if(state==='saved'||state==='connected')scheduleWaveSync();});
 mountAutostart();

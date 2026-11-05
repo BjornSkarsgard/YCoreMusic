@@ -18,6 +18,8 @@ pub struct FavoriteVideo {
 pub struct SavedVideos {
     pub videos: Vec<FavoriteVideo>,
     pub last_video_id: Option<String>,
+    pub preferred_video_id: Option<String>,
+    pub excluded_video_ids: Vec<String>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -86,7 +88,7 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
     let version: i64 = connection
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(|_| "Cannot read database schema; existing file preserved")?;
-    if version > 5 {
+    if version > 6 {
         return Err("Database schema is newer than YCore Music; existing file preserved");
     }
     if version == 0 {
@@ -154,6 +156,21 @@ fn migrate(connection: &mut Connection) -> Result<(), &'static str> {
             .map_err(|_| "Cannot commit Wave event migration")?;
     }
     connection.prepare("SELECT event_key,account_id,session_id,body_json,created_at,status,attempts FROM wave_events LIMIT 0").map_err(|_|"Invalid Wave event schema")?;
+    if version < 6 {
+        let transaction = connection
+            .transaction()
+            .map_err(|_| "Cannot start clip preferences migration")?;
+        transaction.execute_batch("CREATE TABLE IF NOT EXISTS video_preferences(track_id TEXT PRIMARY KEY,video_id TEXT NOT NULL);CREATE TABLE IF NOT EXISTS video_exclusions(track_id TEXT NOT NULL,video_id TEXT NOT NULL,PRIMARY KEY(track_id,video_id));PRAGMA user_version=6;").map_err(|_|"Cannot migrate clip preferences")?;
+        transaction
+            .commit()
+            .map_err(|_| "Cannot commit clip preferences migration")?;
+    }
+    connection
+        .prepare("SELECT track_id,video_id FROM video_preferences LIMIT 0")
+        .map_err(|_| "Invalid clip preference schema")?;
+    connection
+        .prepare("SELECT track_id,video_id FROM video_exclusions LIMIT 0")
+        .map_err(|_| "Invalid clip exclusion schema")?;
     Ok(())
 }
 impl Store {
@@ -162,7 +179,7 @@ impl Store {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(|_| "Cannot read storage version")?;
-        if (1..5).contains(&version) && path != Path::new(":memory:") {
+        if (1..6).contains(&version) && path != Path::new(":memory:") {
             let backup = path.with_extension(format!(
                 "v{version}-backup-{}.sqlite",
                 chrono::Utc::now().timestamp_millis()
@@ -305,7 +322,83 @@ impl Store {
         Ok(SavedVideos {
             videos,
             last_video_id,
+            preferred_video_id: connection
+                .query_row(
+                    "SELECT video_id FROM video_preferences WHERE track_id=?1",
+                    [track],
+                    |row| row.get(0),
+                )
+                .optional()
+                .map_err(|_| "Cannot read preferred clip")?,
+            excluded_video_ids: {
+                let mut query = connection
+                    .prepare(
+                        "SELECT video_id FROM video_exclusions WHERE track_id=?1 ORDER BY video_id",
+                    )
+                    .map_err(|_| "Cannot read excluded clips")?;
+                let result = query
+                    .query_map([track], |row| row.get(0))
+                    .map_err(|_| "Cannot read excluded clips")?
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|_| "Cannot read excluded clips")?;
+                result
+            },
         })
+    }
+    pub fn prefer_video(&self, track: &str, video: Option<&str>) -> Result<(), &'static str> {
+        if !track_id(track) || video.is_some_and(|id| !video_id(id)) {
+            return Err("Invalid clip preference");
+        }
+        let mut connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let tx = connection
+            .transaction()
+            .map_err(|_| "Cannot start clip preference transaction")?;
+        if let Some(video) = video {
+            tx.execute("INSERT INTO video_preferences(track_id,video_id) VALUES(?1,?2) ON CONFLICT(track_id) DO UPDATE SET video_id=excluded.video_id",params![track,video]).map_err(|_|"Cannot prefer clip")?;
+            tx.execute(
+                "DELETE FROM video_exclusions WHERE track_id=?1 AND video_id=?2",
+                params![track, video],
+            )
+            .map_err(|_| "Cannot allow preferred clip")?;
+            tx.execute("INSERT INTO video_favorites(track_id,video_id,added_at) VALUES(?1,?2,?3) ON CONFLICT(track_id,video_id) DO UPDATE SET unavailable_at=NULL",params![track,video,chrono::Utc::now().to_rfc3339()]).map_err(|_|"Cannot save preferred clip")?;
+        } else {
+            tx.execute("DELETE FROM video_preferences WHERE track_id=?1", [track])
+                .map_err(|_| "Cannot clear preferred clip")?;
+        }
+        tx.commit().map_err(|_| "Cannot commit preferred clip")
+    }
+    pub fn exclude_video(
+        &self,
+        track: &str,
+        video: &str,
+        excluded: bool,
+    ) -> Result<(), &'static str> {
+        if !track_id(track) || !video_id(video) {
+            return Err("Invalid clip exclusion");
+        }
+        let mut connection = self.0.lock().map_err(|_| "Storage unavailable")?;
+        let tx = connection
+            .transaction()
+            .map_err(|_| "Cannot start clip exclusion transaction")?;
+        if excluded {
+            tx.execute(
+                "INSERT OR IGNORE INTO video_exclusions(track_id,video_id) VALUES(?1,?2)",
+                params![track, video],
+            )
+            .map_err(|_| "Cannot exclude clip")?;
+            tx.execute(
+                "DELETE FROM video_preferences WHERE track_id=?1 AND video_id=?2",
+                params![track, video],
+            )
+            .map_err(|_| "Cannot clear excluded preference")?;
+        } else {
+            tx.execute(
+                "DELETE FROM video_exclusions WHERE track_id=?1 AND video_id=?2",
+                params![track, video],
+            )
+            .map_err(|_| "Cannot restore clip")?;
+        }
+        tx.commit().map_err(|_| "Cannot commit clip exclusion")
     }
     pub fn remove_favorite(&self, track: &str, video: &str) -> Result<(), &'static str> {
         if !track_id(track) || !video_id(video) {
@@ -325,6 +418,11 @@ impl Store {
             params![track, video],
         )
         .map_err(|_| "Cannot remove legacy video binding")?;
+        tx.execute(
+            "DELETE FROM video_preferences WHERE track_id=?1 AND video_id=?2",
+            params![track, video],
+        )
+        .map_err(|_| "Cannot remove preferred clip")?;
         tx.commit().map_err(|_| "Cannot commit favorite removal")?;
         Ok(())
     }
@@ -369,6 +467,8 @@ impl Store {
             .map_err(|_| "Cannot reset manual video")?;
         tx.execute("DELETE FROM video_favorites WHERE track_id=?1", [track])
             .map_err(|_| "Cannot reset favorites")?;
+        tx.execute("DELETE FROM video_preferences WHERE track_id=?1", [track])
+            .map_err(|_| "Cannot reset preferred clip")?;
         tx.commit().map_err(|_| "Cannot commit video reset")?;
         Ok(())
     }
@@ -1058,6 +1158,97 @@ mod tests {
         migrate(&mut connection).unwrap();
         Store(Arc::new(Mutex::new(connection)))
     }
+
+    #[test]
+    fn clip_preferences_are_track_scoped_and_never_change_music_reactions() {
+        let store = memory();
+        store.save_video("123", "Aaaaaaaaaaa").unwrap();
+        store.save_video("123", "Bbbbbbbbbbb").unwrap();
+        store.set_reaction("1", "123", 1, None).unwrap();
+        store.prefer_video("123", Some("Aaaaaaaaaaa")).unwrap();
+        assert_eq!(
+            store
+                .saved_videos("123")
+                .unwrap()
+                .preferred_video_id
+                .as_deref(),
+            Some("Aaaaaaaaaaa")
+        );
+        store.prefer_video("123", Some("Bbbbbbbbbbb")).unwrap();
+        store.exclude_video("123", "Bbbbbbbbbbb", true).unwrap();
+        let value = store.saved_videos("123").unwrap();
+        assert!(value.preferred_video_id.is_none());
+        assert_eq!(value.excluded_video_ids, vec!["Bbbbbbbbbbb"]);
+        assert_eq!(value.videos.len(), 2);
+        assert!(store
+            .saved_videos("456")
+            .unwrap()
+            .excluded_video_ids
+            .is_empty());
+        assert_eq!(store.reaction("1", "123").unwrap().unwrap().state, 1);
+        store.exclude_video("123", "Bbbbbbbbbbb", false).unwrap();
+        store.prefer_video("123", Some("Bbbbbbbbbbb")).unwrap();
+        store.remove_favorite("123", "Bbbbbbbbbbb").unwrap();
+        assert!(store
+            .saved_videos("123")
+            .unwrap()
+            .preferred_video_id
+            .is_none());
+        assert!(store
+            .prefer_video("../account", Some("Aaaaaaaaaaa"))
+            .is_err());
+        assert!(store.exclude_video("123", "https://evil", true).is_err());
+    }
+    #[test]
+    fn v5_preferences_upgrade_backs_up_data_and_survives_reopen() {
+        let directory =
+            std::env::temp_dir().join(format!("ycore-prefs-{}", getrandom::u64().unwrap()));
+        std::fs::create_dir(&directory).unwrap();
+        let path = directory.join("test.sqlite");
+        {
+            let store = Store::open(&path).unwrap();
+            store.save_video("123", "Aaaaaaaaaaa").unwrap();
+            store.0.lock().unwrap().execute_batch("DROP TABLE video_preferences;DROP TABLE video_exclusions;PRAGMA user_version=5;").unwrap();
+        }
+        {
+            let store = Store::open(&path).unwrap();
+            let saved = store.saved_videos("123").unwrap();
+            assert_eq!(saved.videos.len(), 1);
+            assert!(saved.preferred_video_id.is_none());
+            assert!(saved.excluded_video_ids.is_empty());
+            store.prefer_video("123", Some("Bbbbbbbbbbb")).unwrap();
+            store.exclude_video("123", "Aaaaaaaaaaa", true).unwrap();
+        }
+        {
+            let store = Store::open(&path).unwrap();
+            let saved = store.saved_videos("123").unwrap();
+            assert_eq!(saved.preferred_video_id.as_deref(), Some("Bbbbbbbbbbb"));
+            assert_eq!(saved.excluded_video_ids, vec!["Aaaaaaaaaaa"]);
+        }
+        let backups: Vec<_> = std::fs::read_dir(&directory)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .contains("v5-backup")
+            })
+            .collect();
+        assert_eq!(backups.len(), 1);
+        let backup = Connection::open(&backups[0]).unwrap();
+        assert_eq!(
+            backup
+                .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))
+                .unwrap(),
+            5
+        );
+        drop(backup);
+        for entry in std::fs::read_dir(&directory).unwrap() {
+            std::fs::remove_file(entry.unwrap().path()).unwrap();
+        }
+        std::fs::remove_dir(directory).unwrap();
+    }
     #[test]
     fn history_deduplicates_resume_but_records_new_play_and_searches_cyrillic() {
         let store = memory();
@@ -1272,6 +1463,15 @@ pub enum Request {
         track_id: String,
         video_id: String,
     },
+    PreferVideo {
+        track_id: String,
+        video_id: Option<String>,
+    },
+    ExcludeVideo {
+        track_id: String,
+        video_id: String,
+        excluded: bool,
+    },
     VideoFailed {
         track_id: String,
         video_id: String,
@@ -1319,6 +1519,14 @@ pub async fn storage_command(
     tauri::async_runtime::spawn_blocking(move || -> Result<serde_json::Value, &'static str> {
         match request {
             Request::SaveVideo { track_id, video_id } => store.save_video(&track_id, &video_id)?,
+            Request::PreferVideo { track_id, video_id } => {
+                store.prefer_video(&track_id, video_id.as_deref())?
+            }
+            Request::ExcludeVideo {
+                track_id,
+                video_id,
+                excluded,
+            } => store.exclude_video(&track_id, &video_id, excluded)?,
             Request::GetVideo { track_id } => {
                 return Ok(serde_json::json!(store.saved_video(&track_id)?))
             }
