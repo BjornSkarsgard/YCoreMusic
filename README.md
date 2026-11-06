@@ -3,6 +3,8 @@
 **YCore** · Юкор Мьюзик  
 **Your Music. Your Core, Your World.**
 
+Актуальный выпуск: [YCore Music 0.0.2 — Windows x64, Linux DEB и AppImage](https://github.com/BjornSkarsgard/YCoreMusic/releases/tag/v0.0.2). [Исправления и проверки](docs/releases/v0.0.2.md).
+
 Прежнее имя проекта — Encore. Исполняемый файл Windows — `YCoreMusic.exe`, репозиторий — [BjornSkarsgard/YCoreMusic](https://github.com/BjornSkarsgard/YCoreMusic).
 
 Личный музыкальный телеканал для Windows, Linux и macOS. На Windows работает один YouTube engine с локальными зеркалами на дополнительных мониторах. Полный продукт и платформенная приёмка ещё не завершены; одинаковые многомониторные возможности Linux/macOS пока не реализованы.
