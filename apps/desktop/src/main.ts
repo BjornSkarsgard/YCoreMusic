@@ -99,6 +99,7 @@ function seekPlayer(position:number){
 }
 let lastKnownPosition=0,networkOffline=!navigator.onLine;
 const playbackProgress=new PlaybackProgress();
+const preparationProgress=new PlaybackProgress(30000);
 let playbackRecovery: {id:string;position:number;record?:PlayRecord;attempts:number;ended:boolean}|undefined;
 let playbackRetry:ReturnType<typeof setTimeout>|undefined;
 function cancelPlaybackRecovery(reset=true){clearTimeout(playbackRetry);playbackRetry=undefined;if(reset)playbackRecovery=undefined;}
@@ -205,6 +206,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
   if(updatesInstalling())return;
   automatic ||= !!queue.current;
   playbackProgress.reset();
+  preparationProgress.reset();
   if(restore?.record===activeRecord&&activeRecord){observeRecord(false);persistRecord(activeRecord,true);}else finishRecord('video_change');
   if(!restore?.recovery)cancelPlaybackRecovery();
   previousGesture.reset();
@@ -336,6 +338,7 @@ window.addEventListener('beforeunload', () => { finishRecord('shutdown');clearIn
 
 function stopPlayer(reason:EndReason='source_change') {
   playbackProgress.reset();
+  preparationProgress.reset();
   finishRecord(reason);
   cancelPlaybackRecovery();
   element('video-alternatives').hidden=true;
@@ -425,7 +428,7 @@ function sourceFetch(fresh:boolean,autoplay=false):Promise<boolean>{
   element('source-status').textContent='Получение рекомендаций…';
   sourceWork=(async()=>{
     try{
-      const tracks=await invoke<Track[]>('source_fetch',{fresh,station:currentStation});
+      const tracks=await boundedRequest(invoke<Track[]>('source_fetch',{fresh,station:currentStation}),30000);
       if(revision!==sourceRevision||epoch!==queue.generation)return false;
       if(!Array.isArray(tracks)||!tracks.length)throw new Error('Empty recommendations');
       if(fresh){queue.reset(tracks);sourceNeedsFresh=false;choices.clear();bypassSaved.clear();element<HTMLInputElement>('url').value='';}
@@ -464,7 +467,7 @@ function historyFetch(fresh:boolean,autoplay=playIntent,quiet=false):Promise<boo
   if(fresh&&autoplay){historyStarting=true;intentUI();}
   historyWork=(async()=>{
     try{
-      const pool=await invoke<SmartCandidate[]>('smart_history_fetch');
+      const pool=await boundedRequest(invoke<SmartCandidate[]>('smart_history_fetch'),30000);
       if(epoch!==queue.generation||revision!==sourceRevision)return false;
       const tracks=historyBatch(Array.isArray(pool)?pool.filter(track=>!excludedTracks.has(track.id)&&!unavailableHistoryTracks.has(track.id)):[],fresh?queue.current?.id:queue.snapshot.at(-1)?.id);
       if(!tracks.length){historyExhausted=true;if(!quiet)report('В истории пока нет подходящих клипов.');else if(Array.isArray(pool))element('source-status').textContent+=' В истории пока нет подходящих клипов.';return false;}
@@ -569,10 +572,12 @@ function ensureAlternatives(){
   let entry=choices.get(key);
   if(!entry&&track.videoId){entry={items:[{id:track.videoId,title:track.title,score:0,reason:'Текущее видео'}],index:0};choices.set(key,entry);}
   const work='alt:'+key;
-  if(!entry||entry.alternativesLoaded||searching.size>=3||searching.has(work))return;
+  // Keep a slot available for the current track rather than filling all three
+  // workers with optional alternative-video metadata.
+  if(!entry||entry.alternativesLoaded||searching.size>=2||searching.has(work))return;
   entry.alternativesLoaded=true;searching.add(work);
   const captured=entry;
-  void invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist}).then(found=>{
+  void boundedRequest(invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist})).then(found=>{
     if(epoch!==queue.generation||choices.get(key)!==captured||!Array.isArray(found))return;
     const favorites=captured.items.filter(item=>item.saved||item.historical).map(saved=>{const metadata=found.find(item=>item.id===saved.id);return {...metadata,...saved,title:metadata?.title??saved.title,views:metadata?.views,durationSeconds:metadata?.durationSeconds};});
     captured.items=allowedVideos(track.id,[...favorites,...found.filter(item=>!favorites.some(saved=>saved.id===item.id))]);
@@ -603,10 +608,10 @@ function tryAlternative(epoch:number,ordinal:number|undefined){
 const searchErrors=new Map<string,number>();
 const searchAttempts=new Map<string,number>();
 const matchJobs=new Map<string,Promise<Candidate[]>>();
-function boundedMatch(job:Promise<Candidate[]>):Promise<Candidate[]>{
+function boundedRequest<T>(job:Promise<T>,timeout=20000):Promise<T>{
   return new Promise((resolve,reject)=>{
     // Native metadata requests have a 15-second budget; allow IPC/storage overhead.
-    const timer=setTimeout(()=>reject(new Error('Video matching timed out')),20000);
+    const timer=setTimeout(()=>reject(new Error('Playback request timed out')),timeout);
     job.then(resolve,reject).finally(()=>clearTimeout(timer));
   });
 }
@@ -619,7 +624,7 @@ function prepareAhead(){
   ensureAlternatives();
   for(const track of queue.ahead(finiteSource?3:8)){
     const key=epoch+':'+track.ordinal;
-    if(track.videoId)continue;
+    if(track.videoId){if(track.ordinal===queue.current?.ordinal&&!activeVideo&&!advancing)void loadVideo(track.videoId,playIntent,true);continue;}
     const cached=choices.get(key);
     if(cached){
       if(track.ordinal!==queue.current?.ordinal)continue;
@@ -646,7 +651,7 @@ function prepareAhead(){
     searching.add(key);
     const policyVersion=videoPolicyVersion(track.id),matchKey=track.id+'|'+track.title+'|'+track.artist+'|'+(track.historyVideoId??'')+'|'+policyVersion;
     let job=matchJobs.get(matchKey);
-    if(!job){job=boundedMatch((async()=>{
+    if(!job){job=boundedRequest((async()=>{
       if(/^\d+$/.test(track.id)){
         try{const saved=await savedVideos(track.id);if(!lastPlayedVideos.has(track.id)&&saved.lastVideoId)lastPlayedVideos.set(track.id,saved.lastVideoId);const favorites=favoriteCandidates(saved,track.title);if(favorites.length&&!bypassSaved.has(key))return favorites;}catch{/* Retain the last known local exclusions if storage cannot be read. */}
       }
@@ -690,7 +695,7 @@ async function advance(resume:boolean,explicit=false,reason?:EndReason){
     else if(!queue.hasNext){
       if(finiteSource){
         if(!activeCollection?.hasMore){finishRecord(reason??(explicit?'skip':'error'));playIntent=false;player?.pauseVideo();report('Конец выбранного списка.');return;}
-        try{const context=activeCollection,page=await collectionPage(context.entity,context.page+1);if(epoch!==queue.generation)return;queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};if(navigation!==queueNavigation)return;if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;player?.pauseVideo();report('Больше треков в списке нет.');return;}}}
+        try{const context=activeCollection,page=await boundedRequest(collectionPage(context.entity,context.page+1),30000);if(epoch!==queue.generation)return;queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};if(navigation!==queueNavigation)return;if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;player?.pauseVideo();report('Больше треков в списке нет.');return;}}}
         catch{if(navigation!==queueNavigation||epoch!==queue.generation)return;deferWave('Не удалось загрузить следующую часть списка',()=>void advance(playIntent));return;}
       }else{
         const received=await (historySource?historyFetch(false):sourceFetch(false));
@@ -781,7 +786,7 @@ element('previous').onclick=()=>{
 
 function systemControl(action:string){
   if(updatesInstalling())return;
-  if(action==='play'||action==='pause'){intentRevision++;playbackProgress.reset();}
+  if(action==='play'||action==='pause'){intentRevision++;playbackProgress.reset();preparationProgress.reset();}
   switch(action){
     case 'toggle':systemControl(playIntent?'pause':'play');break;
     case 'play':powerPaused=false;playIntent=true;cancelPlaybackRecovery(false);clearRetry();if(playbackRecovery){recoverPlayback(true);break;}if(!finiteSource&&queue.current&&excludedTracks.has(queue.current.id)){prepareAhead();break;}if(sourceNeedsFresh)void sourceFetch(true,true);else if(playerReady)player?.playVideo();else if(activeVideo?.videoId&&queue.current?.videoId)void loadVideo(activeVideo.videoId,true,activeAutomatic);else{element<HTMLButtonElement>('pause').disabled=false;prepareAhead();}break;
@@ -907,7 +912,10 @@ crashRecoveryUI=mountCrashRecovery(snapshot=>{
 });
 
 const streamWatchdog=setInterval(()=>{
- if(!playIntent||powerPaused||networkOffline||playbackRetry){playbackProgress.reset();return;}
+ if(!playIntent||powerPaused||networkOffline||playbackRetry){playbackProgress.reset();preparationProgress.reset();return;}
+ if(preparationProgress.stalled(queue.current?.ordinal??NaN,performance.now(),!activeVideo&&!startingSource&&!sourceNeedsFresh&&!advancing&&canSkip())){
+  preparationProgress.reset();clearRetry();skipUnavailable('Подбор клипа не завершился вовремя.');return;
+ }
  if(playbackProgress.stalled(player?.getCurrentTime()??NaN,performance.now(),playerReady&&scenePlayback===1)){
   playbackProgress.reset();report('Видео не продвигается · пробуем другой клип.');
   if(canSkip())tryAlternative(queue.generation,queue.current?.ordinal);else recoverPlayback();

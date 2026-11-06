@@ -1,5 +1,6 @@
 /** A PLAYING event is not proof that media time is actually advancing. */
 export class PlaybackProgress {
+ constructor(private readonly timeout=15000){}
  private at:number|undefined;
  private position:number|undefined;
  reset(){this.at=undefined;this.position=undefined;}
@@ -9,6 +10,6 @@ export class PlaybackProgress {
   if(Number.isFinite(position)&&(this.position===undefined||!Number.isFinite(this.position)||Math.abs(position-this.position)>0.05)){
    this.at=now;this.position=position;
   }
-  return now-this.at>=15000;
+  return now-this.at>=this.timeout;
  }
 }
