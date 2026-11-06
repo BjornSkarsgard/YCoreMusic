@@ -63,10 +63,6 @@ pub fn install(app: &tauri::AppHandle) -> Result<(), String> {
             if let Some(context) = webview.context() {
                 context.set_web_extensions_directory(&directory.to_string_lossy());
                 context.set_web_extensions_initialization_user_data(&identifier.to_variant());
-                // The initial local UI may already have spawned a WebProcess. Start
-                // its configured replacement before any player has been requested.
-                webview.terminate_web_process();
-                webview.reload();
             }
         })
         .map_err(|_| "Cannot configure WebKit identity".into())
