@@ -47,7 +47,7 @@ for(const source of ['wave','playlist'] as const){
    await page.evaluate(()=>(window as any).activePlayer.emit(0));
    if(failure==='unready')await page.clock.runFor(13000);
    if(failure==='search-error')await page.clock.runFor(6000);
-   if(failure==='search-hang')await page.clock.runFor(36000);
+   if(failure==='search-hang')await page.clock.runFor(46000);
    await expect(page.locator('#track-title')).toHaveText('C');
    await expect(page.locator('#status')).toHaveText('Воспроизведение');
    expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa','Ccccccccccc']);

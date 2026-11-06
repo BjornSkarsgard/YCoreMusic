@@ -600,7 +600,8 @@ const searchAttempts=new Map<string,number>();
 const matchJobs=new Map<string,Promise<Candidate[]>>();
 function boundedMatch(job:Promise<Candidate[]>):Promise<Candidate[]>{
   return new Promise((resolve,reject)=>{
-    const timer=setTimeout(()=>reject(new Error('Video matching timed out')),15000);
+    // Native metadata requests have a 15-second budget; allow IPC/storage overhead.
+    const timer=setTimeout(()=>reject(new Error('Video matching timed out')),20000);
     job.then(resolve,reject).finally(()=>clearTimeout(timer));
   });
 }

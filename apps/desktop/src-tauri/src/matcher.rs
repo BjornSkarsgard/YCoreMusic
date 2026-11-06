@@ -408,18 +408,20 @@ pub fn search(
         return Err("Invalid search metadata");
     }
     let key = format!("{}\n{}", title, artist);
-    let mut cache = matcher.0.lock().map_err(|_| "Search unavailable")?;
-    if let Some((time, results)) = cache.get(&key) {
-        if time.elapsed()
-            < Duration::from_secs(if results.iter().any(|candidate| !candidate.needs_review) {
-                3600
-            } else {
-                30
-            })
-        {
-            return Ok(results.clone());
+    {
+        let cache = matcher.0.lock().map_err(|_| "Search unavailable")?;
+        if let Some((time, results)) = cache.get(&key) {
+            if time.elapsed()
+                < Duration::from_secs(if results.iter().any(|candidate| !candidate.needs_review) {
+                    3600
+                } else {
+                    30
+                })
+            {
+                return Ok(results.clone());
+            }
         }
-    }
+    } // Do not serialize independent prefetch requests behind network I/O.
     let client = Client::builder()
         .timeout(Duration::from_secs(15))
         .connect_timeout(Duration::from_secs(8))
@@ -457,6 +459,7 @@ pub fn search(
         results.retain(|candidate| seen.insert(candidate.id.clone()));
         results.truncate(5);
     }
+    let mut cache = matcher.0.lock().map_err(|_| "Search unavailable")?;
     if cache.len() >= 128 {
         cache.clear();
     }
