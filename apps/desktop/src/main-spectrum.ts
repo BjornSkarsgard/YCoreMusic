@@ -4,7 +4,7 @@ import {mountSpectrum,type AnalysisFrame,type VisualOptions} from './spectrum';
 import type {MainLayout} from './window-layout';
 
 const key='encore.mainSpectrum.v1';
-const allowedFps=new Set([0,30,60,90,120,144]);
+const allowedFps=new Set([0,30,60,90,120,144,165,180,240]);
 const qualities=new Set<VisualOptions['quality']>(['low','medium','high','ultra']);
 type Saved=Pick<VisualOptions,'fps'|'quality'|'preset'>;
 
@@ -26,10 +26,28 @@ export function mountMainSpectrum(stage:HTMLElement,current:()=>MainLayout,curre
  document.querySelector('#window-layout option[value=spectrum]')!.textContent='Визуализатор';
  preset.onchange=()=>{if(preset.value==='spectrum')delete options.preset;else options.preset=preset.value as VisualOptions['preset'];save();configure();};
  const status=document.createElement('p');status.id='main-spectrum-status';status.setAttribute('role','status');stage.append(status);
- fps.value=String(options.fps);quality.value=options.quality;
+ quality.value=options.quality;
+ let readingMonitor=false,lastMonitorRead=0,monitorHz:number|null=null;
+ function fpsOptions(){
+  fps.replaceChildren(new Option('Частота экрана','0'));
+  for(const value of allowedFps)if(value&&(!monitorHz||value<=monitorHz))fps.append(new Option(value+' кадров/с',String(value)));
+  if(options.fps&&![...fps.options].some(option=>option.value===String(options.fps)))fps.append(new Option(options.fps+' кадров/с · сохранено',String(options.fps)));
+  fps.value=String(options.fps);
+ }
+ fpsOptions();
  let disposed=false,watching=false,leased=false,analysisError=false;
  let unlisten:(()=>void)|undefined;
  const active=()=>current()==='spectrum'&&!document.hidden;
+ async function readMonitor(){
+  if(readingMonitor||disposed||!active()||!isTauri()||Date.now()-lastMonitorRead<3000)return;
+  readingMonitor=true;lastMonitorRead=Date.now();
+  try{
+   const value=await invoke<{refreshHz:number|null}|null>('monitor_current');
+   const hz=typeof value?.refreshHz==='number'&&value.refreshHz>0?value.refreshHz:null;
+   if(hz!==monitorHz){monitorHz=hz;fpsOptions();}
+  }catch{/* Keep the user's existing FPS and quality if the monitor cannot be read. */}
+  finally{readingMonitor=false;}
+ }
  const statusText=()=>analysisError?'Визуализатор временно недоступен. Воспроизведение продолжается.':(options.preset??'spectrum')+' · реакция на звук YCore Music.';
  function save(){try{localStorage.setItem(key,JSON.stringify(options));}catch{/* Spectrum stays configurable for this session. */}}
  function configure(){
@@ -41,6 +59,7 @@ export function mountMainSpectrum(stage:HTMLElement,current:()=>MainLayout,curre
   widget?.configure({content:enabled?'visualizer':'video',fps:options.fps,quality:options.quality,preset:options.preset});
   status.textContent=enabled?statusText():'';
   void watch();
+  void readMonitor();
  }
  async function watch(){
   if(watching||disposed||!isTauri())return;
@@ -61,7 +80,7 @@ export function mountMainSpectrum(stage:HTMLElement,current:()=>MainLayout,curre
   if(active())status.textContent=statusText();
  },{target:{kind:'WebviewWindow',label:'main'}}).then(stop=>{if(disposed)stop();else unlisten=stop;}).catch(()=>{analysisError=true;if(active())status.textContent='Spectrum временно недоступен. Воспроизведение продолжается.';});
  configure();
- const timer=setInterval(()=>void watch(),750);
+ const timer=setInterval(()=>{void watch();void readMonitor();},750);
  window.addEventListener('beforeunload',()=>{disposed=true;clearInterval(timer);unlisten?.();widget?.destroy();});
  return {isActive:active};
 }

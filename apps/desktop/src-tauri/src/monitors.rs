@@ -186,6 +186,16 @@ pub fn monitor_list(window: WebviewWindow) -> Result<Vec<Display>, String> {
     }
     list(&window)
 }
+#[tauri::command]
+pub fn monitor_current(window: WebviewWindow) -> Result<Option<Display>, String> {
+    if window.label() != "main" {
+        return Err("Untrusted window".into());
+    }
+    window
+        .current_monitor()
+        .map(|monitor| monitor.map(|monitor| describe(monitor, false)))
+        .map_err(|_| "Cannot read current display".into())
+}
 #[cfg(test)]
 mod tests {
     use super::*;

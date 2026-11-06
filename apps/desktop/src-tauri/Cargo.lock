@@ -5824,9 +5824,11 @@ dependencies = [
 name = "ycore-music"
 version = "0.0.1"
 dependencies = [
+ "cc",
  "chrono",
  "getrandom 0.4.3",
  "keyring",
+ "pkg-config",
  "raw-window-handle",
  "reqwest",
  "rpassword",
@@ -5842,6 +5844,7 @@ dependencies = [
  "tauri-plugin-updater",
  "unicode-normalization",
  "url",
+ "webkit2gtk",
  "windows",
  "windows-core",
  "x11rb",

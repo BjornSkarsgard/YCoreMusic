@@ -21,6 +21,7 @@ test.beforeEach(async({page})=>{
     if(action.type==='cancel')w.sleepTimer={remainingSeconds:0,active:false,expired:false,revision:w.sleepTimer.revision+1};
     return {...w.sleepTimer};
    }
+   if(command==='monitor_current')return {refreshHz:w.monitorHz??null};
    if(command==='crash_recovery'){
     (w.recoveryRequests??=[]).push(args.request);
     if(args.request.type==='read')return JSON.parse(sessionStorage.getItem('testResume')??'null');
@@ -148,6 +149,15 @@ test('main Spectrum uses the shared analysis, persists its own settings, and nev
  await expect.poll(()=>page.evaluate(()=>(window as any).analysisWatches.at(-1))).toBe(false);
  await expect.poll(()=>page.evaluate(()=>(window as any).mirrors.at(-1)?.visible)).toBe(true);
  expect(await page.evaluate(()=>(window as any).loads.length)).toBe(loads);await expect(page.locator('iframe')).toHaveCount(0);
+});
+
+test('main visualizer offers high-refresh FPS and preserves the chosen cap when moved to a slower display',async({page})=>{
+ await page.evaluate(()=>(window as any).monitorHz=240);await page.locator('#window-layout').selectOption('spectrum');
+ await expect(page.locator('#main-spectrum-fps option[value="240"]')).toHaveCount(1);await page.locator('#main-spectrum-fps').selectOption('240');await page.locator('#main-spectrum-quality').selectOption('ultra');
+ const loads=await page.evaluate(()=>(window as any).loads.length);await page.evaluate(()=>(window as any).monitorHz=60);
+ await expect(page.locator('#main-spectrum-fps option[value="240"]')).toContainText('сохранено',{timeout:7000});await expect(page.locator('#main-spectrum-fps option[value="180"]')).toHaveCount(0);
+ await expect(page.locator('#main-spectrum-fps')).toHaveValue('240');await expect(page.locator('#main-spectrum-quality')).toHaveValue('ultra');expect(await page.evaluate(()=>(window as any).loads.length)).toBe(loads);
+ await page.reload();await expect(page.locator('#main-spectrum-fps')).toHaveValue('240');await expect(page.locator('#main-spectrum-quality')).toHaveValue('ultra');
 });
 
 test('changing from YouTube controls to Spectrum hides the source without another load',async({page})=>{

@@ -1073,6 +1073,7 @@ try {
   }
  } catch(error) {
   if(isolated&&session&&process.env.ENCORE_BASE_PLAYBACK_SMOKE==='1'){
+    console.log('Native embedded client identity status: '+JSON.stringify(await nativeInvoke('embed_identity_status').catch(()=>null)));
     const screenshot=await request('/session/'+session+'/screenshot').catch(()=>null);if(screenshot)writeFileSync(resolve(root,'.tools/native-basic-playback-failure.png'),Buffer.from(screenshot,'base64'));
   }
   if(isolated&&session&&process.env.ENCORE_SINGLE_HOST_SMOKE==='1'){

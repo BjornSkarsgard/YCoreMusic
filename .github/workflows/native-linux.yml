@@ -32,7 +32,7 @@ jobs:
         run: sh scripts/install-linux-deps.sh native
       - run: npm ci --prefix apps/desktop
       - run: npm run build --prefix apps/desktop
-      - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol --bin YCoreMusic
+      - run: cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol,linux-embed-referrer --bin YCoreMusic
       - run: cargo install tauri-driver --version 2.1.0 --locked
       - name: Native GTK window, isolated storage, history, mini and instance lifecycle
         env:

@@ -14,6 +14,7 @@ mod credentials;
 mod desktop;
 mod diagnostics;
 mod discovery;
+mod embed_identity;
 mod feedback;
 mod library;
 mod matcher;
@@ -152,6 +153,7 @@ fn main() {
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(updates::Updates::default())
+        .manage(embed_identity::Identity::default())
         .manage(desktop::DesktopState::default())
         .manage(sleep_timer::Timer::default())
         .manage(media::MediaState::default())
@@ -181,6 +183,7 @@ fn main() {
             });
             app.manage(storage::StorageState { store, test_mode });
             app.manage(crash_recovery::Recovery::open(recovery_path));
+            embed_identity::install(app.handle())?;
             scene_layout::install(app.handle(), background_launch);
             let _ = desktop::install(app.handle());
             if background_launch && !app.state::<desktop::DesktopState>().tray_available() {
@@ -205,6 +208,7 @@ fn main() {
         .manage(audio_analysis::Analysis::default())
         .invoke_handler(tauri::generate_handler![
             updates::updates_command,
+            embed_identity::embed_identity_status,
             updates::updates_verify_probe,
             platform::platform_capabilities,
             source_fetch,
@@ -222,6 +226,7 @@ fn main() {
             scenes::scene_snapshot,
             scenes::scene_control,
             monitors::monitor_list,
+            monitors::monitor_current,
             mirror_probe::mirror_probe,
             player_host::player_host_status,
             player_host::player_host_load,
