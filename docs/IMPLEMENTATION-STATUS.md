@@ -1,3 +1,45 @@
+## Актуальная точка остановки — 2026-11-06
+
+Последний scope: закончить этап, подготовить Linux установщик для тестирования,
+затем остановиться. Сайт и пульт исключены. Пользователь сообщил о близком лимите.
+Linux установщик пока НЕ готов и НЕ передан.
+
+Repo C:/Users/Skar/Documents/Encore main dirty — сохранить WIP. CI worktree:
+C:/Users/Skar/Documents/YCoreMusic-ci-check, branch codex/stability-portability-20261106,
+HEAD исходников 97a80c25441c6b055790303bf9c1866f20a1ba51.
+
+Linux live playback run42214293331 FAILED. Базовые GTK/X11 SQLite/history/window/
+autostart проверки PASS. embed identity loaded=true/applied=true, ошибка YouTube153
+устранена, duration635 получена. Но Play остаётся «Видео загружено», position0;
+iframe state=-1, paused=true, readyState0, mediaError=null, playingIntent=true.
+Private PulseAudio null sink в CI НЕ решил проблему. Следующий шаг: изучить
+артефакты native-basic-playback-diagnostic.json, screenshots, pulseaudio.log и
+доставку playVideo/пользовательского жеста/сетевые media-запросы в WebKit iframe.
+Не выдавать Linux playback за готовый и не маскировать провал теста.
+
+linux-embed-referrer экспериментальная, НЕ default. embed_identity.rs,
+linux/embed-identity.c/build.rs настраивают WebProcess extension ДО создания
+исходного main WindowConfig через extensions_path. Нет terminate/reload.
+Referer с настоящим app ID только для YouTube embed; один плеер сохраняется.
+
+После playback PASS: включить feature в package:linux (сейчас НЕ включён),
+проверить GStreamer runtime deps и AppImage bundleMediaFramework, собрать DEB и
+AppImage через package.yml Ubuntu24.04 x86_64, скачать, проверить control/хеши,
+дать пользователю файлы. Linux mirrors/audio visualizers отсутствуют; Wayland и
+реальное оборудование не проверены. Не обещать полную Linux parity.
+
+Windows latest combined native PASS: YouTube pause/seek/hidden,4 visualizers,
+sleep timer, playback guard, signed update verify, mini/topmost/instance.
+Main visualizer FPS165/180/240 и monitor refresh tracking готовы, preference
+сохраняется при переносе на меньшую Hz.
+Windows install lifecycle run42214292723 FAILED после сборки/установки NSIS:
+Node fetch TimeoutError в installed native check. UTF16 Edge driver уже исправлен.
+Install/upgrade/reinstall data preservation ещё НЕ PASS.
+Desktop checks run42214292678 оставался in_progress — проверить результат.
+
+Private updater key C:/Users/Skar/.tauri/YCoreMusic-updater.key НЕ печатать,
+НЕ пересоздавать, НЕ копировать/пушить. Публичные релизы не публиковались.
+
 # Статус реализации YCore Music
 
 ## Автономный desktop этап: soak, X11 и обновления — 2026-11-06
