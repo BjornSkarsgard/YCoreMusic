@@ -1,3 +1,33 @@
+## 2026-11-07: ложный PLAYING и Catch-22
+
+Дополнительный пользовательский дефект: What I Need / Catch-22 NZ, UI говорит
+PLAYING, но клип не идёт и очередь не продолжается. Причина пропуска watchdog:
+первый PLAYING обнулял loadStarted, а media position не проверялся.
+Добавлен PlaybackProgress: монотонный15sec budget без продвижения media time,
+не сбрасывается повторными PLAYING. Load/seek/explicit Pause/Play/offline/power
+сбрасывают наблюдение. Зависший клип -> другой кандидат -> следующий трек всей
+очереди. prepareAhead без активного видео теперь пишет «Подбор клипа…», чтобы
+не оставлять статус PLAYING от предыдущего трека.
+
+Проверки: TS/build/unit16 PASS; continuous17 PASS (включая false PLAYING и heartbeat
+для Wave/playlist); recovery7 PASS. Полный renderer:144 PASS/1 optional skipped,
+1 offline-test прерван HMR navigation во время правки файла; последующий отдельный
+recovery7 PASS. Clippy all-targets/yandex-probe clean. Native metadata probe нашёл
+подтверждённую официальную запись dHXRzRxb5b4,293s. Настоящий Windows YouTube этого
+ID: advancing position, Pause/seek/resume, controls-only/hidden, mini/instance PASS.
+В рамках этого прогона сторонние uploader/alias ограничения matching не меняли.
+Нельзя обещать одинаковую сетевую/региональную доступность у пользователя.
+
+Commit7557320 в codex/continuous-playback-20261107. Linux DEB run42292552306 SUCCESS, скачан:
+C:/Users/Skar/Downloads/YCoreMusic-stall-fix-2026-11-07/Linux/deb/YCore Music_0.0.1_amd64.deb
+SHA256 873c523913d0dc35144c4818b95c045bcc6d7f9257ecd3f39db56ac0fb7670d7,
+совпадает с опубликованным CI hash. Новые тестовые пакеты переданы без установки
+и без замены публичного релиза. Runtime7557320 включает все предыдущие правки.
+Windows debug NSIS пересобран после последней строки статуса и сохранён:
+C:/Users/Skar/Downloads/YCoreMusic-stall-fix-2026-11-07/YCoreMusic-Windows-test-setup.exe
+Основной main по-прежнему dirty, содержит также чужие/параллельные изменения сайта;
+не откатывать их и не копировать их в patch branch. Установку/релиз не выполняли.
+
 ## Непрерывное воспроизведение всех очередей — 2026-11-07
 
 Пользователь уточнил: автопропуск отсутствующих/не загрузившихся клипов нужен
