@@ -151,7 +151,7 @@ const excludedTracks=new Set<string>();
 const pendingReactionStates=new Map<string,number>();
 const unavailableHistoryTracks=new Set<string>();
 let activeCollection:CollectionContext|undefined;
-interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number;durationSeconds?:number;reason:string;saved?:boolean;preferred?:boolean;historical?:boolean;needsReview?:boolean}
+interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number|null;durationSeconds?:number|null;reason:string;saved?:boolean;preferred?:boolean;historical?:boolean;needsReview?:boolean}
 const choices=new Map<string,{items:Candidate[];index:number;alternativesLoaded?:boolean;favoriteChosen?:boolean}>();
 const searching=new Set<string>();
 const bypassSaved=new Set<string>();
@@ -498,7 +498,7 @@ element('find-video').onclick=()=>{
 function renderCandidates(items:Candidate[],epoch:number,ordinal:number){
   renderAlternatives(items,epoch,ordinal);
   element('candidate-list').replaceChildren(...items.map(candidate=>{
-    const button=document.createElement('button');button.type='button';button.textContent=candidate.title+(candidate.byline?' · '+candidate.byline:'')+(candidate.views!==undefined?' · '+candidate.views.toLocaleString()+' просмотров':'')+(candidate.needsReview?' · проверить исполнителя':'');
+    const button=document.createElement('button');button.type='button';button.textContent=candidate.title+(candidate.byline?' · '+candidate.byline:'')+(candidate.views!=null?' · '+candidate.views.toLocaleString()+' просмотров':'')+(candidate.needsReview?' · проверить исполнителя':'');
     button.onclick=()=>{if(epoch!==queue.generation||queue.current?.ordinal!==ordinal)return;element<HTMLInputElement>('url').value=candidate.id;element<HTMLFormElement>('load').requestSubmit();};return button;
   }));
 }
@@ -510,8 +510,8 @@ function renderAlternatives(items?:Candidate[],epoch=queue.generation,ordinal=qu
     const button=document.createElement('button');button.className='alternative-video';button.type='button';button.setAttribute('aria-pressed',String(queue.current?.videoId===candidate.id));
     const image=document.createElement('img');image.src='https://i.ytimg.com/vi/'+candidate.id+'/mqdefault.jpg';image.alt='';image.loading='lazy';image.referrerPolicy='no-referrer';
     const body=document.createElement('span'),title=document.createElement('strong'),meta=document.createElement('small');title.textContent=candidate.title;
-    const duration=candidate.durationSeconds===undefined?'длительность неизвестна':clock(candidate.durationSeconds);
-    meta.textContent=(candidate.views===undefined?'просмотры неизвестны':candidate.views.toLocaleString('ru-RU')+' просмотров')+' · '+duration+(candidate.needsReview?' · проверить исполнителя':'');body.append(title,meta);button.append(image,body);
+    const duration=candidate.durationSeconds==null?'длительность неизвестна':clock(candidate.durationSeconds);
+    meta.textContent=(candidate.views==null?'просмотры неизвестны':candidate.views.toLocaleString('ru-RU')+' просмотров')+' · '+duration+(candidate.needsReview?' · проверить исполнителя':'');body.append(title,meta);button.append(image,body);
     button.onclick=()=>{
       if(!allowPlaybackChange())return;
       if(epoch!==queue.generation||ordinal!==queue.current?.ordinal)return;

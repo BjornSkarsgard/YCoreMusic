@@ -768,4 +768,12 @@ mod tests {
         println!("Catch-22 candidates: {result:?}");
         assert!(result.iter().any(|candidate| !candidate.needs_review));
     }
+    #[test]
+    #[ignore = "Read-only user-reported Absence metadata probe"]
+    fn live_absence_regression() {
+        let result = search(&Matcher::default(), "Absence", "Xalv")
+            .expect("Public metadata request failed");
+        println!("Absence candidates: {result:?}");
+        assert!(result.iter().any(|candidate| !candidate.needs_review));
+    }
 }

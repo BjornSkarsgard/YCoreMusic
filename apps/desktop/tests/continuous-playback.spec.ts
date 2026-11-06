@@ -4,7 +4,7 @@ async function setup(page:Page,source:'wave'|'playlist',failure:string){
  await page.clock.install();
  await page.addInitScript(({failure})=>{
   const w=window as any;w.isTauri=true;w.failure=failure;w.played=[];w.players=[];w.calls={};w.records=[];
-  const tracks=['A','B','C','D','E'].map((title,index)=>({id:failure==='alt-slots'?String(index+1):title,title,artist:'Fixture'}));
+  const tracks=['A','B','C','D','E'].map((title,index)=>({id:['alt-slots','null-metadata'].includes(failure)?String(index+1):title,title,artist:'Fixture'}));
   w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
    if(cmd==='source_fetch')return tracks;
    if(cmd==='catalogue_search')return {artists:[],albums:[],playlists:[{kind:'playlist',id:'1',owner:'2',title:'Test list',subtitle:''}],tracks:[],page:0};
@@ -24,6 +24,7 @@ async function setup(page:Page,source:'wave'|'playlist',failure:string){
     if(args.title==='B'&&failure==='missing')return [];
     if(args.title==='B'&&failure==='search-error')throw new Error('Temporary search failure');
     if(args.title==='B'&&failure==='search-hang')return new Promise(resolve=>w.releaseB=()=>resolve([{id:'Bbbbbbbbbbb',title:'B',score:100}]));
+    if(failure==='null-metadata')return [{id:args.title+args.title.toLowerCase().repeat(10),title:args.title,score:220,reason:'Official recording',views:null,durationSeconds:null,needsReview:false}];
     return [{id:args.title+args.title.toLowerCase().repeat(10),title:args.title,score:100,reason:'fixture'}];
    }
    if(cmd==='storage_command'){
@@ -90,6 +91,19 @@ test('Pause cancels an unavailable clip transition and a finite playlist still e
  await page.evaluate(()=>(window as any).activePlayer.emit(0));await expect(page.locator('#status')).toContainText('Конец выбранного списка');
  await page.clock.runFor(30000);expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa','Ccccccccccc','Ddddddddddd','Eeeeeeeeeee']);
 });
+
+for(const source of ['wave','playlist'] as const){
+ test(`${source} starts and advances with the native null views and duration metadata`,async({page})=>{
+  const errors:string[]=[];page.on('pageerror',error=>errors.push(error.message));
+  await setup(page,source,'null-metadata');
+  await expect(page.locator('.alternative-video small').first()).toContainText('просмотры неизвестны');
+  await expect(page.locator('.alternative-video small').first()).toContainText('длительность неизвестна');
+  await page.evaluate(()=>(window as any).activePlayer.emit(0));
+  await expect(page.locator('#track-title')).toHaveText('B');await expect(page.locator('#status')).toHaveText('Воспроизведение');
+  expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa','Bbbbbbbbbbb']);
+  expect(errors).toEqual([]);
+ });
+}
 
 test('hung alternative searches cannot occupy every slot and strand the next track at matching',async({page})=>{
  await setup(page,'wave','alt-slots');
