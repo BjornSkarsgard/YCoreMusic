@@ -1,3 +1,32 @@
+## 2026-11-07: устранено зависание «Подбор клипа»
+
+Пользователь сообщил о сохранении остановки после предыдущего progress-fix.
+Воспроизведён отдельный дефект: unbounded ensureAlternatives запросы занимали
+общий searching Set, после ошибки prefetch основной поиск нового трека не мог
+стартовать. Новый regression до правки оставался на «Подбор клипа…», после PASS.
+
+Commit8411502 (codex/continuous-playback-20261107): все metadata alternatives
+ограничены20sec, максимум2 слота из3 для необязательных альтернатив. Есть отдельный
+общий30sec prep deadline текущего ordinal, не зависящий от старта matching job.
+Истечение -> техническая причина -> Next. Explicit Pause/Play, source/load и
+network/power сбрасывают дедлайны. Source/history/page awaits ограничены30sec,
+чтобы не удерживать advancing/sourceWork навсегда. Поздние ответы timed-out
+requests не исполняют продолжение. Resolved current videoId без activeVideo
+снова загружается вместо вечного continue. Repeat/end/source order сохранены.
+
+Проверки текущего snapshot: renderer149 PASS/1 optional skipped; TS unit16 PASS;
+native real Catch-22 dHXRzRxb5b4 Play/advancing position/Pause/seek/hidden/mini/
+instance PASS. Предварительно33 targeted PASS; добавлены tests hung alternatives,
+общий current preparation budget Wave/playlist и page hang/late original response.
+Windows debug NSIS уже собран и скопирован:
+C:/Users/Skar/Downloads/YCoreMusic-matching-fix-2026-11-07/YCoreMusic-Windows-test-setup.exe
+DEB run42296103008 SUCCESS, runtime8411502. Готовый файл:
+C:/Users/Skar/Downloads/YCoreMusic-matching-fix-2026-11-07/Linux/deb/YCore Music_0.0.1_amd64.deb
+SHA256 0f68523b333646a412336119a07ee8418dcd6804c14f51913336e99982795551,
+совпадает с CI. Windows NSIS hash647acde34269b69bd6b4a5b5d0c2217caa0af44a82e33f0aa137e493db3fee34. Публичный релиз не меняли, не устанавливали пакеты.
+Тестовые версии всё ещё0.0.1: для DEB при обновлении нужен apt install --reinstall
+с явным локальным файлом. Не утверждать, что apt обновил идентичный номер сам.
+
 ## 2026-11-07: ложный PLAYING и Catch-22
 
 Дополнительный пользовательский дефект: What I Need / Catch-22 NZ, UI говорит
