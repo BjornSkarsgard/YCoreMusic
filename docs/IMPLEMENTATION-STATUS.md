@@ -21,7 +21,14 @@ prefetch-запросы не блокируют друг друга. Техни�
 
 Patch branch codex/continuous-playback-20261107, commits e728795/99a9e3e в отдельном
 CI worktree. Основной main остаётся с текущими правками в рабочем дереве.
-DEB build42288714656 запущен на99a9e3e. Старый промежуточный42288427884 отменён.
+DEB build42288714656 SUCCESS на99a9e3e, пакет скачан и хеш сверён с CI:
+C:/Users/Skar/Downloads/YCoreMusic-continuous-playback-2026-11-07/Linux/deb/YCore Music_0.0.1_amd64.deb
+SHA256 654eac217f1f60d05af7f036f1638277e81ce3e4c5ae09c23388c3e8c0637fc2.
+Windows debug NSIS5.22MiB, собран из того же состояния исходников:
+C:/Users/Skar/Downloads/YCoreMusic-continuous-playback-2026-11-07/YCoreMusic-Windows-test-setup.exe
+Clippy all-targets/yandex-probe -D warnings PASS. Установку на ПК пользователя
+не выполняли, работающий установленный экземпляр не закрывали.
+Старый промежуточный42288427884 отменён.
 Релиз v0.0.1 не заменять автоматически; подготовлены тестовые сборки без публикации.
 Переименование старых технических ключей всё ещё отложено пользователем.
 
