@@ -42,8 +42,8 @@ static void page_created(WebKitWebExtension *extension, WebKitWebPage *page, gpo
 
 G_MODULE_EXPORT void webkit_web_extension_initialize_with_user_data(
         WebKitWebExtension *extension, GVariant *user_data) {
-    if (!user_data || !g_variant_is_of_type(user_data, G_VARIANT_TYPE_STRING)) return;
-    const gchar *identifier = g_variant_get_string(user_data, NULL);
+    (void)user_data;
+    const gchar *identifier = YCORE_APP_ID;
     if (!identifier || !*identifier || strlen(identifier) > 128) return;
     for (const gchar *p = identifier; *p; p++) {
         if (!g_ascii_isalnum(*p) && *p != '.' && *p != '-') return;

@@ -142,6 +142,7 @@ fn main() {
             window.title = "YCore Music · нативная проверка".into();
         }
     }
+    let deferred_main = embed_identity::defer_main(&mut context);
     tauri::Builder::default()
         .plugin(autostart::plugin())
         .plugin(tauri_plugin_power_monitor::init())
@@ -183,6 +184,9 @@ fn main() {
             });
             app.manage(storage::StorageState { store, test_mode });
             app.manage(crash_recovery::Recovery::open(recovery_path));
+            if let Some(config) = &deferred_main {
+                embed_identity::create_main(app.handle(), config)?;
+            }
             embed_identity::install(app.handle())?;
             scene_layout::install(app.handle(), background_launch);
             let _ = desktop::install(app.handle());

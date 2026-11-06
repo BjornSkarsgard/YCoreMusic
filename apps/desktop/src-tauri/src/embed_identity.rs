@@ -21,8 +21,31 @@ pub fn embed_identity_status(window: WebviewWindow) -> Result<serde_json::Value,
 }
 
 #[cfg(all(target_os = "linux", feature = "linux-embed-referrer"))]
-pub fn install(app: &tauri::AppHandle) -> Result<(), String> {
-    use webkit2gtk::{glib::variant::ToVariant, UserMessageExt, WebContextExt, WebViewExt};
+pub fn defer_main(
+    context: &mut tauri::Context<tauri::Wry>,
+) -> Option<tauri::utils::config::WindowConfig> {
+    let window = context
+        .config_mut()
+        .app
+        .windows
+        .iter_mut()
+        .find(|window| window.label == "main" && window.create)?;
+    let config = window.clone();
+    window.create = false;
+    Some(config)
+}
+#[cfg(not(all(target_os = "linux", feature = "linux-embed-referrer")))]
+pub fn defer_main(
+    _context: &mut tauri::Context<tauri::Wry>,
+) -> Option<tauri::utils::config::WindowConfig> {
+    None
+}
+
+#[cfg(all(target_os = "linux", feature = "linux-embed-referrer"))]
+pub fn create_main(
+    app: &tauri::AppHandle,
+    config: &tauri::utils::config::WindowConfig,
+) -> Result<(), String> {
     let directory = if app.state::<crate::storage::StorageState>().test_mode {
         std::env::var_os("ENCORE_TEST_DATA_DIR").map(std::path::PathBuf::from)
     } else {
@@ -39,11 +62,28 @@ pub fn install(app: &tauri::AppHandle) -> Result<(), String> {
     )
     .map_err(|_| "Cannot prepare WebKit identity helper")?;
     std::fs::rename(temporary, target).map_err(|_| "Cannot install WebKit identity helper")?;
+    tauri::WebviewWindowBuilder::from_config(app, config)
+        .map_err(|_| "Cannot prepare main window")?
+        .extensions_path(directory)
+        .build()
+        .map_err(|_| "Cannot create main window")?;
+    Ok(())
+}
+#[cfg(not(all(target_os = "linux", feature = "linux-embed-referrer")))]
+pub fn create_main(
+    _app: &tauri::AppHandle,
+    _config: &tauri::utils::config::WindowConfig,
+) -> Result<(), String> {
+    Err("WebKit identity adapter is unavailable".into())
+}
+
+#[cfg(all(target_os = "linux", feature = "linux-embed-referrer"))]
+pub fn install(app: &tauri::AppHandle) -> Result<(), String> {
+    use webkit2gtk::{UserMessageExt, WebViewExt};
     let window = app
         .get_webview_window("main")
         .ok_or("Main window unavailable")?;
     let handle = app.clone();
-    let identifier = app.config().identifier.clone();
     window
         .with_webview(move |view| {
             let webview = view.inner();
@@ -54,16 +94,13 @@ pub fn install(app: &tauri::AppHandle) -> Result<(), String> {
                         state.loaded.store(true, Ordering::Release)
                     }
                     Some("ycore-embed-identity-applied") => {
+                        state.loaded.store(true, Ordering::Release);
                         state.applied.store(true, Ordering::Release)
                     }
                     _ => return false,
                 }
                 true
             });
-            if let Some(context) = webview.context() {
-                context.set_web_extensions_directory(&directory.to_string_lossy());
-                context.set_web_extensions_initialization_user_data(&identifier.to_variant());
-            }
         })
         .map_err(|_| "Cannot configure WebKit identity".into())
 }
