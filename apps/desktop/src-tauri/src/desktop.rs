@@ -67,6 +67,12 @@ pub fn action(app: &AppHandle, action: Action) -> Result<(), String> {
         }
     }
 }
+pub fn prepare_exit(app: &AppHandle) {
+    let _ = app.state::<crate::crash_recovery::Recovery>().clean();
+    if let Ok(store) = &app.state::<crate::storage::StorageState>().store {
+        let _ = store.finish_open();
+    }
+}
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let open_item = MenuItem::with_id(app, "open", "Открыть YCore Music", true, None::<&str>)?;
     let toggle = MenuItem::with_id(app, "toggle", "Воспроизвести / пауза", true, None::<&str>)?;

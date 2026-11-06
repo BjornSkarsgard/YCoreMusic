@@ -10,6 +10,12 @@ use tauri::{AppHandle, Emitter, Manager};
 thread_local! { static CONTROLS: RefCell<Option<(MediaControls, u64)>> = const { RefCell::new(None) }; }
 #[derive(Default)]
 pub struct MediaState(pub Mutex<Status>);
+pub fn playback_busy(app: &AppHandle) -> bool {
+    app.state::<MediaState>()
+        .0
+        .lock()
+        .map_or(true, |status| status.playback == "playing")
+}
 #[derive(Clone, Default, Serialize)]
 pub struct Status {
     available: bool,
@@ -152,6 +158,12 @@ pub fn media_update(window: tauri::WebviewWindow, update: Update) -> Result<(), 
                     return;
                 }
                 status.revision = update.revision;
+                status.playback = match update.playback {
+                    Playback::Playing => "playing",
+                    Playback::Paused => "paused",
+                    Playback::Stopped => "stopped",
+                }
+                .into();
             } else {
                 return;
             }

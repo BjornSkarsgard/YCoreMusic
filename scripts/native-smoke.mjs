@@ -163,6 +163,32 @@ try {
   await execute('document.getElementById("history-query").value="";document.getElementById("history-query").dispatchEvent(new Event("input"));');
   await click('history-period-clear');
   console.log('Native history cursor pagination, inclusive local date period, concurrent new play and confirmed clear: PASS');
+  if(process.env.ENCORE_UPDATES_SIGNATURE_SMOKE==='1'){
+    const signed=JSON.parse(readFileSync(resolve(root,'apps/desktop/tests/fixtures/update-signature.json'),'utf8'));
+    assert.equal(await nativeInvoke('updates_verify_probe',signed),true,'Valid signed fixture must verify');
+    assert.equal(await nativeInvoke('updates_verify_probe',{...signed,bytes:[...signed.bytes,0]}),false,'Tampered bytes must fail');
+    assert.equal(await nativeInvoke('updates_verify_probe',{...signed,version:'98.0.0'}),false,'Manifest cannot relabel a signed version');
+    assert.equal(await nativeInvoke('updates_verify_probe',{...signed,version:'0.0.0'}),false,'A downgrade is not an available update');
+    assert.equal(await nativeInvoke('updates_command',{action:'install'}).then(value=>value.phase),'disabled','Isolated profile must never install');
+    console.log('Native updater signature: valid fixture accepted; tamper, version mismatch and downgrade rejected; test installation blocked: PASS');
+  }
+  if(process.env.ENCORE_BASE_PLAYBACK_SMOKE==='1'){
+    const press=async id=>{const element=await request('/session/'+session+'/element',{using:'css selector',value:'#'+id});await request('/session/'+session+'/element/'+element['element-6066-11e4-a52e-4f735466cecf']+'/click',{});};
+    await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
+    await until('return !document.getElementById("play").disabled',45000);await press('play');
+    await until('return document.getElementById("status").textContent==="Воспроизведение"',45000);
+    await until('return Number(document.getElementById("seek").value)>1',30000);await playbackTopology();
+    await press('pause');await until('return document.getElementById("status").textContent==="Пауза"');
+    const paused=Number(await execute('return document.getElementById("seek").value'));await sleep(1500);assert(Math.abs(Number(await execute('return document.getElementById("seek").value'))-paused)<1.5);
+    const target=paused+30;await execute('const input=document.getElementById("seek");input.value=String(arguments[0]);input.dispatchEvent(new Event("input"));input.dispatchEvent(new Event("change"));',[target]);await press('play');
+    await until(`return Number(document.getElementById("seek").value)>=${target-2}`,30000);
+    await execute('const select=document.getElementById("window-layout");select.value="controls";select.dispatchEvent(new Event("change"));');
+    const controls=Number(await execute('return document.getElementById("seek").value'));await sleep(2500);assert(Number(await execute('return document.getElementById("seek").value'))>controls,'Controls-only must keep playback advancing');
+    await nativeInvoke('desktop_close');const hidden=Number(await execute('return document.getElementById("seek").value'));await sleep(3000);assert(Number(await execute('return document.getElementById("seek").value'))>hidden,'Hidden window must keep playback advancing');
+    await nativeInvoke('desktop_action',{action:'open'});await click('pause');await playbackTopology();
+    writeFileSync(resolve(root,'.tools/native-basic-playback-'+process.platform+'.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
+    console.log('Native actual YouTube: one player, advancing media position, Pause/seek/resume, controls-only and hidden background playback: PASS');
+  }
   if(process.env.ENCORE_LIVE_YANDEX==='1') {
     await until('return document.querySelectorAll("#queue-list li").length>0');
     const count=await execute('return document.querySelectorAll("#queue-list li").length');
@@ -1046,6 +1072,9 @@ try {
     console.log('Native normal Quit finalizes persisted listening before process exit: PASS');
   }
  } catch(error) {
+  if(isolated&&session&&process.env.ENCORE_BASE_PLAYBACK_SMOKE==='1'){
+    const screenshot=await request('/session/'+session+'/screenshot').catch(()=>null);if(screenshot)writeFileSync(resolve(root,'.tools/native-basic-playback-failure.png'),Buffer.from(screenshot,'base64'));
+  }
   if(isolated&&session&&process.env.ENCORE_SINGLE_HOST_SMOKE==='1'){
     const diagnostic=await execute('const e=document.getElementById("fullscreen"),r=e?.getBoundingClientRect();return {fullscreen:!!document.fullscreenElement,rect:r?.toJSON(),viewport:{width:innerWidth,height:innerHeight},hit:r?document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML?.slice(0,300):null,mirrorFailure:document.body.dataset.videoMirrorFailure};').catch(()=>null);
     console.log('Owned native host verification state: '+JSON.stringify(diagnostic));

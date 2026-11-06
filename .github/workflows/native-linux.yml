@@ -1,6 +1,11 @@
 name: Linux native smoke
 on:
   workflow_dispatch:
+    inputs:
+      live_playback:
+        description: Verify real YouTube playback (network-dependent; no credentials)
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -36,6 +41,7 @@ jobs:
           WEBKIT_DISABLE_DMABUF_RENDERER: '1'
           ENCORE_NATIVE_DRIVER: /usr/bin/WebKitWebDriver
           ENCORE_AUTOSTART_SMOKE: '1'
+          ENCORE_BASE_PLAYBACK_SMOKE: ${{ inputs.live_playback && '1' || '0' }}
         run: xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- sh scripts/native-linux.sh
       - name: Window manager diagnostics
         if: always()
@@ -46,3 +52,4 @@ jobs:
           path: |
             .tools/openbox.log
             .tools/native-linux-error.txt
+            .tools/native-basic-playback-*.png

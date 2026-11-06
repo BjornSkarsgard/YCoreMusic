@@ -6,8 +6,16 @@ test.beforeEach(async({page})=>{
   w.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
   const cache={position:0,duration:120,playback:-1,quality:'hd1080',captionOptions:[],captionTracks:[],iframeCount:1};
   w.sleepTimer={remainingSeconds:0,active:false,expired:false,revision:0};
+  w.updateState={phase:'disabled',notes:'',downloaded:0};w.updateCalls=[];
   w.packet=(kind:string,overrides:any={})=>w.handlers['player-host-event']?.({payload:{epoch,sequence:++sequence,kind,cache:{...cache},...overrides}});
   w.__TAURI_INTERNALS__={transformCallback:(callback:any)=>{w.callbacks[++id]=callback;return id;},invoke:async(command:string,args:any)=>{
+   if(command==='updates_command'){
+    w.updateCalls.push(args.action);
+    if(args.action==='check')w.updateState={phase:w.updateCheckFailure?'error':w.updatePublished?'available':'unpublished',version:w.updatePublished?'0.0.2':null,notes:'<img src=x onerror="window.updateXss=true">',downloaded:0,error:w.updateCheckFailure?'check_failed':null};
+    if(args.action==='download')w.updateState={...w.updateState,phase:w.updateBadSignature?'error':'ready',error:w.updateBadSignature?'download_or_signature_failed':null,downloaded:100,total:100};
+    if(args.action==='install'){if(w.holdUpdateInstall)return new Promise(resolve=>w.finishUpdateInstall=resolve);w.updateState={...w.updateState,phase:'error',error:'install_failed'};}
+    return {...w.updateState};
+   }
    if(command==='sleep_timer'){
     const action=args.request;if(action.type==='start')w.sleepTimer={remainingSeconds:action.seconds,active:true,expired:false,revision:w.sleepTimer.revision+1};
     if(action.type==='cancel')w.sleepTimer={remainingSeconds:0,active:false,expired:false,revision:w.sleepTimer.revision+1};
@@ -40,6 +48,39 @@ test.beforeEach(async({page})=>{
  });
  await page.route('https://www.youtube.com/**',route=>route.abort());
  await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
+});
+
+test('updates distinguish an absent release and a failed check, render notes safely and persist deferral',async({page})=>{
+ await page.evaluate(()=>{const w=window as any;w.updateState={phase:'idle',notes:'',downloaded:0};w.handlers['updates-status']({payload:w.updateState});});
+ await page.locator('[data-panel=settings]').click();await page.locator('#updates-check').click();await expect(page.locator('#updates-summary')).toContainText('пока не опубликованы');
+ await page.evaluate(()=>(window as any).updateCheckFailure=true);await page.locator('#updates-check').click();await expect(page.locator('#updates-summary')).toContainText('Не удалось проверить');await expect(page.locator('#updates-check')).toBeEnabled();
+ await page.evaluate(()=>{const w=window as any;w.updateCheckFailure=false;w.updatePublished=true;});await page.locator('#updates-check').click();await expect(page.locator('[data-panel=settings]')).toHaveClass(/has-update/);
+ await page.locator('#updates-details').click();await expect(page.locator('#updates-notes')).toContainText('<img');expect(await page.evaluate(()=>(window as any).updateXss)).toBeUndefined();
+ await page.locator('#updates-later').click();await expect(page.locator('#updates-dialog')).not.toBeVisible();await expect(page.locator('[data-panel=settings]')).not.toHaveClass(/has-update/);
+ expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('ycore.updateDeferred.v1')!).version)).toBe('0.0.2');
+ expect(await page.evaluate(()=>(window as any).updateCalls.filter((action:string)=>action==='download'||action==='install'))).toEqual([]);
+});
+
+test('an invalid update stays uninstalled; verified download allows installation only after explicit Pause',async({page})=>{
+ await page.locator('#play').click();const loads=await page.evaluate(()=>(window as any).loads.length);
+ await page.evaluate(()=>{const w=window as any;w.updateState={phase:'idle',notes:'',downloaded:0};w.updatePublished=true;w.updateBadSignature=true;w.handlers['updates-status']({payload:w.updateState});});
+ await page.locator('[data-panel=settings]').click();await page.locator('#updates-check').click();await page.locator('#updates-details').click();await page.locator('#updates-download').click();
+ await expect(page.locator('#updates-status')).toContainText('подтвердить подлинность');await expect(page.locator('#updates-install')).toBeHidden();await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await page.evaluate(()=>(window as any).updateBadSignature=false);await page.locator('#updates-download').click();await expect(page.locator('#updates-install')).toBeDisabled();await expect(page.locator('#updates-pause-hint')).toBeVisible();
+ expect(await page.evaluate(()=>(window as any).updateCalls.includes('install'))).toBe(false);
+ await page.locator('#updates-close').click();await page.locator('#pause').click();await page.locator('#updates-details').click();await expect(page.locator('#updates-install')).toBeEnabled();await page.locator('#updates-install').click();
+ await expect(page.locator('#updates-status')).toContainText('Текущая версия сохранена');expect(await page.evaluate(()=>(window as any).updateCalls.filter((action:string)=>action==='install').length)).toBe(1);
+ expect(await page.evaluate(()=>(window as any).loads.length)).toBe(loads);await expect(page.locator('#status')).not.toHaveText('Воспроизведение');
+});
+
+test('an older update snapshot cannot reopen playback while installation is pending',async({page})=>{
+ await page.evaluate(()=>{const w=window as any;w.holdUpdateInstall=true;w.updateState={phase:'ready',revision:20,version:'0.0.2',notes:'Fixture',downloaded:100};w.handlers['updates-status']({payload:w.updateState});});
+ await page.locator('[data-panel=settings]').click();await page.locator('#updates-details').click();await page.locator('#updates-install').click();
+ await page.evaluate(()=>{const w=window as any;w.handlers['updates-status']({payload:{...w.updateState,revision:20}});});
+ await expect(page.locator('#updates-status')).toContainText('Устанавливаем');await expect(page.locator('#updates-install')).toBeDisabled();
+ await page.locator('#updates-close').click();await page.locator('#play').click();expect(await page.evaluate(()=>(window as any).commands.some((x:any)=>x.command.type==='play'))).toBe(false);
+ await page.evaluate(()=>{const w=window as any;w.finishUpdateInstall({...w.updateState,phase:'error',revision:22,error:'install_failed'});});
+ await expect(page.locator('#updates-summary')).toContainText('Текущая версия сохранена');await page.locator('#play').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
 });
 
 test('sleep timer starts, replaces, cancels, expires once and allows explicit Play afterwards',async({page})=>{

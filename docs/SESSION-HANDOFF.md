@@ -1,5 +1,43 @@
 # YCore Music — активный контекст, 2026-11-06
 
+АКТУАЛЬНО: пользователь требует автономно довести desktop, не останавливать ход
+после каждого пункта. Сайт и пульт НЕ ТРОГАТЬ. Последний запрос — записать кнопку
+обновления и проверку версий: уже реализуются в текущем updates-срезе.
+Завершён Windows native30minsoak:6naturaltransitions,357playing/2waiting,
+maxobservedgap5sec приpoll5sec,0controlleriframes/1host; мини/topmost/instancePASS.
+Длинный прогон окончен, собственный тестовый процесс закрыт.
+
+CI вынесен в отдельный worktree C:/Users/Skar/Documents/YCoreMusic-ci-check,
+branch codex/stability-portability-20261106, push уже авторизован рабочим контекстом.
+Коммиты890399d (весь предыдущий WIP),8576759(X11),d4be2a8(background),0ca7d07(CIapt).
+Основной Encore worktree всё ещё main/dirty — не терять его изменения и новые
+файлы. После новых правок копировать только текущие repo sources в CI worktree,
+не private .tauri/.tools/target, затем commit/push для проверки. GHCLI авторизован.
+
+Linux native run42207934319 SUCCESS: true GTK/X11 SQLite/history/mini/topmost/
+autostart/instance. X11 topmost fix в window_mode.rs + Linux-only x11rb/rawhandle
+deps; собственный XID property read, без shell в product, Wayland отдельно.
+WebKit minimize=hidden возможен; test теперь гарантирует restoration visibletrue.
+Azure archive был~30KB/s, заменён только GHrunner на Ubuntu HTTPS archive,
+scripts/install-linux-deps.sh, bounded8minaptstep; productionне меняли.
+Desktop run42207935072: UbuntuPASS, остальные на момент записи ещёrunning;
+раньшеd4be2a8 Windows/macIntel/macARM PASS. Не путать сборки сhardware/videoPASS.
+
+Updates новое: src-tauri/src/updates.rs + src/updates.ts, plugin2.14.1, publickey
+updater-public.key/config; private C:/Users/Skar/.tauri/YCoreMusic-updater.key
+создан один раз, НЕПЕРЕСОЗДАВАТЬ/НЕПУШИТЬ. Ownerbackup позже до distribution.
+Check automaticdaily+manual, fixedGitHubfeed404→unpublished, notesplainText,
+defer1day, signedDownload отдельноотInstall, nativeMediaBusy+JSPlay/loadguard,
+revision отбрасывает stale, prepare_exit общий. Media playback status теперь и безSMTC.
+Native signature probe PASS (using debugexe), tamper/version/downgrade rejected,
+testMode installdisabled. Fullrenderer125/1skip доrevision,4targetedпослеPASS;
+Rust74/9ignored/Clippy/fmt/buildPASS. SigneddebugNSIS5.19MiB+.sig/localmanifest
+собраны, НЕУСТАНАВЛИВАЛИ/НЕПУБЛИКОВАЛИ. Docs20. Newupdates ещёнепушенвCI.
+scripts/build-update-manifest.mjs localonly. Native basic playback Windows PASS
+(actualYT/seek/pause/controls-only/hidden, oneengine), screenshot просмотрен.
+Следом pushupdates+новый native-linux live_playback input (толькоpublicYouTube,
+безcredentials), исправить найденные отказы. Latestdebugexeобновлён.
+
 ПОСЛЕДНЕЕ: пользователь одобрил Windows stability → ранний portability spike.
 Реализован native platform_capabilities (main-only) + platform.ts shared promise;
 window-layout/scene-ui отключают unsupported mirror/audio UI, Spectrum preference

@@ -1,5 +1,41 @@
 # Статус реализации YCore Music
 
+## Автономный desktop этап: soak, X11 и обновления — 2026-11-06
+
+Сайт и пульт исключены из текущей работы пользователем. REQ066 повторно
+подтверждён: кнопка проверки/обновления для доработок после релиза.
+
+Windows ENCORE_WAVE_SOAK_MINUTES=30 PASS: неускоренный скрытый запуск, 6 natural
+переходов,357playing/2waiting samples, maxobservedgap5сек при polling5сек,
+maxcontrolleriframes0/maxhostiframes1. Затем mini/topmost/instance PASS.
+Артефакт .tools/wave-soak-result.json. Это реальный Яндекс/YouTube без ручного
+seek во время30минут. Физический HDMI/Win+L/sleep остаются отдельными проверками.
+
+Linux/X11: native run42207934319 SUCCESS после исправления чтения topmost
+из EWMH собственного XID через x11rb. Getter GTK cache возвращал false при
+реальном ABOVE. WebKit minimize может hide вместоiconify; smoke проверяет
+сохранение background и реальный visible+unminimized после повторного запуска.
+SQLite/history/preferences, mini/maximized/topmost, autostartargument/instance PASS.
+На snapshot0ca7d07 Ubuntu debug+UI build PASS; наd4be2a8 Windows/macIntel/macARM
+build+renderer PASS. Это не подтверждение Linux/macOS HDMI/audio/mirrors.
+Медленная загрузка Azure archive устранена только в ephemeral CI: Ubuntu HTTPS
+archive, network/lock timeout и8минутный предел шага. Остальные платформы не ждут
+бесконечно Linux download; сайт/пульт не затрагиваются.
+
+Updates: main-only updates.rs + updates.ts, официальный updater2.14.1, fixed feed,
+закреплённый publickey, version-bound signature, отдельные Check/Download/Install,
+дневное откладывание, native playback guard+revision. Установки/публикации нет.
+Подписанный debugNSIS0.0.1 собран5.19MiB +.sig, local latest.json готов.
+Native signature probe PASS: valid accepted; tamper/version/downgrade rejected;
+testMode install disabled. Новый basic playback smoke на Windows PASS: actual
+YouTube, pause/seek/resume, controls-only/hidden timeline, one engine, native
+mini/topmost/instance. Скриншот просмотрен. На Linux этот live сценарий следующий.
+
+Rust74PASS/9ignored, Clippy/fmt/frontend/debugbuild PASS. Renderer125PASS/1skip
+до revision guard, затем4targetedPASS после финальных правок. Docs20 описывает
+ключ/сборку/границы: приватный ключ только локально в .tauri владельца, не в Git
+и не в GitHub Secrets. Последняя updates-ревизия ещё требует нового cross-OS CI.
+
 ## Стабильность окон/сети и ранняя переносимость — 2026-11-06
 
 REQ049/056/059/067: добавлены native platform.rs + UI platform.ts; window-layout.ts

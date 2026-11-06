@@ -59,10 +59,16 @@ Windows native `ENCORE_STABILITY_SMOKE=1` дважды PASS: шесть disconne
 сохраняется после reconnect, explicit Play возобновляет timeline одного engine.
 ОС/сетевые адаптеры/физические дисплеи не переключались.
 
-В текущем окружении нет Linux/macOS runtime. Новую ревизию на этих ОС пока
-не собирали/не запускали; предыдущий CI не является проверкой текущих изменений.
-Физическое отключение HDMI и длительный unattended soak остаются отдельно.
+Локально Linux/macOS runtime нет. Через CI snapshotd4be2a8 прошёл Windows,
+macOSIntel/macOSARM; snapshot0ca7d07 — Ubuntu build+renderer. Настоящий GTK/X11
+native run42207934319 SUCCESS после X11 topmost fix и проверки background
+restore. LiveYouTube/LinuxAudio/Wayland ещё не проверены. Текущие новые updates
+требуют отдельной новой cross-platform проверки. Физический HDMI остаётся отдельно.
 
 После правки topology-проверки ENCORE_LIVE_WAVE=1 PASS: настоящий Яндекс/YouTube,
 два автоматических перехода по реальному END (seek близко к концу для ускорения),
 один native iframe и ноль iframe в controller. Не выдавать за 30-минутный soak.
+
+Последующий неускоренный30минутный Windows soak PASS:6переходов,
+357playing/2waiting samples, maxobservedgap5сек приpoll5сек, одинhost/0UIiframe.
+Предыдущий ускоренный сценарий выше остаётся отдельной проверкой.

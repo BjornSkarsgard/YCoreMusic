@@ -29,6 +29,7 @@ mod sleep_timer;
 mod smart_history;
 mod source;
 mod storage;
+mod updates;
 mod video_mirror;
 mod wave_feedback;
 use tauri::Manager;
@@ -149,6 +150,8 @@ fn main() {
                 let _ = desktop::open(app);
             }
         }))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::Updates::default())
         .manage(desktop::DesktopState::default())
         .manage(sleep_timer::Timer::default())
         .manage(media::MediaState::default())
@@ -201,6 +204,8 @@ fn main() {
         .manage(audio_probe::AudioProbeState::default())
         .manage(audio_analysis::Analysis::default())
         .invoke_handler(tauri::generate_handler![
+            updates::updates_command,
+            updates::updates_verify_probe,
             platform::platform_capabilities,
             source_fetch,
             sleep_timer::sleep_timer,
@@ -253,10 +258,7 @@ fn main() {
         .expect("failed to build YCore Music")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
-                let _ = app.state::<crash_recovery::Recovery>().clean();
-                if let Ok(store) = &app.state::<storage::StorageState>().store {
-                    let _ = store.finish_open();
-                }
+                desktop::prepare_exit(app);
             }
         });
 }

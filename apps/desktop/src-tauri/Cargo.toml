@@ -23,6 +23,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2.7.0"
 tauri-plugin-power-monitor = "0.1.0"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2.14.1"
 unicode-normalization = "0.1.26"
 zeroize = { version = "1.9.1" }
 

@@ -10,6 +10,7 @@ import {mountCrashRecovery} from './crash-recovery';
 import {mountCueBrand} from './cue-brand';
 import {mountSleepTimer} from './sleep-timer';
 import {allowPlaybackChange,mountPlaybackGuard,playbackLocked} from './playback-guard';
+import {mountUpdates,updatesInstalling} from './updates';
 import {bindPlaybackRow,setRowPlayback} from './playback-rows';
 import {mountScenes} from './scene-ui';
 import {hostAvailable,createPlayer} from './player-host';
@@ -198,6 +199,7 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
   void loadVideo(id);
 });
 async function loadVideo(id:string,resume=false,automatic=false,restore?:{position:number;record?:PlayRecord;recovery?:boolean}) {
+  if(updatesInstalling())return;
   if(restore?.record===activeRecord&&activeRecord){observeRecord(false);persistRecord(activeRecord,true);}else finishRecord('video_change');
   if(!restore?.recovery)cancelPlaybackRecovery();
   previousGesture.reset();
@@ -759,6 +761,7 @@ element('previous').onclick=()=>{
 };
 
 function systemControl(action:string){
+  if(updatesInstalling())return;
   if(action==='play'||action==='pause')intentRevision++;
   switch(action){
     case 'toggle':systemControl(playIntent?'pause':'play');break;
@@ -854,8 +857,10 @@ refreshVideoFavorites=mountVideoFavorites(()=>queue.current?{trackId:queue.curre
 const updateAccountConnection=mountAuth(()=>window.location.reload());
 mountDiagnostics(state=>{updateAccountConnection(state);if(state==='saved'||state==='connected')scheduleWaveSync();});
 mountAutostart();
+mountUpdates(()=>playIntent||historyStarting,()=>{powerPause(false);hideYouTubePanel();});
 mountSleepTimer(()=>{powerPause(false);report('Таймер сна завершён · пауза. Нажмите Play, чтобы продолжить.');});
-mountPlaybackGuard(()=>{if(!youtubeControls)return;youtubeControls=false;element('youtube-settings').setAttribute('aria-pressed','false');element('youtube-settings').textContent='Панель YouTube';document.querySelector('.screen')!.classList.remove('interactive');if(isTauri())void invoke('player_host_presentation',{interactive:false}).catch(()=>{});});
+function hideYouTubePanel(){if(!youtubeControls)return;youtubeControls=false;element('youtube-settings').setAttribute('aria-pressed','false');element('youtube-settings').textContent='Панель YouTube';element('player-options-status').textContent='';document.querySelector('.screen')!.classList.remove('interactive');if(isTauri())void invoke('player_host_presentation',{interactive:false}).catch(()=>{});intentUI();}
+mountPlaybackGuard(hideYouTubePanel);
 mountShellNavigation();
 mountVisualControls();
 const windowLayout=mountWindowLayout();

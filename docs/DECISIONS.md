@@ -1,3 +1,32 @@
+# ADR-047 — Подтверждённое состояние topmost в X11
+
+2026-11-06. Настоящий GTK/Openbox smoke обнаружил различие: _NET_WM_STATE_ABOVE
+установлен, но is_always_on_top Tauri/tao возвращает false из GTK cache.
+На Linux/X11 getter теперь читает EWMH property своего XID через x11rb;
+setter остаётся прежним. Нет shell/xprop в приложении, requested flag не
+выдаётся за фактическое состояние. Wayland сохраняет отдельный toolkit path.
+Native run8576759 подтвердил topmost on/off и mini; WebKitWebDriver скрывал
+окно при minimize, поэтому проверка background допускает hidden/minimized
+и обязательно требует visible+unminimized после обычного второго запуска.
+Последующий полный native X11 run42207934319 SUCCESS. Зеркал/анализа Linux это
+не добавляет. CI dependency download исправлен отдельно: только ephemeral
+Actions runner переключает медленное Azure зеркало на официальный Ubuntu
+archive HTTPS, таймауты ограничены, production окружение не меняется.
+
+# ADR-046 — Подписанные обновления с отдельным подтверждением установки
+
+2026-11-06, REQ066 повторно подтверждён пользователем. Официальный Tauri updater
+с закреплённым публичным ключом и обязательной связью подписи с версией.
+Один main-only координатор проверяет fixed GitHub feed, ограничивает download
+assets своим репозиторием, сериализует операции и не устанавливает при playback.
+Download и Install разделены; notification без popup поверх клипа, отложить
+на сутки. Revision отбрасывает запоздалые snapshots; Play/load блокируются
+во время установки. Подлинность проверяется до Ready и повторно при Install.
+Приватный ключ создан только в .tauri профиля владельца; в репозитории public
+и безвредная подписанная fixture. Внешняя публикация/реальная установка не
+выполнялись. Подписанный NSIS и manifest собраны локально; delivery/VM ещё
+отдельный gate. См. docs20, native signature probe PASS.
+
 # ADR-045 — Поддержка функций определяется native adapters
 
 2026-11-06, REQ049/056/059/067. Пользователь выбрал раннюю проверку переносимости
