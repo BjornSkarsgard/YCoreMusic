@@ -10,7 +10,9 @@ pub struct Analysis {
 
 #[tauri::command]
 pub fn analysis_watch(window: WebviewWindow, active: bool) -> Result<(), String> {
-    if !crate::scenes::is_scene(window.label()) {
+    // The controller is an eligible visualizer surface as well. It still only
+    // receives analysis of its own dedicated player-host, never system audio.
+    if window.label() != "main" && !crate::scenes::is_scene(window.label()) {
         return Err("Untrusted window".into());
     }
     #[cfg(all(target_os = "windows", feature = "audio-analysis"))]
@@ -78,13 +80,14 @@ fn worker(app: tauri::AppHandle) {
             |bands| {
                 let frame = serde_json::json!({"available":true,"bands":bands.as_slice()});
                 for window in targets(&app) {
-                    let _ = window.emit("audio-analysis", &frame);
+                    let _ = window.emit_to(window.label(), "audio-analysis", &frame);
                 }
             },
         );
         if let Err(error) = result {
             for window in targets(&app) {
-                let _ = window.emit(
+                let _ = window.emit_to(
+                    window.label(),
                     "audio-analysis",
                     serde_json::json!({"available":false,"error":error}),
                 );

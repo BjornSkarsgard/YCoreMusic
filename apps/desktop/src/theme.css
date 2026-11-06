@@ -1,4 +1,5 @@
 :root{
+ --color-skip:#D96890;
  --color-bg:#0B0B14;--color-panel:#141225;--color-surface:#1F143A;
  --color-accent:#6D28FF;--color-accent-secondary:#A855FF;--color-pink:#FF4FD8;--color-cyan:#00E5FF;
  --color-text:#E6E8FF;--color-text-secondary:#A3A6C2;
@@ -19,6 +20,8 @@
  --shadow-accent:0 3px 16px color-mix(in srgb,var(--color-accent) 18%,transparent);
  color-scheme:dark;
 }
+.visualizer-artwork{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);height:40%;max-width:50%;aspect-ratio:1;object-fit:contain;border-radius:16px;background:var(--color-panel);padding:8px;z-index:2;pointer-events:none}.visualizer-artwork[hidden]{display:none!important}
+.cue-brand{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:12%;height:18%;min-width:96px;min-height:72px;z-index:2;display:flex;align-items:center;justify-content:center;background:var(--color-video);border-radius:12px;pointer-events:none}.cue-brand[hidden],.screen.spectrum-active .cue-brand{display:none!important}.cue-brand img{width:64%;height:76%;object-fit:contain;pointer-events:none}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .icon-definitions{position:absolute;overflow:hidden;pointer-events:none}.ui-icon{display:block;flex:none;width:20px;height:20px;pointer-events:none}.icon-play{fill:currentColor;stroke-width:1.8}.icon-pause{stroke-width:1.8}
 button[aria-pressed=true]>.ui-icon{stroke:url(#ycore-icon-accent)}

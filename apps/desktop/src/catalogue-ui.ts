@@ -1,4 +1,5 @@
 import {setIconLabel} from './icons';
+import {bindPlaybackRow} from './playback-rows';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { Track } from './queue';
 export interface CatalogueEntity {kind:'artist'|'album'|'playlist'|'likes';id:string;owner?:string;title:string;subtitle:string}
@@ -54,7 +55,7 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
      const row=document.createElement('div');row.className='catalogue-track';
      const text=document.createElement('span');text.className='track-text';const title=document.createElement('strong'),artist=document.createElement('small');title.textContent=track.title;artist.textContent=track.artist;text.append(title,artist);
      const button=document.createElement('button');button.type='button';setIconLabel(button,'play',"Воспроизвести",true);button.setAttribute('aria-label','Воспроизвести '+track.title);button.onclick=()=>onPlay(index);
-     row.append(text,button);return row;
+     bindPlaybackRow(row,button,track,()=>onPlay(index));row.append(text,button);return row;
    });
  }
  function render(){

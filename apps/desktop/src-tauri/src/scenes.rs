@@ -22,10 +22,26 @@ pub enum Quality {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VisualOptions {
+    #[serde(default, skip_serializing_if = "Preset::is_spectrum")]
+    pub preset: Preset,
     pub content: Content,
     pub quality: Quality,
     /// Zero means the display's rAF/VSync, not an automatic performance policy.
     pub fps: u16,
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum Preset {
+    #[default]
+    Spectrum,
+    Ambient,
+    Liquid,
+    Particles,
+}
+impl Preset {
+    fn is_spectrum(&self) -> bool {
+        *self == Self::Spectrum
+    }
 }
 impl VisualOptions {
     pub fn valid(&self) -> bool {
@@ -60,6 +76,10 @@ pub struct Scenes {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Snapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    locked: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cover_url: Option<String>,
     revision: u64,
     generation: u64,
     video_id: Option<String>,
@@ -72,6 +92,10 @@ pub struct Snapshot {
 impl Snapshot {
     fn valid(&self) -> bool {
         self.title.len() <= 4096
+            && self
+                .cover_url
+                .as_deref()
+                .is_none_or(crate::catalogue::valid_artwork_url)
             && self.artist.len() <= 4096
             && self.position.is_finite()
             && self.duration.is_finite()
@@ -251,7 +275,7 @@ pub(crate) async fn change(
                     scene.unminimize().map_err(|_| "Cannot restore scene")?;
                     if let (Some(id), Some(options)) = (monitor_id.as_deref(), options) {
                         crate::scene_layout::set_options(window, id, options)?;
-                        let _ = scene.emit("scene-options", options);
+                        let _ = scene.emit_to(scene.label(), "scene-options", options);
                     }
                 }
             }
@@ -332,7 +356,8 @@ pub fn scene_publish(
     {
         let visible = scene.is_visible().unwrap_or(false) && !scene.is_minimized().unwrap_or(false);
         scene
-            .emit(
+            .emit_to(
+                scene.label(),
                 "scene-snapshot",
                 serde_json::json!({"snapshot":snapshot,"visible":visible}),
             )
@@ -432,7 +457,7 @@ pub fn closing(window: &tauri::Window, event: &tauri::WindowEvent) -> bool {
             .mirrors
             .remove(window.label());
         let _ = window.hide();
-        let _ = window.emit("scene-hidden", ());
+        let _ = window.emit_to(window.label(), "scene-hidden", ());
     }
     true
 }
@@ -462,6 +487,8 @@ mod tests {
     #[test]
     fn snapshot_rejects_arbitrary_urls_and_invalid_timeline() {
         let mut value = Snapshot {
+            locked: None,
+            cover_url: None,
             revision: 1,
             generation: 1,
             video_id: Some("aqz-KE-bpKQ".into()),

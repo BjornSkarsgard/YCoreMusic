@@ -352,6 +352,22 @@ pub async fn player_host_load(
         .map_err(|_| "Cannot load video engine".into())
 }
 #[tauri::command]
+pub async fn player_host_presentation(
+    window: WebviewWindow,
+    state: tauri::State<'_, Host>,
+    interactive: bool,
+) -> Result<(), String> {
+    if window.label() != "main" || interactive || !supported() {
+        return Err("Untrusted video presentation request".into());
+    }
+    let _operation = state.operations.lock().await;
+    let source = window
+        .app_handle()
+        .get_webview_window(LABEL)
+        .ok_or("Video source is unavailable")?;
+    presentation(&source, false).await
+}
+#[tauri::command]
 pub fn player_host_ready(
     window: WebviewWindow,
     state: tauri::State<'_, Host>,

@@ -1,5 +1,18 @@
 import { test, expect } from './fixtures';
 
+test('a missing clip is marked as a technical failure even before Play and is not a fabricated listening event',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.fakeRecords=[];w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+  if(cmd==='source_fetch')return [{id:'123',title:'No clip',artist:'Artist'}];
+  if(cmd==='search_videos')return [];
+  if(cmd==='storage_command'&&args.request.type==='record')w.fakeRecords.push(args.request.event);
+ }};});
+ await page.goto('/');await expect(page.locator('#status')).toContainText('можно выбрать другой клип');
+ await page.locator('[data-panel=queue]').click();await expect(page.locator('#queue-list .track-skipped')).toHaveCount(1);
+ await page.getByRole('button',{name:'Причина пропуска: No clip · Artist',exact:true}).click();
+ await expect(page.locator('.skip-reason-message:popover-open')).toContainText('Подходящий клип не найден');
+ expect(await page.evaluate(()=>(window as any).fakeRecords)).toEqual([]);
+});
+
 test('guest can search, browse public collections and play chart clips while personal features require login',async({page})=>{
  await page.addInitScript(()=>{
   const w=window as any;w.isTauri=true;w.guestPrivate=false;w.guestWrites=0;
@@ -567,6 +580,16 @@ test('Wave skips missing, uncertain and rejected clips, refills ahead and contin
  await expect(page.locator('#play')).toBeEnabled();expect(await page.evaluate(()=>(window as any).played??[])).toEqual([]);
  await page.locator('#source-start').click();
  await expect.poll(()=>page.evaluate(()=>(window as any).played?.[0])).toBe('Ddddddddddd');
+ await expect(page.locator('#auto-skip-notices')).toHaveCount(0);
+ await page.locator('[data-panel=queue]').click();
+ await expect(page.locator('#queue-list .track-skipped')).toHaveCount(3);
+ const plays=await page.evaluate(()=>(window as any).played.length);
+ for(const [title,reason] of [['A','Подходящий клип не найден'],['B','Не удалось уверенно сопоставить'],['C','YouTube не воспроизвёл']]){
+  await page.getByRole('button',{name:'Причина пропуска: '+title+' · Fixture',exact:true}).click();
+  await expect(page.locator('.skip-reason-message:popover-open')).toContainText(reason);await page.keyboard.press('Escape');
+ }
+ expect(await page.evaluate(()=>(window as any).played.length)).toBe(plays);
+ await page.screenshot({path:'../../.tools/auto-skip-reasons.png'});
  await expect(page.locator('#video-dialog')).not.toBeVisible();
  expect(await page.evaluate(()=>(window as any).searchMax)).toBeLessThanOrEqual(3);
  expect(await page.evaluate(()=>(window as any).batches)).toBeGreaterThanOrEqual(3);
@@ -579,6 +602,18 @@ test('Wave skips missing, uncertain and rejected clips, refills ahead and contin
  expect(await page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
  const played=await page.evaluate(()=>(window as any).played);expect(played).not.toContain('Aaaaaaaaaaa');expect(played).not.toContain('Bbbbbbbbbbb');expect(played).not.toContain('Ccccccccccc');
  await page.mouse.move(100,100);await page.locator('#pause').click();const count=played.length;await page.waitForTimeout(100);expect(await page.evaluate(()=>(window as any).played.length)).toBe(count);
+});
+
+test('skip reason popovers render metadata as text and cannot trigger the playback row',async({page})=>{
+ await page.goto('/');
+ await page.evaluate(async()=>{
+  const module=await import(new URL('/src/skip-notices.ts',location.href).href);
+  const row=document.createElement('div');document.body.append(row);row.onclick=()=>{(window as any).rowPlayed=true;};
+  module.markSkipped(row,'<img src=x onerror=alert(1)>','No matching video');
+ });
+ await page.getByRole('button',{name:'Причина пропуска: <img src=x onerror=alert(1)>',exact:true}).evaluate((button:HTMLButtonElement)=>button.click());
+ const message=page.locator('.skip-reason-message:popover-open');await expect(message).toContainText('<img src=x onerror=alert(1)>');await expect(message.locator('img')).toHaveCount(0);
+ expect(await page.evaluate(()=>(window as any).rowPlayed)).toBeUndefined();
 });
 
 test('Wave retries metadata outages with backoff and Pause cancels automatic recovery',async({page})=>{
@@ -681,6 +716,9 @@ test('personal library browses playlists and paginated likes without replacing p
   if(cmd==='source_fetch')return [{id:'99',title:'Current',artist:'Fixture'}];
   if(cmd==='search_videos')return [{id:'M7lc1UVf-VE',title:'Current',score:100,reason:'fixture'}];
   if(cmd==='library_overview')return {playlists:[{kind:'playlist',id:'7',owner:'8',title:'My playlist',subtitle:'2 трека'}],liked_count:101};
+  if(cmd==='discovery_fetch')return {title:'Chart',tracks:[{id:'1',title:'Liked 0',artist:'Fixture'}],playlists:[]};
+  if(cmd==='catalogue_search')return {tracks:[{id:'1',title:'Liked 0',artist:'Fixture'}],artists:[],albums:[],playlists:[],page:0};
+  if(cmd==='storage_command'&&args.request.type==='history')return [{id:1,trackId:'1',title:'Liked 0',artist:'Fixture',videoId:'M7lc1UVf-VE',startedAt:'2026-11-06T00:00:00Z'}];
   if(cmd==='catalogue_collection'){w.libraryCalls.push(args);return {title:'Likes',tracks:[{id:String(args.page+1),title:'Liked '+args.page,artist:'Fixture'}],page:args.page,hasMore:args.kind==='likes'&&args.page===0};}
  }};});
  await mockAutomaticPlayer(page);await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await page.locator('[data-panel=library]').click();
@@ -689,6 +727,18 @@ test('personal library browses playlists and paginated likes without replacing p
  await expect(page.locator('#library-content .catalogue-track')).toHaveCount(2);expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
  await page.locator('#library-play-all').click();await expect(page.locator('#queue-list li')).toHaveText(['Liked 0 · Fixture','Liked 1 · Fixture']);
  expect(await page.evaluate(()=>(window as any).libraryCalls.map((c:any)=>c.kind))).toEqual(['playlist','likes','likes']);
+ const libraryRow=page.locator('#library-content .catalogue-track').first();await expect(libraryRow).toHaveClass(/track-playing/);await expect(libraryRow.locator('.icon-pause')).toBeVisible();
+ await page.evaluate(()=>(window as any).listPlayer=(window as any).activePlayer);
+ await libraryRow.locator('button').click();await expect(page.locator('#status')).toHaveText('Пауза');await expect(libraryRow.locator('.icon-play')).toBeVisible();
+ await libraryRow.locator('button').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await page.locator('[data-panel=discovery]').click();const chart=page.locator('.discovery-track').first();await expect(chart).toHaveClass(/track-playing/);await chart.locator('button').click();await expect(page.locator('#status')).toHaveText('Пауза');
+ await page.locator('#play').click();await expect(chart.locator('.icon-pause')).toBeVisible();
+ await page.locator('[data-panel=search]').click();await page.locator('#catalogue-query').fill('Liked');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
+ const search=page.locator('#catalogue-results .catalogue-track').first();await expect(search).toHaveClass(/track-playing/);await search.locator('button').click();await expect(page.locator('#status')).toHaveText('Пауза');
+ await page.locator('[data-panel=history]').click();const history=page.locator('#history-list li').first();await expect(history).toHaveClass(/track-current/);await history.getByRole('button',{name:'Воспроизвести',exact:true}).click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await page.locator('[data-panel=queue]').click();const current=page.locator('#queue-list li[aria-current=true]');await expect(current.locator('.icon-pause')).toBeVisible();await current.locator('.queue-play').click();await expect(page.locator('#status')).toHaveText('Пауза');
+ expect(await page.evaluate(()=>(window as any).activePlayer===(window as any).listPlayer)).toBe(true);
+ await expect(current.locator('.queue-play')).toHaveCSS('justify-content','flex-start');
 });
 
 test('likes persist optimistically, dislike advances and Undo restores the old reaction without rewinding',async({page})=>{

@@ -8,6 +8,7 @@ mod audio_spectrum;
 mod auth;
 mod autostart;
 mod catalogue;
+mod crash_recovery;
 #[allow(dead_code)]
 mod credentials;
 mod desktop;
@@ -19,10 +20,12 @@ mod matcher;
 mod media;
 mod mirror_probe;
 mod monitors;
+mod platform;
 mod player_host;
 mod power;
 mod scene_layout;
 mod scenes;
+mod sleep_timer;
 mod smart_history;
 mod source;
 mod storage;
@@ -147,6 +150,7 @@ fn main() {
             }
         }))
         .manage(desktop::DesktopState::default())
+        .manage(sleep_timer::Timer::default())
         .manage(media::MediaState::default())
         .on_window_event(desktop::closing)
         .setup(move |app| {
@@ -163,12 +167,17 @@ fn main() {
                     .app_data_dir()
                     .map_err(|_| "Cannot locate application data"),
             };
+            let recovery_path = directory
+                .as_ref()
+                .ok()
+                .map(|directory| directory.join("playback-recovery.json"));
             let store = directory.and_then(|directory| {
                 std::fs::create_dir_all(&directory)
                     .map_err(|_| "Cannot create application data directory")?;
                 storage::Store::open(&directory.join("encore.sqlite"))
             });
             app.manage(storage::StorageState { store, test_mode });
+            app.manage(crash_recovery::Recovery::open(recovery_path));
             scene_layout::install(app.handle(), background_launch);
             let _ = desktop::install(app.handle());
             if background_launch && !app.state::<desktop::DesktopState>().tray_available() {
@@ -177,6 +186,7 @@ fn main() {
                 }
             }
             let _ = media::install(app.handle());
+            sleep_timer::install(app.handle().clone());
             Ok(())
         })
         .manage(source::Source::default())
@@ -191,7 +201,10 @@ fn main() {
         .manage(audio_probe::AudioProbeState::default())
         .manage(audio_analysis::Analysis::default())
         .invoke_handler(tauri::generate_handler![
+            platform::platform_capabilities,
             source_fetch,
+            sleep_timer::sleep_timer,
+            crash_recovery::crash_recovery,
             audio_probe::audio_probe,
             audio_probe::audio_probe_mute,
             audio_analysis::analysis_watch,
@@ -207,6 +220,7 @@ fn main() {
             mirror_probe::mirror_probe,
             player_host::player_host_status,
             player_host::player_host_load,
+            player_host::player_host_presentation,
             player_host::player_host_ready,
             player_host::player_host_command,
             player_host::player_host_event,
@@ -239,6 +253,7 @@ fn main() {
         .expect("failed to build YCore Music")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
+                let _ = app.state::<crash_recovery::Recovery>().clean();
                 if let Ok(store) = &app.state::<storage::StorageState>().store {
                     let _ = store.finish_open();
                 }

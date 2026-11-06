@@ -38,6 +38,9 @@ test('queue selection keeps previous rows, rejects late matches and continues af
  await expect(page.locator('#track-title')).toHaveText('Song 4');await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe('vvvvvvvvvv4');
  await page.locator('#queue-list li[data-ordinal="0"] button').click();await expect(page.locator('#track-title')).toHaveText('Song 1');await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe('vvvvvvvvvv1');
  expect(await page.evaluate(()=>(window as any).records.map((record:any)=>record.trackId))).toEqual(['3','4','1']);
+ await expect(page.locator('#queue-list .track-skipped')).toHaveCount(0);
+ await page.locator('#queue-next').click();await expect(page.locator('#track-title')).toHaveText('Song 2');
+ await expect(page.locator('#queue-list .skip-reason')).toHaveCount(0);
 });
 test('jumping back defeats a pending Next while its new batch still appends to the same queue',async({page})=>{
  await setup(page,{initial:2,holdMore:true,failFirst:false,holdMatch:false});await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseMore)).toBe('function');

@@ -1,5 +1,21 @@
 import {test,expect} from './fixtures';
 
+test('history highlights skipped entries and shows their own stored reason without starting playback',async({page})=>{
+ await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+  if(cmd==='source_fetch'||cmd==='smart_history_fetch')return [];
+  if(cmd==='storage_command'&&args.request.type==='history')return ['error','skip','dislike','natural'].map((endReason,id)=>({id:id+1,trackId:'123',title:'Repeat '+id,artist:'Artist',videoId:'M7lc1UVf-VE',startedAt:'2026-11-04T10:00:00Z',listenedMs:2000,endReason}));
+ }};});
+ await page.goto('/');await page.locator('[data-panel=history]').click();
+ await expect(page.locator('#history-list .track-skipped')).toHaveCount(1);
+ for(const index of [1,2,3])await expect(page.locator('#history-list li').nth(index).locator('.skip-reason')).toHaveCount(0);
+ const title=await page.locator('#track-title').textContent();
+ for(const [index,reason] of [[0,'завершилось с ошибкой']] as const){
+  await page.getByRole('button',{name:'Причина пропуска: Repeat '+index+' · Artist',exact:true}).click();
+  await expect(page.locator('.skip-reason-message:popover-open')).toContainText(reason);await page.keyboard.press('Escape');
+ }
+ await expect(page.locator('#track-title')).toHaveText(title!);
+});
+
 test('history loads earlier repeated plays without changing playback and resets pagination for search',async({page})=>{
  await page.addInitScript(()=>{
   const w=window as any;w.isTauri=true;w.historyCalls=[];w.failEarlier=true;

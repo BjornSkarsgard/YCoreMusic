@@ -1,5 +1,273 @@
 # Статус реализации YCore Music
 
+## Стабильность окон/сети и ранняя переносимость — 2026-11-06
+
+REQ049/056/059/067: добавлены native platform.rs + UI platform.ts; window-layout.ts
+и scene-ui.ts отключают варианты без реально имеющихся adapters. На Linux/macOS
+не предлагаются зеркала/реактивные визуализаторы; основное видео/управление доступны.
+Сохранённый выбор Spectrum не теряется при временном fallback к Video.
+Это подготовка переносимости, не завершённый порт. План/границы — docs19.
+
+Native ENCORE_STABILITY_SMOKE=1 дважды PASS: шесть simulated hotplug VIDEO/Particles,
+настройки FPS/quality и monitor ID сохранены; timeline идёт, engine не заменяется.
+Off во время detach не восстанавливается. Outage в main и source WebView,
+Pause→reconnect остаётся паузой, explicit Play возобновляет один engine. Общие
+mini/topmost/instance PASS. Реальные HDMI/TV/системная сеть не переключались.
+
+Rust72PASS/9ignored, Clippy/fmt/check --no-default-features/build PASS, TSunit14PASS.
+Renderer122PASS/1skip/1 failed: единственный отказ — matcher disabled для option;
+проверка исправлена на DOM disabled, все8 scene-settings затем PASS.
+Обычный debug exe обновлён. Текущую ревизию Linux/macOS здесь не запускали.
+Исправлен wave soak: проверяется iframe count native host и отсутствие iframe
+в coordinator; во время загрузки допустим ноль, но никогда два. Счётчик host
+пишется отдельно от controllerFrames. ENCORE_LIVE_WAVE=1 после этой правки PASS:
+настоящая волна, два автоматических natural-END перехода, один native iframe,
+ни одного controller iframe, mini/topmost/instance. Длительный soak ещё предстоит.
+
+## Защита от случайного переключения — 2026-11-06
+
+REQ-067: замок рядом с громкостью, доступен и в mini. В пределах текущего запуска
+блокирует ручные Next/Previous, перемотку, выбор трека/клипа, перезапуск волны,
+смену локального предпочтения/исключения и dislike до записи обратной связи.
+Пауза/Play, громкость, просмотр списков, окна и таймер доступны; автоматический
+переход после окончания и технического отказа сохраняется. Like доступен.
+Открытая панель YouTube скрывается; внешние сцены получают locked в snapshot
+и отключают navigation/seek. Main проверяет команды повторно, включая SMTC.
+Блокировка не сохраняется после полного выхода.
+
+Новый playback-guard.ts; main.ts/icons.ts/style.css, scenes.rs/scene-player.ts/
+scene.css, host-player/scenes tests и native smoke. Frontend/debug build PASS;
+Rust72/9ignored, Clippy PASS; полный renderer119PASS/1skip до новых проверок,
+затем 4 targeted PASS (guard, external snapshot, compact layouts).
+Native ENCORE_PLAYBACK_GUARD_SMOKE=1 PASS на actual YouTube: ручные действия
+не заменяют engine, pause/resume работают, unlock в mini возвращает seek.
+Общие startup/history/mini/topmost/instance проверки этого прогона также PASS.
+Реальное физическое нажатие SMTC и длительный просмотр отдельно не проверялись.
+Обычный target/debug/YCoreMusic.exe обновлён.
+
+## Таймер сна — 2026-11-06
+
+Завершён согласованный срез: кнопка под плеером и Настройки → Таймер сна,
+пресеты15/30/45/60/90/120мин, свой интервал1–720мин, countdown, замена/отмена.
+По завершении толькоPause. Счётчик native UTC deadline, работает в трее;
+expiry/reread ревизий не позволяет старому событию остановить новый таймер.
+One-shot UI обработка позволяет явно возобновить музыку после срабатывания.
+Существующий powerPause блокирует late autoplay. Полный restart сбрасываеттаймер;
+закрытие диалога оставляет егоработать. Новые sleep_timer.rs/sleep-timer.ts,
+main.rs/main.ts/style.css, host-player tests и native smoke. Защита управления
+не реализована в этом срезе; следующий отдельный пункт.
+
+Rust72PASS/9ignored, Clippy/frontend/native/debugbuildPASS. Renderer host/recovery
+16PASS, затем исправлена проверка async статуса и timer targetedPASS.
+Native ENCORE_SLEEP_TIMER_SMOKE=1 PASS: реальный1сек deadline (без ускорения
+часов) → actualYouTube state2 в трее → explicitPlay без повторнойпаузы → cancel;
+одинengine/epochнеизменён, mini/topmost/instancePASS. Screenshot просмотрен.
+Полный30мин/12часовой отсчёт и физический sleep отдельно не прогонялись.
+Обычный target/debug/YCoreMusic.exe обновлён после финальной UIправки.
+
+## Все четыре визуализатора + усиленные басовые атаки — 2026-11-06
+
+По новому указанию закончены Ambient/Liquid/Particles и сохранён Spectrum.
+Основной selector теперь «Визуализатор», рядом тип/FPS/quality. «Экраны» →
+выбранный монитор → визуализатор → один из4типов. Main и каждый монитор хранят
+выбор независимо. Старые настройки без preset означаютSpectrum.
+Ambient: доступная обложка Яндекса, иначе YCore, масштабирование и световые
+кольца на ударе; Liquid: яркие формы с деформацией/волнами от bass impact;
+Particles: радиальные разлёты/гравитация/затухание, до420частиц; Spectrum:
+ускоренная атака, усиленная чувствительность, пиковые отметки. Только реальный
+FFT, никакого вымышленного ритма. После тишины эффекты затухают; скрытые окна
+не рисуются. WebGL и функциональныйCanvas2D fallback. Аппаратное ускорение,
+выбранные FPS/quality, звук/плеер/очередь не перестраивались.
+
+Изменены spectrum.ts/visualizer-shaders.ts/audio-motion.ts, main-spectrum/
+scene-ui/scene-player/main/queue/theme/scene.css; Rust scenes/options/metadata,
+CSP для ограниченного image host. Новые тесты motion, shader/fallback, main
+persist, per-monitorpreset и coverURL validation. Artwork из metadata не
+подменяется выдуманной обложкой; история/manual без cover показывают бренд.
+
+Проверки: полный renderer118PASS/1skip до последнего усиления; после него
+24 targetedPASS и14 TSunitPASS (басовая атака/steady tone/silence/treble),
+Rust71PASS/9ignored, Clippy/frontend/debug buildPASS. Native all4types в main
+и внешнем окне PASS, real audio0.0004–0.0007 maximum bands, WebGL/0iframe вUI,
+engine epoch не меняется/одинYouTube. Снимки native-visualizer-*.png просмотрены.
+После проверки тестовый volume0. Обычный target/debug/YCoreMusic.exe обновлён.
+S6 остаётсяPARTIAL из-за анализа приvolume0 и отсутствия native Linux/macOS;
+полная физическая hardwareматрица не закрыта. Старые запреты на оставшиеся
+3типа ниже отменены последним указанием пользователя.
+
+## Подготовленный клип, состояние списков и очередь слева — 2026-11-06
+
+Новые cue-brand.ts/playback-rows.ts: центральное YCore logo вместо видимой
+кнопки YouTube только в cued/unstarted; buffering/playing скрывают, Spectrum
+и interactive YouTube исключены. Накладка входит в DWM holes, есть в main и
+внешних сценах. Playback state отправляется сценам сразу, не только500ms tick.
+
+«Моя музыка»/любимое/плейлисты, поиск/коллекции, обзор, история и очередь теперь
+подсвечивают текущий track и показывают Play/Pause. Текущая строка вызывает
+существующий toggle, а не select/reset/load; кнопки основного плеера/медиаклавиши
+обновляют все строки. В очереди identity содержит generation/ordinal; одинаковые
+trackId не подсвечивают другие queue positions. Текст queue-play выровнен слева.
+UI снимок не становится вторым coordinator; WeakMap не удерживает старые строки.
+
+Frontend/debug build PASS; полный renderer113 PASS/1skip; после последних
+изменений3 targeted PASS (cross-section toggles без замены player, main cue
+brand, scene cue→buffering→playing). Native screenshot native-cued-brand.png
+просмотрен: logo видно в реальном cued WebView2, после Play скрыто. Первый
+общий native прогон обнаружил смену источника на чарт и расхождение listening
+count; повтор также прервался при смене источника на коллекцию/буферизации.
+Полный native smoke в этом срезе НЕ PASS; стартовая проверка logo/cue→Play
+на реальном YouTube первого прогона прошла. UI-переключения всех списков
+проверены renderer regression. Повторять весь smoke без выяснения внешних
+действий/изменений источника не требуется для подтверждения CSS/row bindings.
+
+## Восстановление после сбоя и отсутствие клипа до Play — 2026-11-06
+
+REQ065 реализован: native checkpoint playback-recovery.json (каждые5с после
+фактического старта), clean marker нормального выхода, предложение продолжить
+после dirty restart. Подтверждение использует единственный coordinator/player,
+восстанавливает позицию нового history-прослушивания без старого waveRef;
+отказ/Escape не включают музыку. Сцены восстанавливаются прежним механизмом.
+Checkpoint не содержит токенов/старых radio session; schema SQLite не менялась.
+Повреждённый/будущий recovery-файл не перезаписывается. Ошибка видна в status.
+Точность точки около5с, не обещаем power-loss durability или восстановление
+всей старой очереди. После восстановленного клипа волна выбирается явно.
+
+Дополнительно по уточнению пользователя: отсутствие подходящего клипа маркируется
+в очереди немедленно, даже до Play, а не только после auto-advance. Ручные
+переключения всё ещё не ошибки; невоспроизведённые треки не создают play-history.
+
+Проверено: Rust70 PASS/9 ignored, Clippy/frontend/debug build PASS;
+полный renderer112 PASS/1opt-in skip, затем4 targeted PASS после уточнения.
+Native ENCORE_CRASH_RECOVERY_SMOKE=1 PASS дважды: аварийно завершён только
+изолированный process по подтверждённому PID/testMode → новое окно без autoplay
+→ explicit Resume → настоящий YouTube с37с/одинplayer → реальный checkpoint
+→ normal Quit/restart без recovery prompt. Снимок native-crash-recovery.png
+просмотрен. Пользовательский экземпляр не завершался.
+Новые файлы crash-recovery.ts, src-tauri/src/crash_recovery.rs; интеграция
+main.ts/main.rs, host-player/playback tests и scripts/native-smoke.mjs.
+Обычный target/debug/YCoreMusic.exe обновлён. Следующий пункт — длительный soak
+и подготовка установщика/обновлений; остальные визуализаторы остаются в плане.
+
+## Гибкая правая панель и технические ошибки — актуальное уточнение
+
+Пользователь отменил прежнее резервирование высоты скрытого video-alternatives:
+теперь hidden → display:none, верхний flex-scroll занимает освободившееся место
+в обычной панели и controls-only queue rail; при возврате клипов размер снова
+уменьшается. Scrollbar-color/width едины для panel-scroll/queue-scroll/alternatives.
+Ручной Next/jump и dislike больше не получают rose/error полосу и значок;
+historySkipReason возвращает пояснение только для persisted error. Исключение
+дизлайкнутого трека из smart stream также не записывается как технический сбой.
+Предыдущие записи про выделение обычных ручных пропусков отменены.
+Frontend/debug build PASS; renderer playback/history/queue/layout61 PASS.
+
+## Причины пропуска внутри строк — актуальный UI
+
+По последнему уточнению пользователя отдельный раздел автопропусков удалён
+полностью. В очереди и истории: приглушённый текст + тонкая rose/red полоса +
+отдельная info-кнопка, открывающая popover с причиной. Просмотр не запускает
+трек; метаданные вставляются textContent; Escape закрывает сообщение. Очередь
+хранит причины по generation/ordinal только для остающихся строк; успешный
+повторный запуск убирает старую отметку. Ручной Next/выбор другой позиции также
+получает пояснение. В истории причина из persisted endReason: skip/dislike/error;
+для старой ошибки честно сказано, что подробности не сохранены. Отсутствующие
+прослушивания ради значка не создаются. Режим только управления больше не имеет
+отдельного списка. Старые описания списка10 ниже отменены этим уточнением.
+
+Frontend/debug build PASS;59 renderer playback/history/queue PASS;
+3 targeted PASS после последних изменений, включая причины отдельных исторических
+записей, отсутствие запуска при клике, защиту текстового вывода и непрерывность
+волны/fullscreen. Screenshot auto-skip-reasons.png просмотрен. Бинарник обновлён.
+
+Уточнение UI автопропусков: список доступен только в режиме «Только управление».
+В видеорежиме, основном Spectrum и миниплеере скрыт без занятого места;
+накопление и сохранение последних10 причин между сменами вида продолжаются.
+
+## Проверка экранов и объяснения автопропусков — 2026-11-06
+
+Пользователь подтвердил исправление сбросов внешнего Spectrum: «всё ок».
+Расширенный native smoke PASS на3 подключённых мониторах с DPI scales1/1/2:
+независимые VIDEO/Spectrum/FPS/quality, simulated disconnect/reconnect,
+полный Quit→restart с восстановлением Spectrum без autoplay, targeted Off,
+изоляция событий скрытой сцены, один engine/два зеркала, tray/mini/topmost.
+Физический HDMI unplug и настоящий sleep/lock не выполнялись.
+
+REQ064: в панели «Моя волна» появился раскрывающийся список последних10
+автопропусков за запуск: название/артист и причина (нет клипа, неоднозначное
+сопоставление, найденные видео не воспроизвелись). Очистка локальная, список
+не пишет history/feedback, не помечает skip как dislike. Вставка метаданных
+через textContent; ограничен размер/дедупликация. Не утверждать возрастное или
+региональное ограничение по одному общему отказу YouTube. Network retry остаётся
+ожиданием с текущим статусом, а не вымышленным пропуском. Запись добавляется
+при действительном переходе с проверкой generation/ordinal/playIntent.
+
+Frontend build и обычный debug build PASS. Renderer playback/queue/recovery62
+PASS; дополнительно2 targeted PASS проверяют причины, сохранение fullscreen,
+очистку без смены музыки, лимит10/дедупликацию/безопасный вывод метаданных.
+UI просмотрен на screenshot auto-skip-reasons.png; настоящие внешние preference
+writes ради теста не выполнялись. Новое: src/skip-notices.ts; остальное в
+main.ts/style.css/tests/playback.spec.ts/scripts/native-smoke.mjs и документации.
+Следующий незавершённый продуктовый пункт: REQ065 аварийное восстановление;
+остальные визуализаторы по-прежнему вне текущего разрешённого объёма.
+
+## Исправление сбросов Spectrum между окнами — 2026-11-06
+
+Уточнение пользователя: полосы внешнего Spectrum периодически падают и резко
+возвращаются, основной Spectrum нормальный. Обнаружена рассылка событий сцены
+всем окнам: Emitter::emit глобален, listen без target подписывается на Any.
+Чужой scene-snapshot visible=false сбрасывал target/values; scene-options также
+менял содержимое чужой сцены. Исправлены обе стороны: emit_to(label) и подписки
+WebviewWindow с собственным label для snapshot/options/hidden/audio-analysis.
+Главный Spectrum слушает только main; аудиокадры больше не дублируются через
+глобальные подписки продуктовых потребителей.
+
+Native regression на прежнем бинарнике FAIL:4 чужих invisible и1 videoOptions,
+Spectrum выключен. Тот же сценарий после исправления PASS:0 чужих сообщений,
+Spectrum остаётся видимым при скрытом втором видеоокне. Проверены настоящий
+YouTube, основной/внешний Spectrum, два зеркала, единственный engine.
+11 renderer PASS, Rust68 PASS/9ignored, Clippy/frontend/native build PASS.
+Обычный target/debug/YCoreMusic.exe обновлён. Предыдущее изменение FPS само по
+себе этот дефект не исправляло; окончательная пользовательская проверка ожидается.
+
+## Рывки отдельного Spectrum — проверка 2026-11-06
+
+После сообщения пользователя проверен native renderer с фокусом в главном окне.
+Исправлен FPS limiter: накопление остатка VSync вместо отбрасывания времени
+между кадрами; при cap30 число draws за4с выросло с110 до121. Сглаживание
+использует реальное время между draws. Размер canvas пересчитывается по
+ResizeObserver/смене DPI/quality, без чтения layout на каждом кадре.
+Пользовательские FPS/quality и аппаратное ускорение сохраняются.
+
+Native fullscreen2560×1440/high/default FPS:666draws за~4с (165Hz), median6.1ms,
+p95 6.2ms/max6.9ms; own analysis101frames,median40ms/max40.7ms.
+GPU RTX4070Ti/D3D11. В данном сценарии сильный лаг не воспроизведён; причина
+сообщённого пользователем сильного зависания пока не подтверждена. Запрошены
+условия (полосы или весь UI/звук, тот же или другой монитор).
+11 профильных renderer tests PASS; frontend/native/обычный debug build PASS.
+ENCORE_SPECTRUM_PERF=1 добавляет opt-in native замер. Результаты rAF/draws
+не являются замером фактического scanout монитора.
+
+## Spectrum в основном окне — 2026-11-06
+
+Доведён первый визуализатор: «Содержимое окна» → Spectrum, собственные сохранённые
+FPS/quality, общий анализ с внешними сценами. Графический контекст создаётся при
+первом выборе Spectrum; скрытое окно прекращает рендер и освобождает lease.
+Переключение Клип↔Spectrum не перезагружает единственный YouTube engine.
+Открытая панель YouTube скрывается при выборе Spectrum без нового load;
+явное открытие панели возвращает видеорежим. Исправлены повторные неактивные
+подписки и освобождение event listener.
+
+Проверено: frontend build, TS13 PASS, Rust68 PASS/9 ignored, Clippy PASS;
+renderer108 PASS/1 opt-in skipped (4 workers). Первый запуск с12 workers дал
+3 timeout на общем старте; повтор после ленивой инициализации GPU прошёл целиком.
+Native Windows/реальный YouTube: главный Spectrum WebGL,14 frames/maxband0.002211;
+внешний7 frames/maxband0.002271. В UI0 iframe, engine epoch сохраняется,
+один реальный плеер; два зеркала, транспорт, tray/mini/topmost/instance PASS.
+Источник временно1%, после проверки0. Обычный target/debug/YCoreMusic.exe обновлён.
+
+Ограничение S6 сохраняется: при громкости0 анализ получает тишину. Остальные
+визуализаторы не входят в текущую задачу; Linux/macOS и полная hardware-матрица
+не объявлены проверенными. Старые записи ниже отражают предыдущие срезы.
+
 ## Spectrum и общий аудиоанализ — 2026-11-06
 
 Windows: process-loopback только дерева dedicated player-host, Float32 stereo44100;

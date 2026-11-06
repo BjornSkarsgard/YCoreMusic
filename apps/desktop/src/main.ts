@@ -4,6 +4,13 @@ import {mountDiagnostics} from './diagnostics-ui';
 import {mountAuth} from './auth-ui';
 import {mountQueueScroll} from './queue-scroll';
 import {mountWindowLayout} from './window-layout';
+import {mountMainSpectrum} from './main-spectrum';
+import {markSkipped} from './skip-notices';
+import {mountCrashRecovery} from './crash-recovery';
+import {mountCueBrand} from './cue-brand';
+import {mountSleepTimer} from './sleep-timer';
+import {allowPlaybackChange,mountPlaybackGuard,playbackLocked} from './playback-guard';
+import {bindPlaybackRow,setRowPlayback} from './playback-rows';
 import {mountScenes} from './scene-ui';
 import {hostAvailable,createPlayer} from './player-host';
 import {mountVideoMirror} from './video-mirror';
@@ -32,6 +39,8 @@ import {CaptionControls,qualityLabel} from './player-options';
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = appShell;
 const element = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const queue = new PlaybackQueue();
+const cueBrand=mountCueBrand(document.querySelector<HTMLElement>('.screen')!);
+const skipReasons=new Map<string,string>();
 let updateQueueScroll=()=>{};
 let refreshFeedback=()=>{};
 let refreshVideoFavorites=()=>{};
@@ -43,6 +52,7 @@ let scenePlayback=-1;
 let activeVideo:QueueInput|undefined;
 interface PlayRecord {event:{playbackId:string;trackId:string;title:string;artist:string;videoId:string;waveRef?:string};recorded:boolean;started:boolean;meter:ListeningMeter;source:PlaybackSource;endReason?:EndReason;durationMs?:number;lastWrite:number;signature?:string;writer?:Promise<void>}
 let activeRecord:PlayRecord|undefined;
+let crashRecoveryUI:ReturnType<typeof mountCrashRecovery>|undefined;
 let historyWriter:Promise<void>=Promise.resolve();
 let waveSyncTimer:ReturnType<typeof setTimeout>|undefined,waveSyncBusy=false,waveSyncPending=false,waveSyncAttempt=0;
 const waveStatus=document.createElement('p');waveStatus.id='wave-sync-status';waveStatus.setAttribute('role','status');element('source-status').after(waveStatus);
@@ -79,7 +89,7 @@ function persistRecord(record:PlayRecord,force=false){
  }).catch(()=>{if(record.signature===signature)record.signature=undefined;element('storage-status').textContent='Не удалось сохранить данные прослушивания.';});
 }
 function finishRecord(reason:EndReason){
- const record=activeRecord;if(!record||record.endReason)return;observeRecord(false);record.endReason=reason;persistRecord(record,true);
+ const record=activeRecord;if(!record||record.endReason)return;observeRecord(false);record.endReason=reason;persistRecord(record,true);if(record.started)crashRecoveryUI?.clear();
 }
 function seekPlayer(position:number){
  observeRecord();activeRecord?.meter.seek(position);lastKnownPosition=position;if(playbackRecovery)playbackRecovery.position=position;player?.seekTo(position,true);
@@ -154,8 +164,9 @@ function report(message: string) {
   const log = element('log');
   log.textContent = `${new Date().toLocaleTimeString()} ${message}\n${log.textContent}`.slice(0, 6000);
 }
-function intentUI(){document.body.classList.toggle('is-playing',playIntent||historyStarting);element<HTMLButtonElement>('pause').disabled=!(playIntent||historyStarting);}
+function intentUI(){document.body.classList.toggle('is-playing',playIntent||historyStarting);element<HTMLButtonElement>('pause').disabled=!(playIntent||historyStarting);cueBrand.update(playerReady&&!!activeVideo&&!youtubeControls,scenePlayback);setRowPlayback({trackId:playerReady?activeVideo?.id??null:null,playing:playIntent&&!powerPaused,queueKey:queue.generation+':'+queue.current?.ordinal},()=>systemControl('toggle'));}
 function enabled(value: boolean) {
+  if(!value)cueBrand.update(false,-1);
   for (const id of ['play', 'pause', 'back', 'forward','youtube-settings']) element<HTMLButtonElement>(id).disabled = !value;
   if(playIntent||historyStarting)element<HTMLButtonElement>('pause').disabled=false;
 }
@@ -176,6 +187,7 @@ async function api(): Promise<void> {
 }
 element<HTMLFormElement>('load').addEventListener('submit', event=>{
   event.preventDefault();
+  if(!allowPlaybackChange())return;
   const id=videoId(element<HTMLInputElement>('url').value);
   if(!id){report('Нужна HTTPS-ссылка YouTube или video ID из 11 символов.');return;}
   clearRetry();sourceNeedsFresh=false;historyStarting=false;++sourceRevision;
@@ -247,6 +259,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
         onStateChange: event => {
           if (current !== generation) return;
           scenePlayback=event.data;
+          document.dispatchEvent(new Event('scene-playback-state'));
           if(event.data!==1){observeRecord(false);persistRecord(record,true);}
           const states: Record<number, string> = { '-1': 'Видео загружено', 0: 'Видео завершено', 1: 'Воспроизведение', 2: 'Пауза', 3: 'Буферизация', 5: 'Готово · без autoplay' };
           intentUI();
@@ -254,6 +267,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
           if (event.data === 5) { ready = true; clearTimeout(timer); enabled(true); captionControls.refresh(event.target);if(playIntent&&!powerPaused){if(networkOffline){holdPlayback();report('Нет сети · клип подготовлен, ждём подключения.');}else event.target.playVideo();} }
           if(event.data===1) {
             if(powerPaused||(!playIntent&&!youtubeControls)){event.target.pauseVideo();return;}
+            if(trackAtLoad&&skipReasons.delete(sourceGeneration+':'+trackAtLoad.ordinal))renderQueue();
             if(record.endReason){record={event:{...record.event,playbackId:playbackId()},recorded:false,started:false,meter:new ListeningMeter(),source:record.source,lastWrite:0};activeRecord=record;}
             record.started=true;observeRecord(true);persistRecord(record,true);
             playIntent=true;cancelPlaybackRecovery();clearRetry();skipStreak=0;retryAttempt=0;bufferingSince=0;loadStarted=0;intentUI();
@@ -277,7 +291,7 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
 }
 element('play').onclick = () => systemControl('play');
 element('pause').onclick = () => systemControl('pause');
-function seek(delta: number) { previousGesture.reset(); if(playerReady&&player)seekPlayer(Math.max(0,Math.min(player.getDuration(),player.getCurrentTime()+delta))); }
+function seek(delta: number) {if(!allowPlaybackChange())return;previousGesture.reset(); if(playerReady&&player)seekPlayer(Math.max(0,Math.min(player.getDuration(),player.getCurrentTime()+delta))); }
 element('back').onclick = () => seek(-5);
 element('forward').onclick = () => seek(5);
 function updateVolume(){
@@ -296,12 +310,13 @@ function clock(seconds: number): string {
 }
 const seekInput = element<HTMLInputElement>('seek');
 let dragging = false;
-seekInput.oninput = () => { dragging = true; element('elapsed').textContent = clock(Number(seekInput.value)); seekInput.title = clock(Number(seekInput.value)); };
-seekInput.onchange = () => { previousGesture.reset(); if(playerReady)seekPlayer(Number(seekInput.value)); dragging = false; };
+seekInput.oninput = () => {if(!allowPlaybackChange()){seekInput.value=String(player?.getCurrentTime()??0);return;} dragging = true; element('elapsed').textContent = clock(Number(seekInput.value)); seekInput.title = clock(Number(seekInput.value)); };
+seekInput.onchange = () => {if(!allowPlaybackChange()){seekInput.value=String(player?.getCurrentTime()??0);dragging=false;return;} previousGesture.reset(); if(playerReady)seekPlayer(Number(seekInput.value)); dragging = false; };
 const positionTimer = setInterval(() => {
   if (!playerReady || !player) { seekInput.disabled = true; return; }
   const duration = player.getDuration();
   const position = player.getCurrentTime();
+  if(activeRecord?.started&&!activeRecord.endReason&&Number.isFinite(position)&&position>=0)crashRecoveryUI?.checkpoint({trackId:activeRecord.event.trackId,title:activeRecord.event.title,artist:activeRecord.event.artist,videoId:activeRecord.event.videoId,position});
   observeRecord();if(activeRecord)persistRecord(activeRecord);
   if(Number.isFinite(position)&&position>=0&&(position>0||mediaPlayback==='playing'))lastKnownPosition=position;
   if(Date.now()-lastMediaPublish>=2000)publishMedia();
@@ -327,16 +342,20 @@ function stopPlayer(reason:EndReason='source_change') {
   element('elapsed').textContent = '0:00'; element('duration').textContent = '0:00';
 }
 function renderQueue() {
+  document.dispatchEvent(new Event('track-artwork'));
   refreshFeedback();
   refreshVideoFavorites();
   element('track-title').textContent = queue.current?.title ?? 'Выберите музыку';
   element('track-artist').textContent = queue.current?.artist ?? '';
   const epoch=queue.generation,snapshot=queue.snapshot,currentIndex=snapshot.findIndex(track=>track.ordinal===queue.current?.ordinal);
+  const validKeys=new Set(snapshot.map(track=>epoch+':'+track.ordinal));for(const key of skipReasons.keys())if(!validKeys.has(key))skipReasons.delete(key);
   const focused=(document.activeElement as HTMLElement|null)?.closest('#queue-list li')?.getAttribute('data-ordinal');
   element('queue-list').replaceChildren(...snapshot.map((track,index) => {
     const item=document.createElement('li');item.dataset.ordinal=String(track.ordinal);item.dataset.phase=index<currentIndex?'past':index===currentIndex?'current':'upcoming';
     const button=document.createElement('button');button.className='queue-play';setIconLabel(button,'play',track.title+' · '+track.artist);button.setAttribute('aria-label','Воспроизвести '+track.title);button.onclick=()=>jumpQueue(track.ordinal,epoch);item.append(button);
+    bindPlaybackRow(item,button,{id:track.id,title:track.title+' · '+track.artist},()=>jumpQueue(track.ordinal,epoch),{iconOnly:false,queueKey:epoch+':'+track.ordinal});
     if (track.ordinal === queue.current?.ordinal) item.setAttribute('aria-current','true');
+    const cause=skipReasons.get(epoch+':'+track.ordinal);if(cause)markSkipped(item,track.title+' · '+track.artist,cause);
     return item;
   }));
   if(focused!==null&&focused!==undefined)element('queue-list').querySelector<HTMLButtonElement>('[data-ordinal="'+CSS.escape(focused)+'"] button')?.focus({preventScroll:true});
@@ -365,16 +384,19 @@ function deferWave(message:string,action:()=>void=()=>prepareAhead(),minimum=100
 }
 function canSkip(){return playIntent&&!powerPaused&&(!finiteSource||!!document.fullscreenElement);}
 let skipQueued=false;
-function skipUnavailable(message:string){
+function skipUnavailable(message:string,technical=true){
   if(networkOffline){report('Нет сети · очередь сохранена, ждём подключения.');return;}
   if(skipQueued||(!finiteSource&&retryTimer))return;
+  if(technical&&queue.current){const key=queue.generation+':'+queue.current.ordinal;if(skipReasons.get(key)!==message){skipReasons.set(key,message);renderQueue();}}
   if(!canSkip()) {if(finiteSource)playIntent=false;intentUI();report(message+' · можно выбрать другой клип');element<HTMLButtonElement>('play').disabled=false;return;}
   if(historySource&&queue.current&&!excludedTracks.has(queue.current.id))unavailableHistoryTracks.add(queue.current.id);
   report(message+' · следующий трек');
+  const epoch=queue.generation,track=queue.current;
+  const next=()=>{if(!canSkip()||epoch!==queue.generation||track?.ordinal!==queue.current?.ordinal)return;if(track&&technical)skipReasons.set(epoch+':'+track.ordinal,message);void advance(playIntent);};
   ++skipStreak;
-  if(skipStreak%12===0&&!finiteSource){deferWave('Ищем следующую подборку',()=>void advance(playIntent),5000);return;}
-  const epoch=queue.generation,ordinal=queue.current?.ordinal;skipQueued=true;
-  queueMicrotask(()=>{skipQueued=false;if(canSkip()&&epoch===queue.generation&&ordinal===queue.current?.ordinal)void advance(playIntent);});
+  if(skipStreak%12===0&&!finiteSource){deferWave('Ищем следующую подборку',next,5000);return;}
+  skipQueued=true;
+  queueMicrotask(()=>{skipQueued=false;next();});
 }
 function sourceFetch(fresh:boolean,autoplay=false):Promise<boolean>{
   if(!fresh&&historySource)return historyFetch(false);
@@ -425,7 +447,7 @@ function sourceFetch(fresh:boolean,autoplay=false):Promise<boolean>{
   })();
   return sourceWork;
 }
-element('source-start').onclick=()=>{retryAttempt=0;powerPaused=false;void sourceFetch(true,true);};
+element('source-start').onclick=()=>{if(!allowPlaybackChange())return;retryAttempt=0;powerPaused=false;void sourceFetch(true,true);};
 element('source-more').onclick=()=>void sourceFetch(false);
 function historyFetch(fresh:boolean,autoplay=playIntent,quiet=false):Promise<boolean>{
   if(historyWork)return historyWork;
@@ -453,9 +475,10 @@ function historyFetch(fresh:boolean,autoplay=playIntent,quiet=false):Promise<boo
     finally{historyWork=undefined;historyStarting=false;intentUI();if(historySource&&!startingSource)prepareAhead();}
   })();return historyWork;
 }
-element('history-smart').onclick=()=>{powerPaused=false;unavailableHistoryTracks.clear();void historyFetch(true,true);};
+element('history-smart').onclick=()=>{if(!allowPlaybackChange())return;powerPaused=false;unavailableHistoryTracks.clear();void historyFetch(true,true);};
 element('queue-next').onclick=()=>void advance(playIntent,true);
 element('find-video').onclick=()=>{
+  if(!allowPlaybackChange())return;
   if(!queue.current)return;
   const track=queue.current,epoch=queue.generation,ordinal=track.ordinal;
   if(queue.generation!==epoch||queue.current?.ordinal!==ordinal)return;
@@ -479,6 +502,7 @@ function renderAlternatives(items?:Candidate[],epoch=queue.generation,ordinal=qu
     const duration=candidate.durationSeconds===undefined?'длительность неизвестна':clock(candidate.durationSeconds);
     meta.textContent=(candidate.views===undefined?'просмотры неизвестны':candidate.views.toLocaleString('ru-RU')+' просмотров')+' · '+duration+(candidate.needsReview?' · проверить исполнителя':'');body.append(title,meta);button.append(image,body);
     button.onclick=()=>{
+      if(!allowPlaybackChange())return;
       if(epoch!==queue.generation||ordinal!==queue.current?.ordinal)return;
       const track=queue.current;clearRetry();
       const entry=choices.get(epoch+':'+ordinal);if(entry)entry.index=entry.items.findIndex(item=>item.id===candidate.id);
@@ -565,7 +589,7 @@ function tryAlternative(epoch:number,ordinal:number|undefined){
       }
       if((entry.items[0]?.saved||entry.items[0]?.historical)&&!bypassSaved.has(key)){bypassSaved.add(key);choices.delete(key);stopPlayer();prepareAhead();return;}
     }
-    stopPlayer();skipUnavailable('Клипы недоступны');
+    stopPlayer();skipUnavailable('YouTube не воспроизвёл доступные варианты клипа. Точная причина ограничения не подтверждена.');
   });
 }
 const searchErrors=new Map<string,number>();
@@ -573,7 +597,7 @@ const matchJobs=new Map<string,Promise<Candidate[]>>();
 function prepareAhead(){
   intentUI();
   if(!isTauri()||startingSource||sourceNeedsFresh||!queue.current||networkOffline)return;
-  if(!finiteSource&&playIntent&&(excludedTracks.has(queue.current.id)||(historySource&&unavailableHistoryTracks.has(queue.current.id)))){skipUnavailable('Трек сейчас недоступен для этой подборки');return;}
+  if(!finiteSource&&playIntent&&(excludedTracks.has(queue.current.id)||(historySource&&unavailableHistoryTracks.has(queue.current.id)))){skipUnavailable('Трек сейчас недоступен для этой подборки',!excludedTracks.has(queue.current.id));return;}
   const epoch=queue.generation;
   ensureAlternatives();
   for(const track of queue.ahead(finiteSource?3:8)){
@@ -591,7 +615,7 @@ function prepareAhead(){
         renderCandidates(cached.items,epoch,track.ordinal);
         if(candidate.needsReview){element<HTMLButtonElement>('play').disabled=false;report('Исполнитель не подтверждён. В волне этот трек будет пропущен после Play.');}
         else void loadVideo(candidate.id,playIntent,true);
-      }else skipUnavailable('Подходящий клип не найден');
+      }else skipUnavailable(cached.items.some(item=>item.needsReview)?'Не удалось уверенно сопоставить клип с треком.':'Подходящий клип не найден.');
       continue;
     }
     if(searchErrors.has(key)){
@@ -624,6 +648,7 @@ function prepareAhead(){
 let advancing=false,advanceOwner=0,queueNavigation=0;
 function cancelQueueAdvance(){++queueNavigation;++advanceOwner;advancing=false;clearRetry();}
 function jumpQueue(ordinal:number,epoch:number){
+  if(!allowPlaybackChange())return;
   if(startingSource||historyStarting){report('Очередь обновляется. Выберите трек после загрузки.');return;}
   if(epoch!==queue.generation)return;
   if(ordinal===queue.current?.ordinal){cancelQueueAdvance();systemControl('play');return;}
@@ -633,6 +658,7 @@ function jumpQueue(ordinal:number,epoch:number){
   if(queue.current?.videoId)void loadVideo(queue.current.videoId,true,!finiteSource);else prepareAhead();
 }
 async function advance(resume:boolean,explicit=false,reason?:EndReason){
+  if(explicit&&!allowPlaybackChange())return;
   if(networkOffline&&!explicit){holdPlayback(true);report('Нет сети · очередь сохранена, ждём подключения.');return;}
   if(advancing||!queue.current||startingSource)return;
   advancing=true;previousGesture.reset();playIntent=resume&&!powerPaused;
@@ -684,6 +710,7 @@ element('topmost').onclick=async()=>{
 if (isTauri()) void sourceFetch(true);
 
 function enqueueHistory(entry:HistoryEntry,next:boolean){
+  if(!allowPlaybackChange())return;
   const detached=!queue.current;
   if(detached){
     ++sourceRevision;finiteSource=true;historySource=false;activeCollection=undefined;
@@ -699,12 +726,14 @@ function enqueueHistory(entry:HistoryEntry,next:boolean){
   else prepareAhead();
 }
 mountHistory(entry=>{
+  if(!allowPlaybackChange())return;
   stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist,playbackSource:'history'}]);finiteSource=true;historySource=false;activeCollection=undefined;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
   element('source-name').textContent='История';element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
   powerPaused=false;void loadVideo(entry.videoId,true);
 },enqueueHistory,()=>historyWriter);
 
 const selectCatalogue:Parameters<typeof mountCatalogue>[0]=selection=>{
+  if(!allowPlaybackChange())return;
   if(!selection.tracks.length)return;
   stopPlayer();++sourceRevision;queue.reset(selection.tracks);choices.clear();bypassSaved.clear();
   clearRetry();historyStarting=false;sourceNeedsFresh=false;finiteSource=true;historySource=false;activeCollection=selection.collection;powerPaused=false;playIntent=true;renderQueue();
@@ -717,6 +746,7 @@ mountDiscovery(selectCatalogue,entity=>{showPanel('search');browseCatalogue(enti
 mountLibrary(selectCatalogue);
 
 element('previous').onclick=()=>{
+  if(!allowPlaybackChange())return;
   cancelQueueAdvance();
   if(previousGesture.press(performance.now())==='restart'){
     if(playerReady)seekPlayer(0);
@@ -755,7 +785,7 @@ if(isTauri()){
   void listen<{action:string,value:number}>('encore-media',event=>{
     const {action,value}=event.payload;
     if(action==='seek')seek(value);
-    else if(action==='position' && playerReady&&player){previousGesture.reset();seekPlayer(Math.max(0,Math.min(player.getDuration(),value)));}
+    else if(action==='position' && playerReady&&player&&allowPlaybackChange()){previousGesture.reset();seekPlayer(Math.max(0,Math.min(player.getDuration(),value)));}
     else if(action==='volume'){volume.set(Math.round(value*100));updateVolume();}
     else systemControl(action);
   }).catch(()=>{});
@@ -785,7 +815,12 @@ document.addEventListener('keydown',event=>{
 
 
 element('youtube-settings').onclick=()=>{
+  if(!allowPlaybackChange())return;
   if(!playerReady||!activeVideo?.videoId)return;
+  if(windowLayout.layout()==='spectrum'){
+    if(document.fullscreenElement)return;
+    const select=element<HTMLSelectElement>('window-layout');select.value='video';select.dispatchEvent(new Event('change'));
+  }
   const position=player?.getCurrentTime()??0,record=activeRecord;
   youtubeControls=!youtubeControls;
   element('player-options-status').textContent=youtubeControls?'Для ручного качества нужна шестерёнка YouTube. После скрытия панели выбранное качество может сброситься.':'';
@@ -819,14 +854,33 @@ refreshVideoFavorites=mountVideoFavorites(()=>queue.current?{trackId:queue.curre
 const updateAccountConnection=mountAuth(()=>window.location.reload());
 mountDiagnostics(state=>{updateAccountConnection(state);if(state==='saved'||state==='connected')scheduleWaveSync();});
 mountAutostart();
+mountSleepTimer(()=>{powerPause(false);report('Таймер сна завершён · пауза. Нажмите Play, чтобы продолжить.');});
+mountPlaybackGuard(()=>{if(!youtubeControls)return;youtubeControls=false;element('youtube-settings').setAttribute('aria-pressed','false');element('youtube-settings').textContent='Панель YouTube';document.querySelector('.screen')!.classList.remove('interactive');if(isTauri())void invoke('player_host_presentation',{interactive:false}).catch(()=>{});});
 mountShellNavigation();
 mountVisualControls();
-mountWindowLayout();
-void mountVideoMirror(document.querySelector<HTMLElement>('.screen')!,()=>[...document.querySelectorAll<HTMLDialogElement>('dialog[open]'),...(document.fullscreenElement&&document.querySelector('.workspace.hud-visible')?[document.querySelector<HTMLElement>('.player-hud')!]:[])],()=>!!element('empty').hidden);
+const windowLayout=mountWindowLayout();
+const mainSpectrum=mountMainSpectrum(document.querySelector<HTMLElement>('.screen')!,()=>windowLayout.layout(),()=>queue.current?.coverUrl);
+document.addEventListener('window-layout-mode',event=>{
+  if((event as CustomEvent<string>).detail==='spectrum'&&youtubeControls){
+    // The real source is made transparent without reloading it. Returning to
+    // video keeps its position and the sole player generation intact.
+    youtubeControls=false;element('youtube-settings').setAttribute('aria-pressed','false');
+    element('youtube-settings').textContent='Панель YouTube';element('player-options-status').textContent='';
+    document.querySelector('.screen')!.classList.remove('interactive');
+    if(isTauri())void invoke('player_host_presentation',{interactive:false}).catch(()=>{});
+  }
+});
+void mountVideoMirror(document.querySelector<HTMLElement>('.screen')!,()=>[cueBrand.element,...document.querySelectorAll<HTMLDialogElement>('dialog[open]'),...(document.fullscreenElement&&document.querySelector('.workspace.hud-visible')?[document.querySelector<HTMLElement>('.player-hud')!]:[])],()=>!!element('empty').hidden&&!mainSpectrum.isActive());
 document.addEventListener('player-host-panel-closed',()=>{if(youtubeControls)element('youtube-settings').click();});
-mountScenes(()=>({generation,videoId:playerReady?activeVideo?.videoId??null:null,title:mediaTitle,artist:mediaArtist,position:playerReady?player?.getCurrentTime()??0:0,duration:playerReady?player?.getDuration()??0:0,playback:playerReady?scenePlayback:-1}));
+mountScenes(()=>({generation,videoId:playerReady?activeVideo?.videoId??null:null,title:mediaTitle,artist:mediaArtist,position:playerReady?player?.getCurrentTime()??0:0,duration:playerReady?player?.getDuration()??0:0,playback:playerReady?scenePlayback:-1,coverUrl:queue.current?.coverUrl,locked:playbackLocked()||undefined}));
 updateQueueScroll=mountQueueScroll({eligible:()=>!finiteSource&&!historySource&&!sourceNeedsFresh&&!startingSource&&!!queue.current,generation:()=>queue.generation,count:()=>queue.snapshot.length,ahead:()=>queue.ahead(501).length,load:()=>sourceFetch(false)});
 mountFullscreenControls(document.querySelector<HTMLElement>('.workspace')!,document.querySelector<HTMLElement>('.player-hud')!);
+crashRecoveryUI=mountCrashRecovery(snapshot=>{
+ cancelQueueAdvance();stopPlayer();++sourceRevision;startingSource=false;sourceNeedsFresh=false;historyStarting=false;finiteSource=true;historySource=false;activeCollection=undefined;
+ queue.reset([{id:snapshot.trackId,title:snapshot.title,artist:snapshot.artist,videoId:snapshot.videoId,playbackSource:'history'}]);choices.clear();bypassSaved.clear();renderQueue();
+ element('source-name').textContent='Продолжение после сбоя';element('source-status').textContent='Восстановлен один клип. Для новой подборки включите «Мою волну».';element<HTMLButtonElement>('source-more').disabled=true;
+ powerPaused=false;void loadVideo(snapshot.videoId,true,false,{position:snapshot.position});
+});
 
 const streamWatchdog=setInterval(()=>{
  if(!playIntent||powerPaused||!activeVideo)return;

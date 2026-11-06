@@ -591,6 +591,7 @@ mod tests {
         spectrum.options.content = scenes::Content::Visualizer;
         spectrum.options.fps = 30;
         spectrum.options.quality = scenes::Quality::Low;
+        spectrum.options.preset = scenes::Preset::Liquid;
         let config = Config {
             version: 1,
             scenes: BTreeMap::from([
