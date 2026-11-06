@@ -200,6 +200,7 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
 });
 async function loadVideo(id:string,resume=false,automatic=false,restore?:{position:number;record?:PlayRecord;recovery?:boolean}) {
   if(updatesInstalling())return;
+  automatic ||= !!queue.current;
   if(restore?.record===activeRecord&&activeRecord){observeRecord(false);persistRecord(activeRecord,true);}else finishRecord('video_change');
   if(!restore?.recovery)cancelPlaybackRecovery();
   previousGesture.reset();
@@ -286,10 +287,10 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
         onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); if(networkOffline){holdPlayback();recoverPlayback();return;}if(restore?.recovery&&event.data===5){recoverPlayback();return;}report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(isTauri()&&trackAtLoad&&/^\d+$/.test(trackAtLoad.id)&&[2,100,101,150].includes(event.data))void storage({type:'video_failed',trackId:trackAtLoad.id,videoId:id}).then(refreshVideoFavorites).catch(()=>{}); if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); } },
         onApiChange:event=>{if(current===generation)captionControls.refresh(event.target);},
         onPlaybackQualityChange:event=>{if(current===generation)element('video-quality').textContent='Качество: '+qualityLabel(event.data);},
-        onAutoplayBlocked: () => { if (current === generation) report('YouTube заблокировал Play. Откройте панель YouTube и нажмите Play на видео.'); },
+        onAutoplayBlocked: () => { if (current === generation) {report('YouTube заблокировал воспроизведение этого видео.');if(canSkip())tryAlternative(sourceGeneration,ordinal);} },
       },
     });
-  } catch (error) { if (current === generation){report(error instanceof Error ? error.message : 'Ошибка загрузки');if(networkOffline||restore?.recovery){recoverPlayback();return;}if(automatic&&playIntent)deferWave('Ждём YouTube',()=>void loadVideo(id,playIntent,true),5000);} }
+  } catch (error) { if (current === generation){report(error instanceof Error ? error.message : 'Ошибка загрузки');if(networkOffline||restore?.recovery){recoverPlayback();return;}if(canSkip())tryAlternative(sourceGeneration,ordinal);} }
 }
 element('play').onclick = () => systemControl('play');
 element('pause').onclick = () => systemControl('pause');
@@ -377,18 +378,18 @@ let skipStreak=0;
 let currentLoadKey='',trackDeadline=0,loadStarted=0,bufferingSince=0;
 function clearRetry(){clearTimeout(retryTimer);retryTimer=undefined;}
 function deferWave(message:string,action:()=>void=()=>prepareAhead(),minimum=1000){
-  if(!playIntent||powerPaused||finiteSource)return;
+  if(!playIntent||powerPaused)return;
   if(retryTimer)return;
   const epoch=queue.generation,revision=sourceRevision;
   const delay=Math.max(minimum,Math.min(30000,1000*2**Math.min(retryAttempt++,5)));
   report(message+' · повтор через '+Math.ceil(delay/1000)+' с');
-  retryTimer=setTimeout(()=>{retryTimer=undefined;if(playIntent&&!powerPaused&&!finiteSource&&epoch===queue.generation&&revision===sourceRevision)action();},delay);
+  retryTimer=setTimeout(()=>{retryTimer=undefined;if(playIntent&&!powerPaused&&epoch===queue.generation&&revision===sourceRevision)action();},delay);
 }
-function canSkip(){return playIntent&&!powerPaused&&(!finiteSource||!!document.fullscreenElement);}
+function canSkip(){return playIntent&&!powerPaused&&!!queue.current;}
 let skipQueued=false;
 function skipUnavailable(message:string,technical=true){
   if(networkOffline){report('Нет сети · очередь сохранена, ждём подключения.');return;}
-  if(skipQueued||(!finiteSource&&retryTimer))return;
+  if(skipQueued||retryTimer)return;
   if(technical&&queue.current){const key=queue.generation+':'+queue.current.ordinal;if(skipReasons.get(key)!==message){skipReasons.set(key,message);renderQueue();}}
   if(!canSkip()) {if(finiteSource)playIntent=false;intentUI();report(message+' · можно выбрать другой клип');element<HTMLButtonElement>('play').disabled=false;return;}
   if(historySource&&queue.current&&!excludedTracks.has(queue.current.id))unavailableHistoryTracks.add(queue.current.id);
@@ -396,7 +397,7 @@ function skipUnavailable(message:string,technical=true){
   const epoch=queue.generation,track=queue.current;
   const next=()=>{if(!canSkip()||epoch!==queue.generation||track?.ordinal!==queue.current?.ordinal)return;if(track&&technical)skipReasons.set(epoch+':'+track.ordinal,message);void advance(playIntent);};
   ++skipStreak;
-  if(skipStreak%12===0&&!finiteSource){deferWave('Ищем следующую подборку',next,5000);return;}
+  if(skipStreak%12===0){deferWave('Ищем следующий доступный клип',next,5000);return;}
   skipQueued=true;
   queueMicrotask(()=>{skipQueued=false;next();});
 }
@@ -595,7 +596,14 @@ function tryAlternative(epoch:number,ordinal:number|undefined){
   });
 }
 const searchErrors=new Map<string,number>();
+const searchAttempts=new Map<string,number>();
 const matchJobs=new Map<string,Promise<Candidate[]>>();
+function boundedMatch(job:Promise<Candidate[]>):Promise<Candidate[]>{
+  return new Promise((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(new Error('Video matching timed out')),15000);
+    job.then(resolve,reject).finally(()=>clearTimeout(timer));
+  });
+}
 function prepareAhead(){
   intentUI();
   if(!isTauri()||startingSource||sourceNeedsFresh||!queue.current||networkOffline)return;
@@ -621,25 +629,29 @@ function prepareAhead(){
       continue;
     }
     if(searchErrors.has(key)){
-      if(track.ordinal===queue.current?.ordinal&&playIntent)deferWave('Поиск видео временно недоступен',()=>{searchErrors.delete(key);prepareAhead();},3000);
+      if(track.ordinal===queue.current?.ordinal&&canSkip()){
+        if((searchAttempts.get(key)??0)>=2)skipUnavailable('Не удалось подобрать клип: поиск видео недоступен.');
+        else deferWave('Поиск видео временно недоступен',()=>{searchErrors.delete(key);prepareAhead();},3000);
+      }
       continue;
     }
     if(searching.has(key)||searching.size>=3)continue;
     searching.add(key);
     const policyVersion=videoPolicyVersion(track.id),matchKey=track.id+'|'+track.title+'|'+track.artist+'|'+(track.historyVideoId??'')+'|'+policyVersion;
     let job=matchJobs.get(matchKey);
-    if(!job){job=(async()=>{
+    if(!job){job=boundedMatch((async()=>{
       if(/^\d+$/.test(track.id)){
         try{const saved=await savedVideos(track.id);if(!lastPlayedVideos.has(track.id)&&saved.lastVideoId)lastPlayedVideos.set(track.id,saved.lastVideoId);const favorites=favoriteCandidates(saved,track.title);if(favorites.length&&!bypassSaved.has(key))return favorites;}catch{/* Retain the last known local exclusions if storage cannot be read. */}
       }
       if(track.historyVideoId&&!bypassSaved.has(key)&&!videoExcluded(track.id,track.historyVideoId))return [{id:track.historyVideoId,title:track.title,score:100,reason:'Клип из вашей истории',historical:true}];
       if(!track.title.trim()||!track.artist.trim())return [];
       return allowedVideos(track.id,await invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist}));
-    })();matchJobs.set(matchKey,job);void job.finally(()=>matchJobs.delete(matchKey)).catch(()=>{});}
+    })());matchJobs.set(matchKey,job);void job.finally(()=>matchJobs.delete(matchKey)).catch(()=>{});}
     void job.then(items=>{
       if(epoch!==queue.generation||policyVersion!==videoPolicyVersion(track.id))return;
+      searchErrors.delete(key);searchAttempts.delete(key);
       choices.set(key,{items:Array.isArray(items)?items:[],index:0,alternativesLoaded:!items?.some(item=>item.saved||item.historical)});
-    }).catch(()=>{if(epoch===queue.generation)searchErrors.set(key,Date.now());}).finally(()=>{
+    }).catch(()=>{if(epoch===queue.generation){searchErrors.set(key,Date.now());searchAttempts.set(key,(searchAttempts.get(key)??0)+1);}}).finally(()=>{
       searching.delete(key);
       if(epoch===queue.generation)prepareAhead();
       else if(queue.current)prepareAhead();
@@ -672,7 +684,7 @@ async function advance(resume:boolean,explicit=false,reason?:EndReason){
       if(finiteSource){
         if(!activeCollection?.hasMore){finishRecord(reason??(explicit?'skip':'error'));playIntent=false;player?.pauseVideo();report('Конец выбранного списка.');return;}
         try{const context=activeCollection,page=await collectionPage(context.entity,context.page+1);if(epoch!==queue.generation)return;queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};if(navigation!==queueNavigation)return;if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;player?.pauseVideo();report('Больше треков в списке нет.');return;}}}
-        catch{if(navigation!==queueNavigation||epoch!==queue.generation)return;playIntent=false;report('Не удалось загрузить следующую часть списка. Очередь сохранена.');return;}
+        catch{if(navigation!==queueNavigation||epoch!==queue.generation)return;deferWave('Не удалось загрузить следующую часть списка',()=>void advance(playIntent));return;}
       }else{
         const received=await (historySource?historyFetch(false):sourceFetch(false));
         if(epoch!==queue.generation||navigation!==queueNavigation)return;
@@ -681,10 +693,10 @@ async function advance(resume:boolean,explicit=false,reason?:EndReason){
     }
     if(!wrapped&&!queue.next()){if(!finiteSource)deferWave('Ждём следующую подборку',()=>void advance(playIntent));else playIntent=false;return;}
     stopPlayer(reason??(explicit?'skip':'error'));element<HTMLButtonElement>('pause').disabled=!playIntent;element<HTMLInputElement>('url').value='';
-    if(!finiteSource){queue.trimPast(50);const valid=new Set(queue.snapshot.map(track=>queue.generation+':'+track.ordinal));for(const key of choices.keys())if(!valid.has(key))choices.delete(key);for(const key of searchErrors.keys())if(!valid.has(key))searchErrors.delete(key);}
+    if(!finiteSource){queue.trimPast(50);const valid=new Set(queue.snapshot.map(track=>queue.generation+':'+track.ordinal));for(const key of choices.keys())if(!valid.has(key))choices.delete(key);for(const key of searchErrors.keys())if(!valid.has(key))searchErrors.delete(key);for(const key of searchAttempts.keys())if(!valid.has(key))searchAttempts.delete(key);}
     renderQueue();if(queue.current.videoId)void loadVideo(queue.current.videoId,playIntent);
     else prepareAhead();
-  }finally{if(owner===advanceOwner){advancing=false;intentUI();}}
+  }finally{if(owner===advanceOwner){advancing=false;intentUI();if(playIntent&&!activeVideo)queueMicrotask(()=>prepareAhead());}}
 }
 
 let compact=false, topmost=false, changingWindow=false;
@@ -888,12 +900,12 @@ crashRecoveryUI=mountCrashRecovery(snapshot=>{
 });
 
 const streamWatchdog=setInterval(()=>{
- if(!playIntent||powerPaused||!activeVideo)return;
+ if(!playIntent||powerPaused)return;
  if(networkOffline)return;
  if(playbackRetry)return;
- if(canSkip() && playerReady && loadStarted && Date.now()-loadStarted>15000){loadStarted=0;tryAlternative(queue.generation,queue.current?.ordinal);return;}
+ if(canSkip() && loadStarted && Date.now()-loadStarted>15000){loadStarted=0;tryAlternative(queue.generation,queue.current?.ordinal);return;}
  if(bufferingSince && Date.now()-bufferingSince>15000){bufferingSince=0;recoverPlayback();}
- if(!finiteSource&&!startingSource)prepareAhead();
+ if(!startingSource)prepareAhead();
 },1000);
 window.addEventListener('offline',()=>{networkOffline=true;cancelPlaybackRecovery(false);clearRetry();if(bufferingSince||(!playerReady&&activeVideo))holdPlayback();});
 window.addEventListener('online',()=>{
