@@ -109,6 +109,7 @@ test('hung alternative searches cannot occupy every slot and strand the next tra
  await setup(page,'wave','alt-slots');
  for(const next of ['B','C','D']){
   await page.evaluate(()=>(window as any).activePlayer.emit(0));await expect(page.locator('#track-title')).toHaveText(next);
+  if(next!=='D')await expect(page.locator('#status')).toHaveText('Воспроизведение');
  }
  await page.clock.runFor(25000);
  await expect(page.locator('#track-title')).toHaveText('D');await expect(page.locator('#status')).toHaveText('Воспроизведение');
