@@ -181,9 +181,23 @@ try {
     assert.equal(await nativeInvoke('updates_command',{action:'install'}).then(value=>value.phase),'disabled','Isolated profile must never install');
     console.log('Native updater signature: valid fixture accepted; tamper, version mismatch and downgrade rejected; test installation blocked: PASS');
   }
+  if(process.env.ENCORE_TRACK_MATCH_PROBE==='1'){
+    for(const fixture of [{title:'Absence',artist:'Xalv'},{title:'What I Need',artist:'Catch-22 NZ'}]){
+      await execute('window.nativeMatchFixture=arguments[0];document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("catalogue-query").value=arguments[0].title+" "+arguments[0].artist;document.getElementById("catalogue-search").requestSubmit();',[fixture]);
+      await until('return [...document.querySelectorAll("#catalogue-results .catalogue-track")].some(row=>row.textContent.includes(window.nativeMatchFixture.title)&&row.textContent.includes(window.nativeMatchFixture.artist))',45000);
+      await execute('[...document.querySelectorAll("#catalogue-results .catalogue-track")].find(row=>row.textContent.includes(window.nativeMatchFixture.title)&&row.textContent.includes(window.nativeMatchFixture.artist)&&!/sped|slowed|remix/i.test(row.textContent)).querySelector("button").click();');
+      await until('return document.getElementById("track-title").textContent===window.nativeMatchFixture.title && document.getElementById("status").textContent==="Воспроизведение"',60000);
+      await until('return Number(document.getElementById("seek").value)>2',30000);
+      await playbackTopology();await click('pause');
+      assert.equal(await execute('return (window.nativeErrors??[]).length'),0,'Native matching must not throw rendering errors');
+      console.log('Native numeric Yandex track -> favorites -> metadata -> actual playback: '+fixture.title+' PASS');
+    }
+  }
   if(process.env.ENCORE_BASE_PLAYBACK_SMOKE==='1'){
+    const smokeVideo=process.env.ENCORE_BASE_VIDEO_ID??'aqz-KE-bpKQ';
+    assert(/^[A-Za-z0-9_-]{11}$/.test(smokeVideo),'Native playback fixture must be a YouTube video ID');
     const press=async id=>{const element=await request('/session/'+session+'/element',{using:'css selector',value:'#'+id});await request('/session/'+session+'/element/'+element['element-6066-11e4-a52e-4f735466cecf']+'/click',{});};
-    await execute('const layout=document.getElementById("window-layout");layout.value="video";layout.dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
+    await execute('const layout=document.getElementById("window-layout");layout.value="video";layout.dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value=arguments[0];document.getElementById("load").requestSubmit();',[smokeVideo]);
     await until('return !document.getElementById("play").disabled',45000);await press('play');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',45000);
     await until('return Number(document.getElementById("seek").value)>1',30000);await playbackTopology();

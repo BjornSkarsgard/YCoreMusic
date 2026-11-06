@@ -16,6 +16,7 @@ import {mountScenes} from './scene-ui';
 import {hostAvailable,createPlayer} from './player-host';
 import {mountVideoMirror} from './video-mirror';
 import {ListeningMeter,type EndReason,type PlaybackSource} from './listening';
+import {PlaybackProgress} from './playback-progress';
 import {mountAutostart} from './autostart-ui';
 import {mountHistory} from './history-ui';
 import {mountDiscovery} from './discovery-ui';
@@ -93,9 +94,12 @@ function finishRecord(reason:EndReason){
  const record=activeRecord;if(!record||record.endReason)return;observeRecord(false);record.endReason=reason;persistRecord(record,true);if(record.started)crashRecoveryUI?.clear();
 }
 function seekPlayer(position:number){
+ playbackProgress.reset();
  observeRecord();activeRecord?.meter.seek(position);lastKnownPosition=position;if(playbackRecovery)playbackRecovery.position=position;player?.seekTo(position,true);
 }
 let lastKnownPosition=0,networkOffline=!navigator.onLine;
+const playbackProgress=new PlaybackProgress();
+const preparationProgress=new PlaybackProgress(30000);
 let playbackRecovery: {id:string;position:number;record?:PlayRecord;attempts:number;ended:boolean}|undefined;
 let playbackRetry:ReturnType<typeof setTimeout>|undefined;
 function cancelPlaybackRecovery(reset=true){clearTimeout(playbackRetry);playbackRetry=undefined;if(reset)playbackRecovery=undefined;}
@@ -147,7 +151,7 @@ const excludedTracks=new Set<string>();
 const pendingReactionStates=new Map<string,number>();
 const unavailableHistoryTracks=new Set<string>();
 let activeCollection:CollectionContext|undefined;
-interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number;durationSeconds?:number;reason:string;saved?:boolean;preferred?:boolean;historical?:boolean;needsReview?:boolean}
+interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number|null;durationSeconds?:number|null;reason:string;saved?:boolean;preferred?:boolean;historical?:boolean;needsReview?:boolean}
 const choices=new Map<string,{items:Candidate[];index:number;alternativesLoaded?:boolean;favoriteChosen?:boolean}>();
 const searching=new Set<string>();
 const bypassSaved=new Set<string>();
@@ -200,6 +204,9 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
 });
 async function loadVideo(id:string,resume=false,automatic=false,restore?:{position:number;record?:PlayRecord;recovery?:boolean}) {
   if(updatesInstalling())return;
+  automatic ||= !!queue.current;
+  playbackProgress.reset();
+  preparationProgress.reset();
   if(restore?.record===activeRecord&&activeRecord){observeRecord(false);persistRecord(activeRecord,true);}else finishRecord('video_change');
   if(!restore?.recovery)cancelPlaybackRecovery();
   previousGesture.reset();
@@ -286,10 +293,10 @@ async function loadVideo(id:string,resume=false,automatic=false,restore?:{positi
         onError: event => { clearTimeout(timer); if (current === generation) { playerReady = false; mediaPlayback='stopped';publishMedia();enabled(false); if(networkOffline){holdPlayback();recoverPlayback();return;}if(restore?.recovery&&event.data===5){recoverPlayback();return;}report(`Ошибка YouTube ${event.data}. Проверьте доступность видео и разрешение на встраивание.`); if(isTauri()&&trackAtLoad&&/^\d+$/.test(trackAtLoad.id)&&[2,100,101,150].includes(event.data))void storage({type:'video_failed',trackId:trackAtLoad.id,videoId:id}).then(refreshVideoFavorites).catch(()=>{}); if(automatic||document.fullscreenElement) tryAlternative(sourceGeneration,ordinal); } },
         onApiChange:event=>{if(current===generation)captionControls.refresh(event.target);},
         onPlaybackQualityChange:event=>{if(current===generation)element('video-quality').textContent='Качество: '+qualityLabel(event.data);},
-        onAutoplayBlocked: () => { if (current === generation) report('YouTube заблокировал Play. Откройте панель YouTube и нажмите Play на видео.'); },
+        onAutoplayBlocked: () => { if (current === generation) {report('YouTube заблокировал воспроизведение этого видео.');if(canSkip())tryAlternative(sourceGeneration,ordinal);} },
       },
     });
-  } catch (error) { if (current === generation){report(error instanceof Error ? error.message : 'Ошибка загрузки');if(networkOffline||restore?.recovery){recoverPlayback();return;}if(automatic&&playIntent)deferWave('Ждём YouTube',()=>void loadVideo(id,playIntent,true),5000);} }
+  } catch (error) { if (current === generation){report(error instanceof Error ? error.message : 'Ошибка загрузки');if(networkOffline||restore?.recovery){recoverPlayback();return;}if(canSkip())tryAlternative(sourceGeneration,ordinal);} }
 }
 element('play').onclick = () => systemControl('play');
 element('pause').onclick = () => systemControl('pause');
@@ -330,6 +337,8 @@ const positionTimer = setInterval(() => {
 window.addEventListener('beforeunload', () => { finishRecord('shutdown');clearInterval(positionTimer); player?.destroy(); });
 
 function stopPlayer(reason:EndReason='source_change') {
+  playbackProgress.reset();
+  preparationProgress.reset();
   finishRecord(reason);
   cancelPlaybackRecovery();
   element('video-alternatives').hidden=true;
@@ -377,18 +386,18 @@ let skipStreak=0;
 let currentLoadKey='',trackDeadline=0,loadStarted=0,bufferingSince=0;
 function clearRetry(){clearTimeout(retryTimer);retryTimer=undefined;}
 function deferWave(message:string,action:()=>void=()=>prepareAhead(),minimum=1000){
-  if(!playIntent||powerPaused||finiteSource)return;
+  if(!playIntent||powerPaused)return;
   if(retryTimer)return;
   const epoch=queue.generation,revision=sourceRevision;
   const delay=Math.max(minimum,Math.min(30000,1000*2**Math.min(retryAttempt++,5)));
   report(message+' · повтор через '+Math.ceil(delay/1000)+' с');
-  retryTimer=setTimeout(()=>{retryTimer=undefined;if(playIntent&&!powerPaused&&!finiteSource&&epoch===queue.generation&&revision===sourceRevision)action();},delay);
+  retryTimer=setTimeout(()=>{retryTimer=undefined;if(playIntent&&!powerPaused&&epoch===queue.generation&&revision===sourceRevision)action();},delay);
 }
-function canSkip(){return playIntent&&!powerPaused&&(!finiteSource||!!document.fullscreenElement);}
+function canSkip(){return playIntent&&!powerPaused&&!!queue.current;}
 let skipQueued=false;
 function skipUnavailable(message:string,technical=true){
   if(networkOffline){report('Нет сети · очередь сохранена, ждём подключения.');return;}
-  if(skipQueued||(!finiteSource&&retryTimer))return;
+  if(skipQueued||retryTimer)return;
   if(technical&&queue.current){const key=queue.generation+':'+queue.current.ordinal;if(skipReasons.get(key)!==message){skipReasons.set(key,message);renderQueue();}}
   if(!canSkip()) {if(finiteSource)playIntent=false;intentUI();report(message+' · можно выбрать другой клип');element<HTMLButtonElement>('play').disabled=false;return;}
   if(historySource&&queue.current&&!excludedTracks.has(queue.current.id))unavailableHistoryTracks.add(queue.current.id);
@@ -396,7 +405,7 @@ function skipUnavailable(message:string,technical=true){
   const epoch=queue.generation,track=queue.current;
   const next=()=>{if(!canSkip()||epoch!==queue.generation||track?.ordinal!==queue.current?.ordinal)return;if(track&&technical)skipReasons.set(epoch+':'+track.ordinal,message);void advance(playIntent);};
   ++skipStreak;
-  if(skipStreak%12===0&&!finiteSource){deferWave('Ищем следующую подборку',next,5000);return;}
+  if(skipStreak%12===0){deferWave('Ищем следующий доступный клип',next,5000);return;}
   skipQueued=true;
   queueMicrotask(()=>{skipQueued=false;next();});
 }
@@ -419,7 +428,7 @@ function sourceFetch(fresh:boolean,autoplay=false):Promise<boolean>{
   element('source-status').textContent='Получение рекомендаций…';
   sourceWork=(async()=>{
     try{
-      const tracks=await invoke<Track[]>('source_fetch',{fresh,station:currentStation});
+      const tracks=await boundedRequest(invoke<Track[]>('source_fetch',{fresh,station:currentStation}),30000);
       if(revision!==sourceRevision||epoch!==queue.generation)return false;
       if(!Array.isArray(tracks)||!tracks.length)throw new Error('Empty recommendations');
       if(fresh){queue.reset(tracks);sourceNeedsFresh=false;choices.clear();bypassSaved.clear();element<HTMLInputElement>('url').value='';}
@@ -458,7 +467,7 @@ function historyFetch(fresh:boolean,autoplay=playIntent,quiet=false):Promise<boo
   if(fresh&&autoplay){historyStarting=true;intentUI();}
   historyWork=(async()=>{
     try{
-      const pool=await invoke<SmartCandidate[]>('smart_history_fetch');
+      const pool=await boundedRequest(invoke<SmartCandidate[]>('smart_history_fetch'),30000);
       if(epoch!==queue.generation||revision!==sourceRevision)return false;
       const tracks=historyBatch(Array.isArray(pool)?pool.filter(track=>!excludedTracks.has(track.id)&&!unavailableHistoryTracks.has(track.id)):[],fresh?queue.current?.id:queue.snapshot.at(-1)?.id);
       if(!tracks.length){historyExhausted=true;if(!quiet)report('В истории пока нет подходящих клипов.');else if(Array.isArray(pool))element('source-status').textContent+=' В истории пока нет подходящих клипов.';return false;}
@@ -489,7 +498,7 @@ element('find-video').onclick=()=>{
 function renderCandidates(items:Candidate[],epoch:number,ordinal:number){
   renderAlternatives(items,epoch,ordinal);
   element('candidate-list').replaceChildren(...items.map(candidate=>{
-    const button=document.createElement('button');button.type='button';button.textContent=candidate.title+(candidate.byline?' · '+candidate.byline:'')+(candidate.views!==undefined?' · '+candidate.views.toLocaleString()+' просмотров':'')+(candidate.needsReview?' · проверить исполнителя':'');
+    const button=document.createElement('button');button.type='button';button.textContent=candidate.title+(candidate.byline?' · '+candidate.byline:'')+(candidate.views!=null?' · '+candidate.views.toLocaleString()+' просмотров':'')+(candidate.needsReview?' · проверить исполнителя':'');
     button.onclick=()=>{if(epoch!==queue.generation||queue.current?.ordinal!==ordinal)return;element<HTMLInputElement>('url').value=candidate.id;element<HTMLFormElement>('load').requestSubmit();};return button;
   }));
 }
@@ -501,8 +510,8 @@ function renderAlternatives(items?:Candidate[],epoch=queue.generation,ordinal=qu
     const button=document.createElement('button');button.className='alternative-video';button.type='button';button.setAttribute('aria-pressed',String(queue.current?.videoId===candidate.id));
     const image=document.createElement('img');image.src='https://i.ytimg.com/vi/'+candidate.id+'/mqdefault.jpg';image.alt='';image.loading='lazy';image.referrerPolicy='no-referrer';
     const body=document.createElement('span'),title=document.createElement('strong'),meta=document.createElement('small');title.textContent=candidate.title;
-    const duration=candidate.durationSeconds===undefined?'длительность неизвестна':clock(candidate.durationSeconds);
-    meta.textContent=(candidate.views===undefined?'просмотры неизвестны':candidate.views.toLocaleString('ru-RU')+' просмотров')+' · '+duration+(candidate.needsReview?' · проверить исполнителя':'');body.append(title,meta);button.append(image,body);
+    const duration=candidate.durationSeconds==null?'длительность неизвестна':clock(candidate.durationSeconds);
+    meta.textContent=(candidate.views==null?'просмотры неизвестны':candidate.views.toLocaleString('ru-RU')+' просмотров')+' · '+duration+(candidate.needsReview?' · проверить исполнителя':'');body.append(title,meta);button.append(image,body);
     button.onclick=()=>{
       if(!allowPlaybackChange())return;
       if(epoch!==queue.generation||ordinal!==queue.current?.ordinal)return;
@@ -563,10 +572,12 @@ function ensureAlternatives(){
   let entry=choices.get(key);
   if(!entry&&track.videoId){entry={items:[{id:track.videoId,title:track.title,score:0,reason:'Текущее видео'}],index:0};choices.set(key,entry);}
   const work='alt:'+key;
-  if(!entry||entry.alternativesLoaded||searching.size>=3||searching.has(work))return;
+  // Keep a slot available for the current track rather than filling all three
+  // workers with optional alternative-video metadata.
+  if(!entry||entry.alternativesLoaded||searching.size>=2||searching.has(work))return;
   entry.alternativesLoaded=true;searching.add(work);
   const captured=entry;
-  void invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist}).then(found=>{
+  void boundedRequest(invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist})).then(found=>{
     if(epoch!==queue.generation||choices.get(key)!==captured||!Array.isArray(found))return;
     const favorites=captured.items.filter(item=>item.saved||item.historical).map(saved=>{const metadata=found.find(item=>item.id===saved.id);return {...metadata,...saved,title:metadata?.title??saved.title,views:metadata?.views,durationSeconds:metadata?.durationSeconds};});
     captured.items=allowedVideos(track.id,[...favorites,...found.filter(item=>!favorites.some(saved=>saved.id===item.id))]);
@@ -595,16 +606,25 @@ function tryAlternative(epoch:number,ordinal:number|undefined){
   });
 }
 const searchErrors=new Map<string,number>();
+const searchAttempts=new Map<string,number>();
 const matchJobs=new Map<string,Promise<Candidate[]>>();
+function boundedRequest<T>(job:Promise<T>,timeout=20000):Promise<T>{
+  return new Promise((resolve,reject)=>{
+    // Native metadata requests have a 15-second budget; allow IPC/storage overhead.
+    const timer=setTimeout(()=>reject(new Error('Playback request timed out')),timeout);
+    job.then(resolve,reject).finally(()=>clearTimeout(timer));
+  });
+}
 function prepareAhead(){
   intentUI();
   if(!isTauri()||startingSource||sourceNeedsFresh||!queue.current||networkOffline)return;
+  if(!activeVideo&&playIntent&&!retryTimer)report('Подбор клипа…');
   if(!finiteSource&&playIntent&&(excludedTracks.has(queue.current.id)||(historySource&&unavailableHistoryTracks.has(queue.current.id)))){skipUnavailable('Трек сейчас недоступен для этой подборки',!excludedTracks.has(queue.current.id));return;}
   const epoch=queue.generation;
   ensureAlternatives();
   for(const track of queue.ahead(finiteSource?3:8)){
     const key=epoch+':'+track.ordinal;
-    if(track.videoId)continue;
+    if(track.videoId){if(track.ordinal===queue.current?.ordinal&&!activeVideo&&!advancing)void loadVideo(track.videoId,playIntent,true);continue;}
     const cached=choices.get(key);
     if(cached){
       if(track.ordinal!==queue.current?.ordinal)continue;
@@ -621,25 +641,29 @@ function prepareAhead(){
       continue;
     }
     if(searchErrors.has(key)){
-      if(track.ordinal===queue.current?.ordinal&&playIntent)deferWave('Поиск видео временно недоступен',()=>{searchErrors.delete(key);prepareAhead();},3000);
+      if(track.ordinal===queue.current?.ordinal&&canSkip()){
+        if((searchAttempts.get(key)??0)>=2)skipUnavailable('Не удалось подобрать клип: поиск видео недоступен.');
+        else deferWave('Поиск видео временно недоступен',()=>{searchErrors.delete(key);prepareAhead();},3000);
+      }
       continue;
     }
     if(searching.has(key)||searching.size>=3)continue;
     searching.add(key);
     const policyVersion=videoPolicyVersion(track.id),matchKey=track.id+'|'+track.title+'|'+track.artist+'|'+(track.historyVideoId??'')+'|'+policyVersion;
     let job=matchJobs.get(matchKey);
-    if(!job){job=(async()=>{
+    if(!job){job=boundedRequest((async()=>{
       if(/^\d+$/.test(track.id)){
         try{const saved=await savedVideos(track.id);if(!lastPlayedVideos.has(track.id)&&saved.lastVideoId)lastPlayedVideos.set(track.id,saved.lastVideoId);const favorites=favoriteCandidates(saved,track.title);if(favorites.length&&!bypassSaved.has(key))return favorites;}catch{/* Retain the last known local exclusions if storage cannot be read. */}
       }
       if(track.historyVideoId&&!bypassSaved.has(key)&&!videoExcluded(track.id,track.historyVideoId))return [{id:track.historyVideoId,title:track.title,score:100,reason:'Клип из вашей истории',historical:true}];
       if(!track.title.trim()||!track.artist.trim())return [];
       return allowedVideos(track.id,await invoke<Candidate[]>('search_videos',{title:track.title,artist:track.artist}));
-    })();matchJobs.set(matchKey,job);void job.finally(()=>matchJobs.delete(matchKey)).catch(()=>{});}
+    })());matchJobs.set(matchKey,job);void job.finally(()=>matchJobs.delete(matchKey)).catch(()=>{});}
     void job.then(items=>{
       if(epoch!==queue.generation||policyVersion!==videoPolicyVersion(track.id))return;
+      searchErrors.delete(key);searchAttempts.delete(key);
       choices.set(key,{items:Array.isArray(items)?items:[],index:0,alternativesLoaded:!items?.some(item=>item.saved||item.historical)});
-    }).catch(()=>{if(epoch===queue.generation)searchErrors.set(key,Date.now());}).finally(()=>{
+    }).catch(()=>{if(epoch===queue.generation){searchErrors.set(key,Date.now());searchAttempts.set(key,(searchAttempts.get(key)??0)+1);}}).finally(()=>{
       searching.delete(key);
       if(epoch===queue.generation)prepareAhead();
       else if(queue.current)prepareAhead();
@@ -671,8 +695,8 @@ async function advance(resume:boolean,explicit=false,reason?:EndReason){
     else if(!queue.hasNext){
       if(finiteSource){
         if(!activeCollection?.hasMore){finishRecord(reason??(explicit?'skip':'error'));playIntent=false;player?.pauseVideo();report('Конец выбранного списка.');return;}
-        try{const context=activeCollection,page=await collectionPage(context.entity,context.page+1);if(epoch!==queue.generation)return;queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};if(navigation!==queueNavigation)return;if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;player?.pauseVideo();report('Больше треков в списке нет.');return;}}}
-        catch{if(navigation!==queueNavigation||epoch!==queue.generation)return;playIntent=false;report('Не удалось загрузить следующую часть списка. Очередь сохранена.');return;}
+        try{const context=activeCollection,page=await boundedRequest(collectionPage(context.entity,context.page+1),30000);if(epoch!==queue.generation)return;queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};if(navigation!==queueNavigation)return;if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;player?.pauseVideo();report('Больше треков в списке нет.');return;}}}
+        catch{if(navigation!==queueNavigation||epoch!==queue.generation)return;deferWave('Не удалось загрузить следующую часть списка',()=>void advance(playIntent));return;}
       }else{
         const received=await (historySource?historyFetch(false):sourceFetch(false));
         if(epoch!==queue.generation||navigation!==queueNavigation)return;
@@ -681,10 +705,10 @@ async function advance(resume:boolean,explicit=false,reason?:EndReason){
     }
     if(!wrapped&&!queue.next()){if(!finiteSource)deferWave('Ждём следующую подборку',()=>void advance(playIntent));else playIntent=false;return;}
     stopPlayer(reason??(explicit?'skip':'error'));element<HTMLButtonElement>('pause').disabled=!playIntent;element<HTMLInputElement>('url').value='';
-    if(!finiteSource){queue.trimPast(50);const valid=new Set(queue.snapshot.map(track=>queue.generation+':'+track.ordinal));for(const key of choices.keys())if(!valid.has(key))choices.delete(key);for(const key of searchErrors.keys())if(!valid.has(key))searchErrors.delete(key);}
+    if(!finiteSource){queue.trimPast(50);const valid=new Set(queue.snapshot.map(track=>queue.generation+':'+track.ordinal));for(const key of choices.keys())if(!valid.has(key))choices.delete(key);for(const key of searchErrors.keys())if(!valid.has(key))searchErrors.delete(key);for(const key of searchAttempts.keys())if(!valid.has(key))searchAttempts.delete(key);}
     renderQueue();if(queue.current.videoId)void loadVideo(queue.current.videoId,playIntent);
     else prepareAhead();
-  }finally{if(owner===advanceOwner){advancing=false;intentUI();}}
+  }finally{if(owner===advanceOwner){advancing=false;intentUI();if(playIntent&&!activeVideo)queueMicrotask(()=>prepareAhead());}}
 }
 
 let compact=false, topmost=false, changingWindow=false;
@@ -762,7 +786,7 @@ element('previous').onclick=()=>{
 
 function systemControl(action:string){
   if(updatesInstalling())return;
-  if(action==='play'||action==='pause')intentRevision++;
+  if(action==='play'||action==='pause'){intentRevision++;playbackProgress.reset();preparationProgress.reset();}
   switch(action){
     case 'toggle':systemControl(playIntent?'pause':'play');break;
     case 'play':powerPaused=false;playIntent=true;cancelPlaybackRecovery(false);clearRetry();if(playbackRecovery){recoverPlayback(true);break;}if(!finiteSource&&queue.current&&excludedTracks.has(queue.current.id)){prepareAhead();break;}if(sourceNeedsFresh)void sourceFetch(true,true);else if(playerReady)player?.playVideo();else if(activeVideo?.videoId&&queue.current?.videoId)void loadVideo(activeVideo.videoId,true,activeAutomatic);else{element<HTMLButtonElement>('pause').disabled=false;prepareAhead();}break;
@@ -888,12 +912,18 @@ crashRecoveryUI=mountCrashRecovery(snapshot=>{
 });
 
 const streamWatchdog=setInterval(()=>{
- if(!playIntent||powerPaused||!activeVideo)return;
- if(networkOffline)return;
- if(playbackRetry)return;
- if(canSkip() && playerReady && loadStarted && Date.now()-loadStarted>15000){loadStarted=0;tryAlternative(queue.generation,queue.current?.ordinal);return;}
+ if(!playIntent||powerPaused||networkOffline||playbackRetry){playbackProgress.reset();preparationProgress.reset();return;}
+ if(preparationProgress.stalled(queue.current?.ordinal??NaN,performance.now(),!activeVideo&&!startingSource&&!sourceNeedsFresh&&!advancing&&canSkip())){
+  preparationProgress.reset();clearRetry();skipUnavailable('Подбор клипа не завершился вовремя.');return;
+ }
+ if(playbackProgress.stalled(player?.getCurrentTime()??NaN,performance.now(),playerReady&&scenePlayback===1)){
+  playbackProgress.reset();report('Видео не продвигается · пробуем другой клип.');
+  if(canSkip())tryAlternative(queue.generation,queue.current?.ordinal);else recoverPlayback();
+  return;
+ }
+ if(canSkip() && loadStarted && Date.now()-loadStarted>15000){loadStarted=0;tryAlternative(queue.generation,queue.current?.ordinal);return;}
  if(bufferingSince && Date.now()-bufferingSince>15000){bufferingSince=0;recoverPlayback();}
- if(!finiteSource&&!startingSource)prepareAhead();
+ if(!startingSource)prepareAhead();
 },1000);
 window.addEventListener('offline',()=>{networkOffline=true;cancelPlaybackRecovery(false);clearRetry();if(bufferingSince||(!playerReady&&activeVideo))holdPlayback();});
 window.addEventListener('online',()=>{

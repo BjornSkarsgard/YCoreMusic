@@ -95,15 +95,15 @@ test('sleep cancels a pending recovery and wake remains paused until Play',async
  expect(await page.evaluate(()=>(window as any).records.length)).toBe(1);
 });
 
-test('finite collection retries its same video beyond the Wave fallback budget without changing history',async({page})=>{
+test('an unrecoverable final clip ends a finite collection instead of retrying forever',async({page})=>{
  await setup(page);await page.locator('#catalogue-query').fill('selected');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
  await page.locator('#catalogue-results .catalogue-track button').click();await expect(page.locator('#track-title')).toHaveText('Selected');await expect(page.locator('#status')).toHaveText('Воспроизведение');
  const records=await page.evaluate(()=>(window as any).records.length);
  await page.evaluate(()=>{const w=window as any;w.activePlayer.position=43;w.holdCues=true;w.activePlayer.emit(3);});
  await page.clock.fastForward(16000);await page.clock.fastForward(2001);
- await page.clock.fastForward(21000);await page.clock.fastForward(4001);
- await page.clock.fastForward(21000);await page.evaluate(()=>(window as any).holdCues=false);await page.clock.fastForward(8001);
- await expect(page.locator('#status')).toHaveText('Воспроизведение');await expect(page.locator('#track-title')).toHaveText('Selected');
- expect(await page.evaluate(()=>(window as any).cues.slice(-3))).toEqual(Array(3).fill({id:'Aaaaaaaaaaa',position:43}));
- expect(await page.evaluate(()=>(window as any).records.length)).toBe(records);await expect(page.locator('iframe')).toHaveCount(1);
+ await page.clock.fastForward(21000);
+ await expect(page.locator('#status')).toContainText('Конец выбранного списка');
+ const cues=await page.evaluate(()=>(window as any).cues.length);await page.clock.fastForward(60000);
+ expect(await page.evaluate(()=>(window as any).cues.length)).toBe(cues);
+ expect(await page.evaluate(()=>(window as any).records.length)).toBe(records);
 });
