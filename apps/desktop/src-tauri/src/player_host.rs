@@ -169,22 +169,27 @@ pub fn player_host_status(
         },
     );
     drop(data);
-    let mut source_alpha = None;
-    let mut click_through = false;
     #[cfg(target_os = "windows")]
-    if let Some(source) = window.app_handle().get_webview_window(LABEL) {
-        if let Ok(hwnd) = source.hwnd() {
-            unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
-                let mut alpha = 255;
-                if GetLayeredWindowAttributes(hwnd, None, Some(&mut alpha), None).is_ok() {
-                    source_alpha = Some(alpha);
+    let (source_alpha, click_through) = {
+        let mut source_alpha = None;
+        let mut click_through = false;
+        if let Some(source) = window.app_handle().get_webview_window(LABEL) {
+            if let Ok(hwnd) = source.hwnd() {
+                unsafe {
+                    use windows::Win32::UI::WindowsAndMessaging::*;
+                    let mut alpha = 255;
+                    if GetLayeredWindowAttributes(hwnd, None, Some(&mut alpha), None).is_ok() {
+                        source_alpha = Some(alpha);
+                    }
+                    click_through =
+                        GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TRANSPARENT.0 as isize != 0;
                 }
-                click_through =
-                    GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TRANSPARENT.0 as isize != 0;
             }
         }
-    }
+        (source_alpha, click_through)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let (source_alpha, click_through) = (None, false);
     Ok(Status {
         supported: supported(),
         epoch,

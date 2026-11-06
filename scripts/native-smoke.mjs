@@ -59,6 +59,13 @@ try {
   assert.equal(storageStatus.testMode,true,'Refuse storage tests against the personal database');
   assert.deepEqual(await nativeInvoke('wave_sync'),{disabled:true,pending:0,sent:0},'Isolated tests must never write recommendation events');
   isolated=true;
+  const expectedInstallation=process.env.ENCORE_EXPECT_INSTALLATION_SENTINEL;
+  if(expectedInstallation){
+    assert.equal(await execute('return localStorage.getItem("ycore.installation-probe")'),expectedInstallation,'Update must preserve UI preferences');
+    const history=await store({type:'history',query:'Installation preservation fixture'});
+    assert(history.some(value=>value.title==='Installation preservation fixture '+expectedInstallation&&value.trackId==='manual:aqz-KE-bpKQ'),'Update must preserve SQLite history');
+    console.log('Native installed upgrade preserves UI preferences and SQLite history: PASS');
+  }
   await execute('if(document.getElementById("account-welcome")?.open)document.getElementById("account-welcome-later").click();');
   appPid=(await nativeInvoke('desktop_status')).process_id;
   assert(Number.isInteger(appPid),'Native test process identity unavailable');
@@ -1059,6 +1066,12 @@ try {
     await until('return document.querySelector("#queue-list li[aria-current=true]")?.dataset.ordinal==="0"&&!document.getElementById("play").disabled',30000);
     assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);
     console.log('Native queue jump/manual Next/back to earlier entry/one cued player: PASS (stream playback not asserted)');
+  }
+  if(process.env.ENCORE_SAVE_INSTALLATION_SENTINEL){
+    const marker=process.env.ENCORE_SAVE_INSTALLATION_SENTINEL;assert(/^[a-f0-9-]{36}$/.test(marker));
+    await execute('localStorage.setItem("ycore.installation-probe",arguments[0])',[marker]);
+    await store({type:'record',event:{playbackId:'installation-'+marker,trackId:'manual:aqz-KE-bpKQ',title:'Installation preservation fixture '+marker,artist:'Fixture',videoId:'aqz-KE-bpKQ'}});
+    console.log('Native installation persistence fixture saved: PASS');
   }
   if(process.env.ENCORE_LISTENING_EXIT==='1'){
     const exitId=fixture+'-shutdown';
