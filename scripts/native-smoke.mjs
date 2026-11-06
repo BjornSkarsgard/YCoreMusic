@@ -998,18 +998,22 @@ try {
   assert.equal(restoredMaximized.width,maximized.width);
   console.log('Native mini from maximized window and restore: PASS');
   await request('/session/'+session+'/window/minimize',{});
-  assert.equal((await nativeInvoke('desktop_status')).minimized,true);
+  // WebKitWebDriver can hide the GTK window rather than iconify it. Both are
+  // valid background states; test that duplicates preserve it and Open restores it.
+  const backgrounded=async()=>{const value=await nativeInvoke('desktop_status');return value.minimized||!value.visible;};
+  for(let count=0;count<40&&!await backgrounded();count++)await sleep(100);
+  assert(await backgrounded(),'The window must be in the background before the duplicate launch');
   const automaticExtra=spawn(nativeApp,['--encore-autostart'],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
   const automaticExited=await new Promise(resolve=>{const timeout=setTimeout(()=>{automaticExtra.kill();resolve(false);},5000);automaticExtra.on('close',()=>{clearTimeout(timeout);resolve(true);});});
   assert(automaticExited,'Second autostart instance did not exit');
-  assert.equal((await nativeInvoke('desktop_status')).minimized,true,'Autostart duplicate must not steal focus');
-  console.log('Native duplicate autostart keeps the existing window minimized: PASS');
+  assert(await backgrounded(),'Autostart duplicate must not steal focus');
+  console.log('Native duplicate autostart preserves the background window: PASS');
   const extra=spawn(nativeApp,[],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
   const exited=await new Promise(resolve=>{const timeout=setTimeout(()=>{extra.kill();resolve(false);},5000);extra.on('close',()=>{clearTimeout(timeout);resolve(true);});});
   assert(exited,'Second instance did not exit');
   await execute('return document.title');
-  assert.equal((await nativeInvoke('desktop_status')).minimized,false);
-  console.log('Native single instance guard restores minimized existing window: PASS');
+  await desktopUntil('visible',true);await desktopUntil('minimized',false);
+  console.log('Native single instance guard restores the existing background window: PASS');
   if(process.env.ENCORE_QUEUE_SMOKE==='1'){
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));');
     for(let index=1;index<=3;index++)await store({type:'record',event:{...event,playbackId:fixture+'-queue-'+index,trackId:String(123456780+index),title:fixture+'-queue-'+index}});
