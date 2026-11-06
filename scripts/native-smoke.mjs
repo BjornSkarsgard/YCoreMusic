@@ -182,8 +182,10 @@ try {
     console.log('Native updater signature: valid fixture accepted; tamper, version mismatch and downgrade rejected; test installation blocked: PASS');
   }
   if(process.env.ENCORE_BASE_PLAYBACK_SMOKE==='1'){
+    const smokeVideo=process.env.ENCORE_BASE_VIDEO_ID??'aqz-KE-bpKQ';
+    assert(/^[A-Za-z0-9_-]{11}$/.test(smokeVideo),'Native playback fixture must be a YouTube video ID');
     const press=async id=>{const element=await request('/session/'+session+'/element',{using:'css selector',value:'#'+id});await request('/session/'+session+'/element/'+element['element-6066-11e4-a52e-4f735466cecf']+'/click',{});};
-    await execute('const layout=document.getElementById("window-layout");layout.value="video";layout.dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
+    await execute('const layout=document.getElementById("window-layout");layout.value="video";layout.dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value=arguments[0];document.getElementById("load").requestSubmit();',[smokeVideo]);
     await until('return !document.getElementById("play").disabled',45000);await press('play');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',45000);
     await until('return Number(document.getElementById("seek").value)>1',30000);await playbackTopology();

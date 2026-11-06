@@ -28,8 +28,8 @@ async function setup(page:Page,source:'wave'|'playlist',failure:string){
    if(this.id==='Bbbbbbbbbbb'&&window.failure==='embed'){queueMicrotask(()=>this.options.events.onError({data:150}));return;}
    this.emit(5);
   }
-  playVideo(){if(this.id==='Bbbbbbbbbbb'&&window.failure==='blocked'){this.options.events.onAutoplayBlocked();return;}window.played.push(this.id);this.emit(1);}
-  pauseVideo(){this.emit(2);}setVolume(){}getDuration(){return 180;}getCurrentTime(){return 5;}seekTo(){}destroy(){this.el.remove();}
+  playVideo(){if(this.id==='Bbbbbbbbbbb'&&window.failure==='blocked'){this.options.events.onAutoplayBlocked();return;}this.startedAt=performance.now();window.played.push(this.id);this.emit(1);if(this.id==='Bbbbbbbbbbb'&&window.failure==='heartbeat-stall')this.heartbeat=setInterval(()=>this.emit(1),1000);}
+  pauseVideo(){this.emit(2);}setVolume(){}getDuration(){return 180;}getCurrentTime(){if(this.id==='Bbbbbbbbbbb'&&['false-playing','heartbeat-stall'].includes(window.failure))return 0;return this.startedAt===undefined?0:5+(performance.now()-this.startedAt)/1000;}seekTo(){}destroy(){clearInterval(this.heartbeat);this.el.remove();}
  }};window.onYouTubeIframeAPIReady();` }));
  await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
  if(source==='playlist'){
@@ -41,22 +41,24 @@ async function setup(page:Page,source:'wave'|'playlist',failure:string){
 }
 
 for(const source of ['wave','playlist'] as const){
- for(const failure of ['missing','embed','unready','blocked','search-error','search-hang']){
+ for(const failure of ['missing','embed','unready','blocked','search-error','search-hang','false-playing','heartbeat-stall']){
   test(`${source} automatically leaves ${failure} after a natural end without fullscreen or manual Next`,async({page})=>{
    await setup(page,source,failure);
    await page.evaluate(()=>(window as any).activePlayer.emit(0));
+   if(failure==='search-hang')await expect(page.locator('#status')).not.toHaveText('Воспроизведение');
    if(failure==='unready')await page.clock.runFor(13000);
    if(failure==='search-error')await page.clock.runFor(6000);
    if(failure==='search-hang')await page.clock.runFor(46000);
+   if(['false-playing','heartbeat-stall'].includes(failure))await page.clock.runFor(18000);
    await expect(page.locator('#track-title')).toHaveText('C');
    await expect(page.locator('#status')).toHaveText('Воспроизведение');
-   expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa','Ccccccccccc']);
+   expect(await page.evaluate(()=>(window as any).played)).toEqual(['false-playing','heartbeat-stall'].includes(failure)?['Aaaaaaaaaaa','Bbbbbbbbbbb','Ccccccccccc']:['Aaaaaaaaaaa','Ccccccccccc']);
    if(failure==='search-hang'){
     await page.evaluate(()=>(window as any).releaseB());await page.clock.runFor(10);
     await expect(page.locator('#track-title')).toHaveText('C');
    }
    await page.locator('[data-panel=queue]').click();await expect(page.locator('#queue-list .track-skipped')).toHaveCount(1);
-   expect(await page.evaluate(()=>(window as any).records.map((entry:any)=>entry.trackId))).toEqual(['A','C']);
+   expect(await page.evaluate(()=>(window as any).records.map((entry:any)=>entry.trackId))).toEqual(['false-playing','heartbeat-stall'].includes(failure)?['A','B','C']:['A','C']);
   });
  }
 }

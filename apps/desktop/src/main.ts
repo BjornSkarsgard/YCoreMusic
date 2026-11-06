@@ -16,6 +16,7 @@ import {mountScenes} from './scene-ui';
 import {hostAvailable,createPlayer} from './player-host';
 import {mountVideoMirror} from './video-mirror';
 import {ListeningMeter,type EndReason,type PlaybackSource} from './listening';
+import {PlaybackProgress} from './playback-progress';
 import {mountAutostart} from './autostart-ui';
 import {mountHistory} from './history-ui';
 import {mountDiscovery} from './discovery-ui';
@@ -93,9 +94,11 @@ function finishRecord(reason:EndReason){
  const record=activeRecord;if(!record||record.endReason)return;observeRecord(false);record.endReason=reason;persistRecord(record,true);if(record.started)crashRecoveryUI?.clear();
 }
 function seekPlayer(position:number){
+ playbackProgress.reset();
  observeRecord();activeRecord?.meter.seek(position);lastKnownPosition=position;if(playbackRecovery)playbackRecovery.position=position;player?.seekTo(position,true);
 }
 let lastKnownPosition=0,networkOffline=!navigator.onLine;
+const playbackProgress=new PlaybackProgress();
 let playbackRecovery: {id:string;position:number;record?:PlayRecord;attempts:number;ended:boolean}|undefined;
 let playbackRetry:ReturnType<typeof setTimeout>|undefined;
 function cancelPlaybackRecovery(reset=true){clearTimeout(playbackRetry);playbackRetry=undefined;if(reset)playbackRecovery=undefined;}
@@ -201,6 +204,7 @@ element<HTMLFormElement>('load').addEventListener('submit', event=>{
 async function loadVideo(id:string,resume=false,automatic=false,restore?:{position:number;record?:PlayRecord;recovery?:boolean}) {
   if(updatesInstalling())return;
   automatic ||= !!queue.current;
+  playbackProgress.reset();
   if(restore?.record===activeRecord&&activeRecord){observeRecord(false);persistRecord(activeRecord,true);}else finishRecord('video_change');
   if(!restore?.recovery)cancelPlaybackRecovery();
   previousGesture.reset();
@@ -331,6 +335,7 @@ const positionTimer = setInterval(() => {
 window.addEventListener('beforeunload', () => { finishRecord('shutdown');clearInterval(positionTimer); player?.destroy(); });
 
 function stopPlayer(reason:EndReason='source_change') {
+  playbackProgress.reset();
   finishRecord(reason);
   cancelPlaybackRecovery();
   element('video-alternatives').hidden=true;
@@ -608,6 +613,7 @@ function boundedMatch(job:Promise<Candidate[]>):Promise<Candidate[]>{
 function prepareAhead(){
   intentUI();
   if(!isTauri()||startingSource||sourceNeedsFresh||!queue.current||networkOffline)return;
+  if(!activeVideo&&playIntent&&!retryTimer)report('Подбор клипа…');
   if(!finiteSource&&playIntent&&(excludedTracks.has(queue.current.id)||(historySource&&unavailableHistoryTracks.has(queue.current.id)))){skipUnavailable('Трек сейчас недоступен для этой подборки',!excludedTracks.has(queue.current.id));return;}
   const epoch=queue.generation;
   ensureAlternatives();
@@ -775,7 +781,7 @@ element('previous').onclick=()=>{
 
 function systemControl(action:string){
   if(updatesInstalling())return;
-  if(action==='play'||action==='pause')intentRevision++;
+  if(action==='play'||action==='pause'){intentRevision++;playbackProgress.reset();}
   switch(action){
     case 'toggle':systemControl(playIntent?'pause':'play');break;
     case 'play':powerPaused=false;playIntent=true;cancelPlaybackRecovery(false);clearRetry();if(playbackRecovery){recoverPlayback(true);break;}if(!finiteSource&&queue.current&&excludedTracks.has(queue.current.id)){prepareAhead();break;}if(sourceNeedsFresh)void sourceFetch(true,true);else if(playerReady)player?.playVideo();else if(activeVideo?.videoId&&queue.current?.videoId)void loadVideo(activeVideo.videoId,true,activeAutomatic);else{element<HTMLButtonElement>('pause').disabled=false;prepareAhead();}break;
@@ -901,9 +907,12 @@ crashRecoveryUI=mountCrashRecovery(snapshot=>{
 });
 
 const streamWatchdog=setInterval(()=>{
- if(!playIntent||powerPaused)return;
- if(networkOffline)return;
- if(playbackRetry)return;
+ if(!playIntent||powerPaused||networkOffline||playbackRetry){playbackProgress.reset();return;}
+ if(playbackProgress.stalled(player?.getCurrentTime()??NaN,performance.now(),playerReady&&scenePlayback===1)){
+  playbackProgress.reset();report('Видео не продвигается · пробуем другой клип.');
+  if(canSkip())tryAlternative(queue.generation,queue.current?.ordinal);else recoverPlayback();
+  return;
+ }
  if(canSkip() && loadStarted && Date.now()-loadStarted>15000){loadStarted=0;tryAlternative(queue.generation,queue.current?.ordinal);return;}
  if(bufferingSince && Date.now()-bufferingSince>15000){bufferingSince=0;recoverPlayback();}
  if(!startingSource)prepareAhead();

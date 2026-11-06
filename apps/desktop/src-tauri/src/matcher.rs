@@ -760,4 +760,12 @@ mod tests {
             assert!(score("Группа крови", "Кино", &candidate.title, "", "").is_some());
         }
     }
+    #[test]
+    #[ignore = "Read-only user-reported Catch-22 metadata probe"]
+    fn live_catch22_regression() {
+        let result = search(&Matcher::default(), "What I Need", "Catch-22 NZ")
+            .expect("Public metadata request failed");
+        println!("Catch-22 candidates: {result:?}");
+        assert!(result.iter().any(|candidate| !candidate.needs_review));
+    }
 }
