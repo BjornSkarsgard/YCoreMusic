@@ -69,7 +69,7 @@ pub fn install(app: &tauri::AppHandle) -> Result<(), String> {
                 webview.reload();
             }
         })
-        .map_err(|_| "Cannot configure WebKit identity")
+        .map_err(|_| "Cannot configure WebKit identity".into())
 }
 
 #[cfg(not(all(target_os = "linux", feature = "linux-embed-referrer")))]
