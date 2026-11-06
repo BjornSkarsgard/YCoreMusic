@@ -11,7 +11,7 @@ if [ "${GITHUB_ACTIONS:-}" = true ]; then
 fi
 case "${1:-build}" in
   build) extra='' ;;
-  native) extra='webkit2gtk-driver xvfb xauth openbox dbus-x11 fonts-dejavu x11-utils gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav' ;;
+  native) extra='webkit2gtk-driver xvfb xauth openbox dbus-x11 fonts-dejavu x11-utils gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav pulseaudio pulseaudio-utils' ;;
   package) extra='libfuse2' ;;
   *) echo 'Expected build, native or package' >&2; exit 2 ;;
 esac

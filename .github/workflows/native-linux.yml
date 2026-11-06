@@ -53,3 +53,5 @@ jobs:
             .tools/openbox.log
             .tools/native-linux-error.txt
             .tools/native-basic-playback-*.png
+            .tools/native-basic-playback-diagnostic.json
+            .tools/pulseaudio.log

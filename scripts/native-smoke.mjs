@@ -1087,6 +1087,13 @@ try {
  } catch(error) {
   if(isolated&&session&&process.env.ENCORE_BASE_PLAYBACK_SMOKE==='1'){
     console.log('Native embedded client identity status: '+JSON.stringify(await nativeInvoke('embed_identity_status').catch(()=>null)));
+    const diagnostic=await execute('return {origin:location.origin,href:location.href,playingIntent:document.body.classList.contains("is-playing"),duration:document.getElementById("seek")?.max,position:document.getElementById("seek")?.value,status:document.getElementById("status")?.textContent,frame:document.getElementById("player")?.src}').catch(()=>null);
+    if(diagnostic&&process.platform==='linux'){
+      try{const frame=await request('/session/'+session+'/element',{using:'css selector',value:'#player'});await request('/session/'+session+'/frame',{id:frame});diagnostic.video=await execute('const player=document.getElementById("movie_player"),video=document.querySelector("video");return {state:player?.getPlayerState?.(),time:player?.getCurrentTime?.(),duration:player?.getDuration?.(),paused:video?.paused,readyState:video?.readyState,mediaError:video?.error?.code}');}
+      catch{diagnostic.video='Frame diagnostics unavailable';}
+      finally{await request('/session/'+session+'/frame',{id:null}).catch(()=>{});}
+    }
+    writeFileSync(resolve(root,'.tools/native-basic-playback-diagnostic.json'),JSON.stringify(diagnostic,null,2));console.log('Native playback state: '+JSON.stringify(diagnostic));
     const screenshot=await request('/session/'+session+'/screenshot').catch(()=>null);if(screenshot)writeFileSync(resolve(root,'.tools/native-basic-playback-failure.png'),Buffer.from(screenshot,'base64'));
   }
   if(isolated&&session&&process.env.ENCORE_SINGLE_HOST_SMOKE==='1'){

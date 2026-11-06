@@ -61,7 +61,10 @@ $taskRuntimeRoots = @((Join-Path ${env:ProgramFiles(x86)} 'Microsoft/EdgeWebView
 $taskRuntime = $taskRuntimeRoots | Where-Object {Test-Path -LiteralPath $_} | ForEach-Object {Get-ChildItem -LiteralPath $_ -Directory} | Where-Object Name -Match '^\d+\.\d+\.\d+\.\d+$' | Sort-Object { [Version]$_.Name } -Descending | Select-Object -First 1
 if (-not $taskRuntime) { throw 'WebView2 runtime was not installed' }
 $taskMajor = ([Version]$taskRuntime.Name).Major
-$taskDriverVersion = (Invoke-RestMethod "https://msedgedriver.microsoft.com/LATEST_RELEASE_$($taskMajor)_WINDOWS").Trim()
+$taskDriverVersionFile = Join-Path $taskRoot '.tools/edgedriver-version.txt'
+Invoke-WebRequest "https://msedgedriver.microsoft.com/LATEST_RELEASE_$($taskMajor)_WINDOWS" -OutFile $taskDriverVersionFile
+$taskDriverVersionBytes = [IO.File]::ReadAllBytes($taskDriverVersionFile)
+$taskDriverVersion = if ($taskDriverVersionBytes.Length -ge 2 -and $taskDriverVersionBytes[0] -eq 255 -and $taskDriverVersionBytes[1] -eq 254) { [Text.Encoding]::Unicode.GetString($taskDriverVersionBytes).Trim([char]0xFEFF,[char]13,[char]10,[char]32) } else { [Text.Encoding]::UTF8.GetString($taskDriverVersionBytes).Trim([char]0xFEFF,[char]13,[char]10,[char]32) }
 if ($taskDriverVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') { throw 'Invalid official driver version' }
 $taskDriverDirectory = Join-Path $taskRoot '.tools/edgedriver'
 $taskDriverArchive = Join-Path $taskRoot '.tools/edgedriver.zip'
