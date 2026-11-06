@@ -55,7 +55,7 @@ jobs:
         run: npm run package:linux -- --features linux-embed-referrer
       - name: Linux DEB
         if: runner.os == 'Linux' && inputs.deb_only
-        run: npm run desktop -- build --config src-tauri/tauri.bundle.conf.json --features linux-embed-referrer --bundles deb
+        run: npx tauri build --config src-tauri/tauri.bundle.conf.json --features linux-embed-referrer --bundles deb
       - name: Inspect Linux DEB
         if: runner.os == 'Linux'
         run: |
