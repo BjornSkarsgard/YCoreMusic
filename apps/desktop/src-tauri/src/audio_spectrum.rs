@@ -41,6 +41,7 @@ impl Spectrum {
         }
     }
 
+    #[cfg(any(target_os = "windows", test))]
     pub fn silence(&mut self, frames: usize) {
         if frames >= SIZE {
             self.samples.fill(0.0);

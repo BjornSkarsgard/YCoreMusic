@@ -4,6 +4,7 @@ use tauri::{Emitter, Manager, WebviewWindow};
 pub const LABEL: &str = "player-host";
 pub fn supported() -> bool {
     cfg!(all(target_os = "windows", feature = "single-player-host"))
+        || cfg!(all(target_os = "linux", feature = "linux-player-host"))
 }
 #[derive(Default)]
 pub struct Host {
@@ -169,22 +170,27 @@ pub fn player_host_status(
         },
     );
     drop(data);
-    let mut source_alpha = None;
-    let mut click_through = false;
     #[cfg(target_os = "windows")]
-    if let Some(source) = window.app_handle().get_webview_window(LABEL) {
-        if let Ok(hwnd) = source.hwnd() {
-            unsafe {
-                use windows::Win32::UI::WindowsAndMessaging::*;
-                let mut alpha = 255;
-                if GetLayeredWindowAttributes(hwnd, None, Some(&mut alpha), None).is_ok() {
-                    source_alpha = Some(alpha);
+    let (source_alpha, click_through) = {
+        let mut source_alpha = None;
+        let mut click_through = false;
+        if let Some(source) = window.app_handle().get_webview_window(LABEL) {
+            if let Ok(hwnd) = source.hwnd() {
+                unsafe {
+                    use windows::Win32::UI::WindowsAndMessaging::*;
+                    let mut alpha = 255;
+                    if GetLayeredWindowAttributes(hwnd, None, Some(&mut alpha), None).is_ok() {
+                        source_alpha = Some(alpha);
+                    }
+                    click_through =
+                        GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TRANSPARENT.0 as isize != 0;
                 }
-                click_through =
-                    GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TRANSPARENT.0 as isize != 0;
             }
         }
-    }
+        (source_alpha, click_through)
+    };
+    #[cfg(not(target_os = "windows"))]
+    let (source_alpha, click_through) = (None, false);
     Ok(Status {
         supported: supported(),
         epoch,
@@ -205,6 +211,18 @@ fn local_page(url: &url::Url) -> bool {
         && matches!(url.host_str(), Some("localhost" | "127.0.0.1"))
         && url.port() == Some(1420);
     (packaged || dev) && url.path() == "/player-host.html"
+}
+fn navigation_allowed(url: &url::Url) -> bool {
+    // WebKitGTK reports subframe navigation through the same callback. Allow
+    // only the actual YouTube embed there; remote pages still receive no IPC.
+    local_page(url)
+        || (cfg!(all(target_os = "linux", feature = "linux-player-host"))
+            && url.scheme() == "https"
+            && url.host_str() == Some("www.youtube.com")
+            && url.port().is_none()
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.path().starts_with("/embed/"))
 }
 async fn ensure(main: &WebviewWindow) -> Result<WebviewWindow, String> {
     let app = main.app_handle();
@@ -228,7 +246,7 @@ async fn ensure(main: &WebviewWindow) -> Result<WebviewWindow, String> {
         .and_then(|w| w.additional_browser_args.as_deref())
         .unwrap_or_default()
         .to_owned();
-    let window = tauri::WebviewWindowBuilder::new(
+    let builder = tauri::WebviewWindowBuilder::new(
         app,
         LABEL,
         tauri::WebviewUrl::App("player-host.html".into()),
@@ -243,10 +261,21 @@ async fn ensure(main: &WebviewWindow) -> Result<WebviewWindow, String> {
     .focusable(false)
     .data_directory(directory)
     .additional_browser_args(&args)
-    .on_navigation(local_page)
-    .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
-    .build()
-    .map_err(|error| format!("Cannot create the sole video engine: {error}"))?;
+    .on_navigation(navigation_allowed)
+    .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny);
+    #[cfg(all(target_os = "linux", feature = "linux-player-host"))]
+    let builder = builder.extensions_path(crate::embed_identity::extension_directory(app)?);
+    #[cfg(all(target_os = "linux", feature = "linux-player-host"))]
+    let builder = if let Some(profile) = crate::embed_identity::isolated_profile(app) {
+        builder.data_directory(profile)
+    } else {
+        builder
+    };
+    let window = builder
+        .build()
+        .map_err(|error| format!("Cannot create the sole video engine: {error}"))?;
+    #[cfg(all(target_os = "linux", feature = "linux-player-host"))]
+    crate::embed_identity::configure_window(&window)?;
     // The source may initially be created on a display with different DPI than
     // the controller. Keep a real 1920x1080 source instead of scaling by the
     // controller's monitor and accidentally rendering a smaller video surface.
@@ -317,7 +346,39 @@ async fn presentation(window: &WebviewWindow, interactive: bool) -> Result<(), S
     .await
     .map_err(|_| "Video presentation worker failed")??
 }
-#[cfg(not(target_os = "windows"))]
+#[cfg(all(target_os = "linux", feature = "linux-player-host"))]
+async fn presentation(window: &WebviewWindow, interactive: bool) -> Result<(), String> {
+    use gtk::prelude::*;
+    let window = window.clone();
+    let (sender, mut receiver) = tauri::async_runtime::channel(1);
+    window
+        .clone()
+        .run_on_main_thread(move || {
+            let result = (|| {
+                let native = window
+                    .gtk_window()
+                    .map_err(|_| "Cannot read video engine window")?;
+                native.set_accept_focus(interactive);
+                native.set_keep_below(!interactive);
+                native.set_opacity(if interactive { 1.0 } else { 0.0 });
+                native.show_all();
+                let region = gtk::cairo::Region::create();
+                native.input_shape_combine_region(if interactive { None } else { Some(&region) });
+                Ok(())
+            })();
+            let _ = sender.blocking_send(result);
+        })
+        .map_err(|_| "Cannot configure video engine")?;
+    receiver
+        .recv()
+        .await
+        .ok_or_else(|| "Video engine interrupted".to_string())?
+}
+
+#[cfg(not(any(
+    target_os = "windows",
+    all(target_os = "linux", feature = "linux-player-host")
+)))]
 async fn presentation(_window: &WebviewWindow, _interactive: bool) -> Result<(), String> {
     Err("Video host is not available on this platform".into())
 }
@@ -350,6 +411,22 @@ pub async fn player_host_load(
     source
         .emit("player-host-load", options)
         .map_err(|_| "Cannot load video engine".into())
+}
+#[tauri::command]
+pub async fn player_host_presentation(
+    window: WebviewWindow,
+    state: tauri::State<'_, Host>,
+    interactive: bool,
+) -> Result<(), String> {
+    if window.label() != "main" || interactive || !supported() {
+        return Err("Untrusted video presentation request".into());
+    }
+    let _operation = state.operations.lock().await;
+    let source = window
+        .app_handle()
+        .get_webview_window(LABEL)
+        .ok_or("Video source is unavailable")?;
+    presentation(&source, false).await
 }
 #[tauri::command]
 pub fn player_host_ready(
@@ -485,6 +562,23 @@ mod tests {
         assert!(!local_page(
             &url::Url::parse("http://tauri.localhost/scene.html").unwrap()
         ));
+    }
+    #[test]
+    fn webkit_embed_navigation_does_not_grant_arbitrary_remote_navigation() {
+        let embed = url::Url::parse("https://www.youtube.com/embed/aqz-KE-bpKQ").unwrap();
+        assert_eq!(
+            navigation_allowed(&embed),
+            cfg!(all(target_os = "linux", feature = "linux-player-host"))
+        );
+        for uri in [
+            "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+            "https://www.youtube.com.evil.test/embed/",
+            "https://www.youtube.com:444/embed/",
+            "http://www.youtube.com/embed/",
+            "https://user@www.youtube.com/embed/",
+        ] {
+            assert!(!navigation_allowed(&url::Url::parse(uri).unwrap()));
+        }
     }
     #[test]
     fn caption_commands_match_the_renderer_protocol() {

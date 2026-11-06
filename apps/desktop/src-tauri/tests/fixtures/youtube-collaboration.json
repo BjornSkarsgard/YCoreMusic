@@ -1,0 +1,100 @@
+{
+  "musicResponsiveListItemRenderer": {
+    "flexColumns": [
+      {
+        "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+            "runs": [
+              {
+                "text": "Мой сельский",
+                "navigationEndpoint": {
+                  "watchEndpoint": {
+                    "videoId": "eWBdgvhNwF8",
+                    "watchEndpointMusicSupportedConfigs": {
+                      "watchEndpointMusicConfig": {
+                        "musicVideoType": "MUSIC_VIDEO_TYPE_ATV"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      {
+        "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+            "runs": [
+              {
+                "text": "GORILLA GLUE",
+                "navigationEndpoint": {
+                  "browseEndpoint": {
+                    "browseId": "UC1QOXOTCVP7bHlQA4JbKClg",
+                    "browseEndpointContextSupportedConfigs": {
+                      "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "text": " & "
+              },
+              {
+                "text": "LIL NAKUR",
+                "navigationEndpoint": {
+                  "browseEndpoint": {
+                    "browseId": "UC6q3vivzY_QdE9p71lQVZ3A",
+                    "browseEndpointContextSupportedConfigs": {
+                      "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "text": " • "
+              },
+              {
+                "text": "RUSSIAN TRAP HOUSE",
+                "navigationEndpoint": {
+                  "browseEndpoint": {
+                    "browseId": "MPREb_nxqCp7DlCAe",
+                    "browseEndpointContextSupportedConfigs": {
+                      "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ALBUM"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "text": " • "
+              },
+              {
+                "text": "1:45"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+            "runs": [
+              {
+                "text": "371K plays"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "playlistItemData": {
+      "videoId": "eWBdgvhNwF8"
+    }
+  }
+}

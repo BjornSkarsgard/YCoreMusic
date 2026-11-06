@@ -18,7 +18,9 @@ pub fn request(playing: bool) {
         // Does not prevent explicit sleep, shutdown or lock.
         SetThreadExecutionState(flags);
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    crate::linux_power::request(playing);
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     let _ = playing;
 }
 pub fn plugin() -> TauriPlugin<tauri::Wry> {

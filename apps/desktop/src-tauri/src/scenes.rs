@@ -22,10 +22,26 @@ pub enum Quality {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct VisualOptions {
+    #[serde(default, skip_serializing_if = "Preset::is_spectrum")]
+    pub preset: Preset,
     pub content: Content,
     pub quality: Quality,
     /// Zero means the display's rAF/VSync, not an automatic performance policy.
     pub fps: u16,
+}
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum Preset {
+    #[default]
+    Spectrum,
+    Ambient,
+    Liquid,
+    Particles,
+}
+impl Preset {
+    fn is_spectrum(&self) -> bool {
+        *self == Self::Spectrum
+    }
 }
 impl VisualOptions {
     pub fn valid(&self) -> bool {
@@ -60,6 +76,10 @@ pub struct Scenes {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Snapshot {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    locked: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cover_url: Option<String>,
     revision: u64,
     generation: u64,
     video_id: Option<String>,
@@ -72,6 +92,10 @@ pub struct Snapshot {
 impl Snapshot {
     fn valid(&self) -> bool {
         self.title.len() <= 4096
+            && self
+                .cover_url
+                .as_deref()
+                .is_none_or(crate::catalogue::valid_artwork_url)
             && self.artist.len() <= 4096
             && self.position.is_finite()
             && self.duration.is_finite()
@@ -119,7 +143,7 @@ fn status(window: Option<WebviewWindow>) -> Status {
             .is_some_and(|w| w.is_visible().unwrap_or(false)),
         topmost: window
             .as_ref()
-            .is_some_and(|w| w.is_always_on_top().unwrap_or(false)),
+            .is_some_and(|w| crate::window_mode::topmost_state(w).unwrap_or(false)),
         fullscreen: window
             .as_ref()
             .is_some_and(|w| w.is_fullscreen().unwrap_or(false)),
@@ -147,9 +171,7 @@ pub async fn scene_window(
         if !options.valid() {
             return Err("Invalid visualizer settings".into());
         }
-        if options.content == Content::Visualizer
-            && !cfg!(all(target_os = "windows", feature = "audio-analysis"))
-        {
+        if options.content == Content::Visualizer && !crate::audio_analysis::supported() {
             return Err("Visualizer analysis is not available on this platform yet".into());
         }
         if options.fps > 0 {
@@ -186,6 +208,7 @@ pub(crate) async fn change(
     let app = window.app_handle();
     let state = window.state::<Scenes>();
     let label = label_for(monitor_id.as_deref())?;
+    let changed = matches!(&action, WindowAction::Open | WindowAction::Off);
     let _operation = state.operations.lock().await;
     if restore
         .as_ref()
@@ -208,34 +231,40 @@ pub(crate) async fn change(
             }
             let existed = app.get_webview_window(&label).is_some();
             if !existed {
-                WebviewWindowBuilder::new(app, &label, WebviewUrl::App("scene.html".into()))
-                    .title("YCore Music · Клип")
-                    .visible(false)
-                    .inner_size(960.0, 600.0)
-                    .min_inner_size(360.0, 260.0)
-                    .additional_browser_args(
-                        app.config()
-                            .app
-                            .windows
-                            .first()
-                            .and_then(|w| w.additional_browser_args.as_deref())
-                            .unwrap_or_default(),
-                    )
-                    .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
-                    .on_navigation(|url| {
-                        let local_app = (url.scheme() == "tauri"
-                            && url.host_str() == Some("localhost"))
-                            || (matches!(url.scheme(), "http" | "https")
-                                && url.host_str() == Some("tauri.localhost")
-                                && url.port().is_none());
-                        let dev = cfg!(debug_assertions)
-                            && url.scheme() == "http"
-                            && matches!(url.host_str(), Some("localhost" | "127.0.0.1"))
-                            && url.port() == Some(1420);
-                        (local_app || dev) && url.path() == "/scene.html"
-                    })
-                    .build()
-                    .map_err(|_| "Cannot create scene window")?;
+                let builder =
+                    WebviewWindowBuilder::new(app, &label, WebviewUrl::App("scene.html".into()))
+                        .title("YCore Music · Клип")
+                        .visible(false)
+                        .inner_size(960.0, 600.0)
+                        .min_inner_size(360.0, 260.0)
+                        .additional_browser_args(
+                            app.config()
+                                .app
+                                .windows
+                                .first()
+                                .and_then(|w| w.additional_browser_args.as_deref())
+                                .unwrap_or_default(),
+                        )
+                        .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
+                        .on_navigation(|url| {
+                            let local_app = (url.scheme() == "tauri"
+                                && url.host_str() == Some("localhost"))
+                                || (matches!(url.scheme(), "http" | "https")
+                                    && url.host_str() == Some("tauri.localhost")
+                                    && url.port().is_none());
+                            let dev = cfg!(debug_assertions)
+                                && url.scheme() == "http"
+                                && matches!(url.host_str(), Some("localhost" | "127.0.0.1"))
+                                && url.port() == Some(1420);
+                            (local_app || dev) && url.path() == "/scene.html"
+                        });
+                #[cfg(target_os = "linux")]
+                let builder = if let Some(profile) = crate::embed_identity::isolated_profile(app) {
+                    builder.data_directory(profile)
+                } else {
+                    builder
+                };
+                builder.build().map_err(|_| "Cannot create scene window")?;
             }
             if let Some(scene) = app.get_webview_window(&label) {
                 if let Some(restore) = restore.as_ref() {
@@ -251,7 +280,7 @@ pub(crate) async fn change(
                     scene.unminimize().map_err(|_| "Cannot restore scene")?;
                     if let (Some(id), Some(options)) = (monitor_id.as_deref(), options) {
                         crate::scene_layout::set_options(window, id, options)?;
-                        let _ = scene.emit("scene-options", options);
+                        let _ = scene.emit_to(scene.label(), "scene-options", options);
                     }
                 }
             }
@@ -283,6 +312,9 @@ pub(crate) async fn change(
             }
         }
         WindowAction::Status => {}
+    }
+    if changed {
+        let _ = app.emit_to("main", "scene-windows-changed", ());
     }
     Ok(status(app.get_webview_window(&label)))
 }
@@ -332,7 +364,8 @@ pub fn scene_publish(
     {
         let visible = scene.is_visible().unwrap_or(false) && !scene.is_minimized().unwrap_or(false);
         scene
-            .emit(
+            .emit_to(
+                scene.label(),
                 "scene-snapshot",
                 serde_json::json!({"snapshot":snapshot,"visible":visible}),
             )
@@ -409,11 +442,7 @@ pub fn scene_control(window: WebviewWindow, action: Control) -> Result<Status, S
             .set_fullscreen(false)
             .map_err(|_| "Cannot exit fullscreen")?,
         Control::Topmost => window
-            .set_always_on_top(
-                !window
-                    .is_always_on_top()
-                    .map_err(|_| "Cannot read topmost")?,
-            )
+            .set_always_on_top(!crate::window_mode::topmost_state(&window)?)
             .map_err(|_| "Cannot change topmost")?,
         Control::Hide => window.hide().map_err(|_| "Cannot hide scene")?,
     }
@@ -432,7 +461,7 @@ pub fn closing(window: &tauri::Window, event: &tauri::WindowEvent) -> bool {
             .mirrors
             .remove(window.label());
         let _ = window.hide();
-        let _ = window.emit("scene-hidden", ());
+        let _ = window.emit_to(window.label(), "scene-hidden", ());
     }
     true
 }
@@ -462,6 +491,8 @@ mod tests {
     #[test]
     fn snapshot_rejects_arbitrary_urls_and_invalid_timeline() {
         let mut value = Snapshot {
+            locked: None,
+            cover_url: None,
             revision: 1,
             generation: 1,
             video_id: Some("aqz-KE-bpKQ".into()),

@@ -17,4 +17,6 @@ apps/desktop/src-tauri/gen/
 .tools/
 *.sqlite
 *.sqlite-journal
+YCoreMusic-updater.key
 test-results/
+/builds/

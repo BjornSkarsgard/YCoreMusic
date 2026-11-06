@@ -1,19 +1,37 @@
 use tauri::WebviewWindow;
 
+pub fn supported() -> bool {
+    cfg!(all(
+        any(target_os = "windows", target_os = "linux"),
+        feature = "audio-analysis"
+    ))
+}
+
 #[derive(Default)]
 pub struct Analysis {
-    #[cfg(all(target_os = "windows", feature = "audio-analysis"))]
+    #[cfg(all(
+        any(target_os = "windows", target_os = "linux"),
+        feature = "audio-analysis"
+    ))]
     leases: std::sync::Mutex<std::collections::BTreeMap<String, std::time::Instant>>,
-    #[cfg(all(target_os = "windows", feature = "audio-analysis"))]
+    #[cfg(all(
+        any(target_os = "windows", target_os = "linux"),
+        feature = "audio-analysis"
+    ))]
     started: std::sync::atomic::AtomicBool,
 }
 
 #[tauri::command]
 pub fn analysis_watch(window: WebviewWindow, active: bool) -> Result<(), String> {
-    if !crate::scenes::is_scene(window.label()) {
+    // The controller is an eligible visualizer surface as well. It still only
+    // receives analysis of its own dedicated player-host, never system audio.
+    if window.label() != "main" && !crate::scenes::is_scene(window.label()) {
         return Err("Untrusted window".into());
     }
-    #[cfg(all(target_os = "windows", feature = "audio-analysis"))]
+    #[cfg(all(
+        any(target_os = "windows", target_os = "linux"),
+        feature = "audio-analysis"
+    ))]
     {
         use std::{sync::atomic::Ordering, time::Instant};
         use tauri::Manager;
@@ -32,14 +50,20 @@ pub fn analysis_watch(window: WebviewWindow, active: bool) -> Result<(), String>
         }
         Ok(())
     }
-    #[cfg(not(all(target_os = "windows", feature = "audio-analysis")))]
+    #[cfg(not(all(
+        any(target_os = "windows", target_os = "linux"),
+        feature = "audio-analysis"
+    )))]
     {
         let _ = active;
         Err("Audio analysis is not available on this platform yet".into())
     }
 }
 
-#[cfg(all(target_os = "windows", feature = "audio-analysis"))]
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux"),
+    feature = "audio-analysis"
+))]
 fn targets(app: &tauri::AppHandle) -> Vec<tauri::WebviewWindow> {
     use tauri::Manager;
     let state = app.state::<Analysis>();
@@ -58,7 +82,10 @@ fn targets(app: &tauri::AppHandle) -> Vec<tauri::WebviewWindow> {
         .collect()
 }
 
-#[cfg(all(target_os = "windows", feature = "audio-analysis"))]
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux"),
+    feature = "audio-analysis"
+))]
 fn worker(app: tauri::AppHandle) {
     use std::time::Duration;
     use tauri::{Emitter, Manager};
@@ -78,13 +105,14 @@ fn worker(app: tauri::AppHandle) {
             |bands| {
                 let frame = serde_json::json!({"available":true,"bands":bands.as_slice()});
                 for window in targets(&app) {
-                    let _ = window.emit("audio-analysis", &frame);
+                    let _ = window.emit_to(window.label(), "audio-analysis", &frame);
                 }
             },
         );
         if let Err(error) = result {
             for window in targets(&app) {
-                let _ = window.emit(
+                let _ = window.emit_to(
+                    window.label(),
                     "audio-analysis",
                     serde_json::json!({"available":false,"error":error}),
                 );

@@ -1,6 +1,8 @@
 import {historyRange} from './history-range';
 import {isTauri} from '@tauri-apps/api/core';
 import {storage,type HistoryEntry} from './storage';
+import {markSkipped,historySkipReason} from './skip-notices';
+import {bindPlaybackRow} from './playback-rows';
 
 /** History browsing owns no playback cursor; actions go through the coordinator. */
 export function mountHistory(play:(entry:HistoryEntry)=>void,enqueue:(entry:HistoryEntry,next:boolean)=>void,beforeClear:()=>Promise<void>=async()=>{}){
@@ -24,10 +26,10 @@ export function mountHistory(play:(entry:HistoryEntry)=>void,enqueue:(entry:Hist
    details.className='history-listening';details.textContent=[sources[entry.source??''],`Прослушано ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`,reasons[entry.endReason??'']].filter(Boolean).join(' · ');text.append(details);
   }
   const now=document.createElement('button'),next=document.createElement('button'),append=document.createElement('button');
-  now.textContent='Воспроизвести';now.onclick=()=>play(entry);
+  bindPlaybackRow(item,now,{id:entry.trackId,title:entry.title},()=>play(entry),{iconOnly:false});
   next.textContent='Следом';next.onclick=()=>enqueue(entry,true);
   append.textContent='В конец';append.onclick=()=>enqueue(entry,false);
-  item.append(text,now,next,append);return item;
+  item.append(text,now,next,append);const cause=historySkipReason(entry.endReason);if(cause)markSkipped(item,entry.title+' · '+entry.artist,cause);return item;
  }
  async function refresh(append=false){
   if(deleting)return;

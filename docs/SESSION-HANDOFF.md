@@ -1,4 +1,248 @@
+## Последние проверки и незавершённое
+
+Для следующего Codex: [22-LINUX-LAST-VERIFICATION.md](22-LINUX-LAST-VERIFICATION.md). Прочитать прежде повторных проверок; там явно отмечено, что не успели завершить.
+
+## Актуальная точка остановки — 2026-11-06
+
+Последний scope: закончить этап, подготовить Linux установщик для тестирования,
+затем остановиться. Сайт и пульт исключены. Пользователь сообщил о близком лимите.
+Linux установщик пока НЕ готов и НЕ передан.
+
+Repo C:/Users/Skar/Documents/Encore main dirty — сохранить WIP. CI worktree:
+C:/Users/Skar/Documents/YCoreMusic-ci-check, branch codex/stability-portability-20261106,
+HEAD исходников 97a80c25441c6b055790303bf9c1866f20a1ba51.
+
+Linux live playback run42214293331 FAILED. Базовые GTK/X11 SQLite/history/window/
+autostart проверки PASS. embed identity loaded=true/applied=true, ошибка YouTube153
+устранена, duration635 получена. Но Play остаётся «Видео загружено», position0;
+iframe state=-1, paused=true, readyState0, mediaError=null, playingIntent=true.
+Private PulseAudio null sink в CI НЕ решил проблему. Следующий шаг: изучить
+артефакты native-basic-playback-diagnostic.json, screenshots, pulseaudio.log и
+доставку playVideo/пользовательского жеста/сетевые media-запросы в WebKit iframe.
+Не выдавать Linux playback за готовый и не маскировать провал теста.
+
+linux-embed-referrer экспериментальная, НЕ default. embed_identity.rs,
+linux/embed-identity.c/build.rs настраивают WebProcess extension ДО создания
+исходного main WindowConfig через extensions_path. Нет terminate/reload.
+Referer с настоящим app ID только для YouTube embed; один плеер сохраняется.
+
+После playback PASS: включить feature в package:linux (сейчас НЕ включён),
+проверить GStreamer runtime deps и AppImage bundleMediaFramework, собрать DEB и
+AppImage через package.yml Ubuntu24.04 x86_64, скачать, проверить control/хеши,
+дать пользователю файлы. Linux mirrors/audio visualizers отсутствуют; Wayland и
+реальное оборудование не проверены. Не обещать полную Linux parity.
+
+Windows latest combined native PASS: YouTube pause/seek/hidden,4 visualizers,
+sleep timer, playback guard, signed update verify, mini/topmost/instance.
+Main visualizer FPS165/180/240 и monitor refresh tracking готовы, preference
+сохраняется при переносе на меньшую Hz.
+Windows install lifecycle run42214292723 FAILED после сборки/установки NSIS:
+Node fetch TimeoutError в installed native check. UTF16 Edge driver уже исправлен.
+Install/upgrade/reinstall data preservation ещё НЕ PASS.
+Desktop checks run42214292678 оставался in_progress — проверить результат.
+
+Private updater key C:/Users/Skar/.tauri/YCoreMusic-updater.key НЕ печатать,
+НЕ пересоздавать, НЕ копировать/пушить. Публичные релизы не публиковались.
+
 # YCore Music — активный контекст, 2026-11-06
+
+АКТУАЛЬНО: пользователь требует автономно довести desktop, не останавливать ход
+после каждого пункта. Сайт и пульт НЕ ТРОГАТЬ. Последний запрос — записать кнопку
+обновления и проверку версий: уже реализуются в текущем updates-срезе.
+Завершён Windows native30minsoak:6naturaltransitions,357playing/2waiting,
+maxobservedgap5sec приpoll5sec,0controlleriframes/1host; мини/topmost/instancePASS.
+Длинный прогон окончен, собственный тестовый процесс закрыт.
+
+CI вынесен в отдельный worktree C:/Users/Skar/Documents/YCoreMusic-ci-check,
+branch codex/stability-portability-20261106, push уже авторизован рабочим контекстом.
+Коммиты890399d (весь предыдущий WIP),8576759(X11),d4be2a8(background),0ca7d07(CIapt).
+Основной Encore worktree всё ещё main/dirty — не терять его изменения и новые
+файлы. После новых правок копировать только текущие repo sources в CI worktree,
+не private .tauri/.tools/target, затем commit/push для проверки. GHCLI авторизован.
+
+Linux native run42207934319 SUCCESS: true GTK/X11 SQLite/history/mini/topmost/
+autostart/instance. X11 topmost fix в window_mode.rs + Linux-only x11rb/rawhandle
+deps; собственный XID property read, без shell в product, Wayland отдельно.
+WebKit minimize=hidden возможен; test теперь гарантирует restoration visibletrue.
+Azure archive был~30KB/s, заменён только GHrunner на Ubuntu HTTPS archive,
+scripts/install-linux-deps.sh, bounded8minaptstep; productionне меняли.
+Desktop run42207935072: UbuntuPASS, остальные на момент записи ещёrunning;
+раньшеd4be2a8 Windows/macIntel/macARM PASS. Не путать сборки сhardware/videoPASS.
+
+Updates новое: src-tauri/src/updates.rs + src/updates.ts, plugin2.14.1, publickey
+updater-public.key/config; private C:/Users/Skar/.tauri/YCoreMusic-updater.key
+создан один раз, НЕПЕРЕСОЗДАВАТЬ/НЕПУШИТЬ. Ownerbackup позже до distribution.
+Check automaticdaily+manual, fixedGitHubfeed404→unpublished, notesplainText,
+defer1day, signedDownload отдельноотInstall, nativeMediaBusy+JSPlay/loadguard,
+revision отбрасывает stale, prepare_exit общий. Media playback status теперь и безSMTC.
+Native signature probe PASS (using debugexe), tamper/version/downgrade rejected,
+testMode installdisabled. Fullrenderer125/1skip доrevision,4targetedпослеPASS;
+Rust74/9ignored/Clippy/fmt/buildPASS. SigneddebugNSIS5.19MiB+.sig/localmanifest
+собраны, НЕУСТАНАВЛИВАЛИ/НЕПУБЛИКОВАЛИ. Docs20. Newupdates ещёнепушенвCI.
+scripts/build-update-manifest.mjs localonly. Native basic playback Windows PASS
+(actualYT/seek/pause/controls-only/hidden, oneengine), screenshot просмотрен.
+Следом pushupdates+новый native-linux live_playback input (толькоpublicYouTube,
+безcredentials), исправить найденные отказы. Latestdebugexeобновлён.
+
+ПОСЛЕДНЕЕ: пользователь одобрил Windows stability → ранний portability spike.
+Реализован native platform_capabilities (main-only) + platform.ts shared promise;
+window-layout/scene-ui отключают unsupported mirror/audio UI, Spectrum preference
+остаётся в storage при fallback Video. Linux/macOS adapters ещё отсутствуют.
+Native ENCORE_STABILITY_SMOKE=1 дважды PASS: 6 simulated hotplug VIDEO/Particles,
+Off при detach, timeline/epoch, network outage обоих WebView, Pause/reconnect/Play,
+mini/topmost/instance. Физические HDMI/OS network не менять без отдельного сценария.
+Rust72/9ignored/Clippy/fmt/no-default-features/check/buildPASS; TSunit14PASS.
+Renderer122PASS/1skip/1failed (option matcher) затем исправлен matcher,
+8 scene-settingsPASS. Обычный exe обновлён. Wave soak теперь native-host-aware,
+hostPlayers отдельно; LIVE_WAVE на настоящем Яндексе/YouTube PASS: 2 natural-END
+перехода, один engine/0controlleriframes, mini/topmost/instance. Это ускоренный
+seekкконцу→реальныйEND, не длительный30минsoak; последний ещё предстоит.
+docs19 содержит платформенный план. Новую ревизию Linux/macOS здесь не запускали;
+локально нет WSL/Docker/Mac. Не считать старый CI проверкой текущего worktree.
+Пользователь спросил про Spotify: ответили по официальным текущим docs об API/
+recommendations/dev5users/Premium/policy; реализации не просил, не начинать вместо
+Windows/платформ. Рекомендованный будущий отдельный API access spike.
+
+ПОСЛЕДНЕЕ: по команде «делай» завершена защита от случайных переключений REQ067.
+playback-guard.ts: session-only замок возле volume, доступен в mini; ручные
+navigation/seek/source/track/clip и dislike/preference writes блокируются.
+Пауза, Play, volume, like, окна/таймер доступны. Автоматический Next/error fallback
+не блокируется. Открытая YouTube panel скрывается без reload. Scene snapshot
+locked отключает seek/next/previous; main повторно проверяет SMTC/scene команды.
+Rust72/9ignored/Clippy/frontend/debugbuildPASS, renderer119PASS/1skip перед новыми
+тестами +4targetedPASS. Native guard actualYT/engineunchanged/pause/resume/
+miniunlock/seekпослеunlockPASS, общие history/topmost/instancePASS, exit0.
+Обычный target/debug/YCoreMusic.exe обновлён. Следующее — длительный прогон,
+реальный unplug телевизора и UX восстановления; не объявлять это уже проверенным.
+Ниже исторический срез до защиты, его «не начинал» больше не актуально.
+
+СЕЙЧАС: завершён таймер сна по явному согласованию пользователя (actionPause).
+Native sleep_timer.rs: UTCdeadline/worker250ms/main-onlyIPC/revision/one-shot.
+UI sleep-timer.ts: presets/custom1–720мин/countdown/replace/cancel; playerbutton
+и settings. Закрыть диалог неcancel, полныйexitсбрасывает. Expire→powerPause
+существующего coordinator, explicitPlayразрешёнпослеexpiry. НикакогоPCshutdown.
+72Rust/9ignored/Clippy/buildPASS; host+recovery16PASS иtimer targetedPASS после
+поправкиасинхронногоstatus. Nativeactual1сек таймер втрее→YTstate2, explicitPlay,
+cancel/engineunchanged/mini/trayPASS. Защитууправления не начинал — nexttask.
+
+АКТУАЛЬНО: все4визуализатора завершены по новому указанию пользователя.
+Spectrum/Ambient/Liquid/Particles selectable per-window+persist; mainlayoutkey
+"spectrum" сохранён длясовместимости, видимаянадпись «Визуализатор».
+Последнее пожелание: сильныйfireworks/bass отклик. Реализованы adaptive visual
+gain/attack14ms/release130ms/positivebassflux/impact decay, Spectrumpeaks,
+Ambientrings+artpulse, Liquidripples, Particlesboundedpoolдо420поquality.
+НетsyntheticBPM/отдельногоaudio. Volume0 даёттишину — S6partialостаётся.
+Ambient coverUrl изsource/cataloguemetadata, safeHTTPSavatars, fallbackSVG.
+Новые visualizer-shaders.ts/audio-motion.ts(+unit). Обычный exe обновлён.
+118 rendererPASS/1skip доусиления, после24targeted+14TSunitPASS,
+Rust71/9ignored/Clippy/buildPASS. ENCORE_VISUALIZERS_SMOKE=1 realYT all4 в
+main+external PASS несколькораз (последний profile native-all-visualizers-1106-bass),
+0UIiframes/1engine/epochunchanged. Нативные screenshots просмотрены.
+Не возобновлять старую установочную подготовку вместо функциональных задач:
+публичныйрелиз пользователь не заказывал. Продолжение только по актуальному плану.
+
+ПОСЛЕДНИЕ3запроса: cue-brand.ts накрывает YTcenterPlay фирменнымSVG приstate5/-1,
+скрывается3/1; main+scene, DWMholes, Spectrum/YouTubeinteractive исключены.
+playback-rows.ts общий UIcurrenttrack+Play/Pause дляlibrary/catalogue/discovery/
+history/queue; текущий трекtoggle существующего coordinator безreload/reset.
+Queue identitygeneration/ordinal защищает duplicates; queue textflex-start.
+Frontend/debugbuildPASS, renderer113/1skip +3 targetedPASS; nativelogo screenshot
+просмотрен. Полныеnative прогоны НЕPASS: первый увидел фактическую сменуsource
+наchart/failhistorycount, второй сменуsourceнаcollection/bufferingtimeout.
+Стартовый realcue→logo→Play первого прогона PASS, полныйsmoke не выдавать заPASS.
+Не путать с пользовательским экземпляром; тестовые
+директории native-cued-brand-1106 и native-cued-brand-1106-verify.
+
+АКТУАЛЬНЫЙ СРЕЗ: REQ065 готов. Native crash_recovery.rs + UI crash-recovery.ts:
+checkpoint раз5с послеactualstart, clean normalExit, dirty startup предлагает
+Resume37с/Discard без autoplay, новое history-прослушивание без старого waveRef.
+Окна — прежний scene_layout. Native forcekill только own isolated PID/testMode
+→ restart → actualYT37с → savecheckpoint → normalQuit → noPrompt PASS дважды.
+Rust70/9ignored, Clippy/buildPASS, renderer112/1skip +4targetedPASS после правки.
+Бинарник target/debug/YCoreMusic.exe обновлён. Snapshot atomicJSON appdata,
+testMode отдельный .tools, без schema SQLite/credentials/PCM. Corrupt/futurefile
+blocked и не перезаписывается. Восстанавливается1клип, не стараяserverqueue.
+
+Последнее уточнение: «Подходящий клип не найден» должно быть error-mark в очереди
+даже до Play. Исправлено в skipUnavailable до проверкиcanSkip, новыйtestPASS.
+Ручные Next/jump/dislike не errors; ложные listeningevents не создавать.
+Следующее по плану: длительная проверка/релизные пакеты/обновления.
+
+ПОСЛЕДНЕЕ: правая панель гибкая, hidden alternatives больше НЕ резервируют место;
+верхний scroll занимает всю высоту (обычный вид и controls-only). Scrollbars у
+клипов/очереди/панели едины. Ошибочное оформление только техническим отказам:
+Next/jump/dislike не маркировать; в истории только endReason=error. User отменил
+старые решения фиксированного слота и предупреждений о ручных переключениях.
+61 renderer PASS, frontend/debug buildPASS, обычный exe обновлён.
+
+АКТУАЛЬНО: пользователь отменил отдельный раздел автопропусков (включая
+controls-only). Теперь markSkipped в skip-notices.ts добавляет только значок
+info/popover и оформление строки в очереди/истории: приглушение+тонкая rose/red
+полоса. Queue reasons по generation/ordinal, очищаются с trim/reset и при
+успешном повторном старте. History uses persisted endReason (точных старых
+ошибок нет — не выдумывать; не приписывать причину по одному trackId).
+59 renderer PASS, затем3 targetedPASS, frontend/debugbuildPASS, exe обновлён.
+Следующие старые заметки про отдельный раздел/10элементов отменены.
+
+Последнее уточнение пользователя: auto-skip-notices показывать ТОЛЬКО в
+«Только управление», скрывать без места в видео/Spectrum/mini. Сделано CSS,
+проверки переключения добавлены в существующий playback regression.
+
+## Последний автономный срез завершён
+
+Пользователь подтвердил внешний Spectrum исправленным. Native combined
+SINGLE_HOST_SMOKE+SPECTRUM_SMOKE+SCENE_LAYOUT_SMOKE+THEME_DPI PASS:3монитора,
+DPI1/1/2, независимые сохранённые VIDEO/Spectrum/FPS/quality, simulatedhotplug,
+реальный Quit/restart Spectrum без autoplay, targetedOff, одинengine/2зеркала,
+tray/mini/topmost. Test profile .tools/native-monitor-acceptance-1106.
+Physicalunplug/sleep/lock пока не проверены.
+
+Сделан REQ064: src/skip-notices.ts, последние10 автопропусков в раскрывающейся
+панели «Моя волна», причина/трек/артист, dedup/clear, никакого history/feedback
+write. Network waits не считаются пропуском. Реальный переход проверяет
+playIntent/generation/ordinal. Frontend/debug build PASS;62 targeted renderer
+PASS и2 дополнительных targetedPASS. Screenshot .tools/auto-skip-reasons.png
+просмотрен. Обычный target/debug/YCoreMusic.exe обновлён.
+Следующая задача по принятому плану: REQ065 — восстановление после аварии,
+с предложением продолжить, без autoplay и без переноса старой wave session.
+Незакоммиченный рабочий срез со Spectrum/фиксом событий ещё существует;
+не терять изменения. Остальные3визуализатора без нового указания не делать.
+
+## Последнее исправление: чужие события обнуляли отдельный Spectrum
+
+Уточнённый баг воспроизведён native: скрытая вторая сцена давала первому окну
+4 invisible/1 videoOptions и выключала визуализатор. Причина: глобальные emit
+и listen(Any). Теперь scene snapshot/options/hidden и audio-analysis используют
+emit_to(label) + клиентский WebviewWindow target с собственным label.
+Native red→green PASS:0 чужих событий, визуализатор остаётся активен; реальный
+YouTube/оба Spectrum/2 зеркала/одинengine PASS.11 renderer,Rust68/9ignored,
+Clippy/build PASS. Обычный target/debug/YCoreMusic.exe обновлён. Пользователь
+ещё должен проверить свою конфигурацию. Предыдущий FPS fix не закрывал этот баг.
+
+## Последнее: сообщение о лагах отдельного Spectrum
+
+Исправлены FPS pacing (cap30:110→121draws/4с) и per-frame layout read (теперь
+ResizeObserver/DPI/quality). Сборка target/debug/YCoreMusic.exe обновлена.
+Native fullscreen1440p/high/default165Hz: median6.1ms,p95 6.2ms,max6.9ms,
+analysis median40ms; severe lag не воспроизведён. У пользователя запрошены
+условия через async question; не считать его проблему окончательно решённой
+без ответа/проверки.11 renderer PASS. Native perf включается
+ENCORE_SPECTRUM_PERF=1 вместе с SINGLE_HOST_SMOKE/SPECTRUM_SMOKE.
+
+## Последняя задача завершена: только первый Spectrum
+
+Проверены и завершены незакоммиченные изменения Terra: основной selector
+Spectrum, отдельные FPS/quality/preferences, общий анализ с внешними сценами.
+GPU создаётся лениво, неактивные leases не опрашиваются бесконечно, listener
+освобождается. Видео↔Spectrum сохраняет engine; панель YouTube скрывается без
+load. Native main14frames/max0.002211 и external7frames/max0.002271 PASS,
+WebGL/0iframe/одинengine; transport/tray/mini/два зеркала PASS.
+Renderer108PASS/1skip, TS13, Rust68/9ignored, Clippy, build PASS.
+Обычная сборка apps/desktop/src-tauri/target/debug/YCoreMusic.exe обновлена.
+Пользователю: «Содержимое окна» → Spectrum; внешний — «Экраны» → монитор →
+визуализатор. При volume0 — тишина (ограничение S6). Остальные3типа сейчас
+не делать: пользователь явно ограничил задачу первым визуализатором.
+Нижние записи исторические.
 
 ## Актуально: Spectrum готов; далее остальные визуализаторы
 
@@ -285,3 +529,26 @@ UserREQ053 сохранён: отдельно выбираются VIDEO/VISUALI
 До этого завершён и pushed7f53c51: SQLitev5 Waveeventsdelivery сnativeWaveOriginregistry4096,epochaccountsessionbatchrefs,51app+6probeRust,Clippy,77UI+1skip. Реальныйnative readonlyWavebatchrefsPASS. UserWaveотправкаподтверждена, AppDatareadonlyenum/count receipt sentradio2/start5/skip3/finish1,pending0; UID/tracks/sessions/tokenввыводнепопадали. Historywriter/clearbarrier/nativeExitclosures. ПользовательскийlikeEncore→Yandexподтверждён. НоваяочередьнеизменяланативныйRust/providerсрез.
 
 Следующее при явном продолжении: проверить currentgit/доки, завершить ручнуюприёмку очереди на естественноиграющемпользовательскомклипе (nativeспециальныйдемоM7буферился), реальныйreversefeedbackпоестественнымдействиям. Затем согласованныйscenes→visualizers(реальныйappaudioS6передобещаниями)→remote. Linux/macOSвконце, старыйLinux topmostдефектсохранён, Macrunnercapacityнеpassed. Не чистить32ГБкэшсамовольно: userтолькоузналрелизныйвес. Не запускать старые.tools/*/apply.ps1. Новыйбюджетreset/действияпользователянепредполагатьмолча.
+
+### Запрошенная тестовая DEB-сборка
+Пользователь явно попросил собрать DEB сейчас, несмотря на известный playback blocker.
+Запущен workflow42215038612, commit6a96f79, Ubuntu24.04 x86_64, deb_only=true.
+В сборку включён linux-embed-referrer; DEB объявляет GStreamer base/good/libav.
+Это тестовая сборка, не подтверждение исправления зависания YouTube перед стартом.
+
+Уточнение пользователя: полное удаление старого бренда пока ОТЛОЖЕНО
+(ответ «пока забей, не трогаем нечего» на вопрос о миграции). Никаких rename не делать.
+Первый DEB run42215038612 failed: npm run desktop добавлял tauri dev, запуская
+приложение с аргументами build вместо упаковки. Исправлено на npx tauri build.
+Повторный DEB workflow42215748525, commit89b9240, запущен.
+
+DEB ГОТОВ: workflow42215748525 SUCCESS, commit89b9240. Скачан локально:
+C:/Users/Skar/Downloads/YCoreMusic-Linux-0.0.1/deb/YCore Music_0.0.1_amd64.deb
+9188786 bytes. Ubuntu24.04 x86_64 experimental. Check/tests/build/dpkg inspection
+PASS. Linux YouTube start зависание НЕ исправлено: сборка передаётся по явному
+запросу пользователя для тестирования. Переименование пока отложено.
+
+
+## Последний Linux-срез, 2026-11-06 — предупреждение 3% лимита
+
+Точка продолжения: docs/21-LINUX-READINESS.md. Новый Linux single-host/Cairo/PulseAudio/XRandR срез реально проверен на Xvfb и двух физических X11-мониторах. Не возвращаться к старому playback blocker: MediaCapabilities workaround и отдельный source решили его. Не объявлять Wayland/личную Wave/AppImage готовыми. Изменения не коммитились; сохранять весь исходный dirty WIP. Новых больших работ не начинать до нового продолжения.

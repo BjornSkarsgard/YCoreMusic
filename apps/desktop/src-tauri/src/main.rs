@@ -2,30 +2,46 @@
 mod audio_analysis;
 #[cfg(all(target_os = "windows", feature = "audio-analysis"))]
 mod audio_capture;
+#[cfg(all(target_os = "linux", feature = "audio-analysis"))]
+#[path = "linux_audio.rs"]
+mod audio_capture;
 mod audio_probe;
-#[cfg(all(target_os = "windows", feature = "audio-analysis"))]
+#[cfg(all(
+    any(target_os = "windows", target_os = "linux"),
+    feature = "audio-analysis"
+))]
 mod audio_spectrum;
 mod auth;
 mod autostart;
 mod catalogue;
+mod crash_recovery;
 #[allow(dead_code)]
 mod credentials;
 mod desktop;
 mod diagnostics;
 mod discovery;
+mod embed_identity;
 mod feedback;
 mod library;
+#[cfg(target_os = "linux")]
+mod linux_monitors;
+#[cfg(target_os = "linux")]
+mod linux_power;
+mod linux_video;
 mod matcher;
 mod media;
 mod mirror_probe;
 mod monitors;
+mod platform;
 mod player_host;
 mod power;
 mod scene_layout;
 mod scenes;
+mod sleep_timer;
 mod smart_history;
 mod source;
 mod storage;
+mod updates;
 mod video_mirror;
 mod wave_feedback;
 use tauri::Manager;
@@ -113,6 +129,15 @@ async fn catalogue_collection(
     .map_err(str::to_string)
 }
 fn main() {
+    // GTK Wayland cannot position scene windows or request always-above.
+    // Prefer the session's XWayland bridge; an explicit backend still wins.
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("GDK_BACKEND").is_none()
+        && std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && std::env::var_os("DISPLAY").is_some()
+    {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
     let mut context = tauri::generate_context!();
     if player_host::supported() {
         // All WebViews sharing a WebView2 environment must use identical browser
@@ -137,6 +162,7 @@ fn main() {
             window.title = "YCore Music · нативная проверка".into();
         }
     }
+    let deferred_main = embed_identity::defer_main(&mut context);
     tauri::Builder::default()
         .plugin(autostart::plugin())
         .plugin(tauri_plugin_power_monitor::init())
@@ -146,7 +172,11 @@ fn main() {
                 let _ = desktop::open(app);
             }
         }))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(updates::Updates::default())
+        .manage(embed_identity::Identity::default())
         .manage(desktop::DesktopState::default())
+        .manage(sleep_timer::Timer::default())
         .manage(media::MediaState::default())
         .on_window_event(desktop::closing)
         .setup(move |app| {
@@ -163,12 +193,21 @@ fn main() {
                     .app_data_dir()
                     .map_err(|_| "Cannot locate application data"),
             };
+            let recovery_path = directory
+                .as_ref()
+                .ok()
+                .map(|directory| directory.join("playback-recovery.json"));
             let store = directory.and_then(|directory| {
                 std::fs::create_dir_all(&directory)
                     .map_err(|_| "Cannot create application data directory")?;
                 storage::Store::open(&directory.join("encore.sqlite"))
             });
             app.manage(storage::StorageState { store, test_mode });
+            app.manage(crash_recovery::Recovery::open(recovery_path));
+            if let Some(config) = &deferred_main {
+                embed_identity::create_main(app.handle(), config)?;
+            }
+            embed_identity::install(app.handle())?;
             scene_layout::install(app.handle(), background_launch);
             let _ = desktop::install(app.handle());
             if background_launch && !app.state::<desktop::DesktopState>().tray_available() {
@@ -177,6 +216,7 @@ fn main() {
                 }
             }
             let _ = media::install(app.handle());
+            sleep_timer::install(app.handle().clone());
             Ok(())
         })
         .manage(source::Source::default())
@@ -191,8 +231,16 @@ fn main() {
         .manage(audio_probe::AudioProbeState::default())
         .manage(audio_analysis::Analysis::default())
         .invoke_handler(tauri::generate_handler![
+            updates::updates_command,
+            embed_identity::embed_identity_status,
+            updates::updates_verify_probe,
+            platform::platform_capabilities,
             source_fetch,
+            sleep_timer::sleep_timer,
+            crash_recovery::crash_recovery,
             audio_probe::audio_probe,
+            linux_video::linux_video_probe,
+            desktop::desktop_test_windows,
             audio_probe::audio_probe_mute,
             audio_analysis::analysis_watch,
             scenes::scene_options,
@@ -204,9 +252,11 @@ fn main() {
             scenes::scene_snapshot,
             scenes::scene_control,
             monitors::monitor_list,
+            monitors::monitor_current,
             mirror_probe::mirror_probe,
             player_host::player_host_status,
             player_host::player_host_load,
+            player_host::player_host_presentation,
             player_host::player_host_ready,
             player_host::player_host_command,
             player_host::player_host_event,
@@ -239,9 +289,7 @@ fn main() {
         .expect("failed to build YCore Music")
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
-                if let Ok(store) = &app.state::<storage::StorageState>().store {
-                    let _ = store.finish_open();
-                }
+                desktop::prepare_exit(app);
             }
         });
 }

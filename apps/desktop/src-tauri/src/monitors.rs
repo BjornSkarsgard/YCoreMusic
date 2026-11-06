@@ -84,13 +84,16 @@ fn platform_identity(name: &str) -> Option<(String, String, Option<u32>)> {
     let (id, title) = devices.pop()?;
     Some((id, title, refresh))
 }
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 fn platform_identity(_name: &str) -> Option<(String, String, Option<u32>)> {
     None
 }
 
 fn describe(monitor: tauri::Monitor, primary: bool) -> Display {
     let name = monitor.name().cloned().unwrap_or_else(|| "Экран".into());
+    #[cfg(target_os = "linux")]
+    let identity = crate::linux_monitors::identity(&monitor);
+    #[cfg(not(target_os = "linux"))]
     let identity = platform_identity(&name);
     let (id, title, stable, refresh) = match identity {
         Some((identity, title, refresh)) => (key(&identity), title, true, refresh),
@@ -185,6 +188,16 @@ pub fn monitor_list(window: WebviewWindow) -> Result<Vec<Display>, String> {
         return Err("Untrusted window".into());
     }
     list(&window)
+}
+#[tauri::command]
+pub fn monitor_current(window: WebviewWindow) -> Result<Option<Display>, String> {
+    if window.label() != "main" {
+        return Err("Untrusted window".into());
+    }
+    window
+        .current_monitor()
+        .map(|monitor| monitor.map(|monitor| describe(monitor, false)))
+        .map_err(|_| "Cannot read current display".into())
 }
 #[cfg(test)]
 mod tests {

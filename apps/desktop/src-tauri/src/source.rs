@@ -13,6 +13,8 @@ pub struct Track {
     pub id: String,
     pub title: String,
     pub artist: String,
+    #[serde(rename = "coverUrl", skip_serializing_if = "Option::is_none")]
+    pub cover_url: Option<String>,
 }
 struct Session {
     id: String,
@@ -131,7 +133,12 @@ fn tracks(value: &Value) -> Result<Vec<Track>, &'static str> {
                         .join(", ")
                 })
                 .unwrap_or_default();
-            Track { id, title, artist }
+            Track {
+                id,
+                title,
+                artist,
+                cover_url: item.get("track").and_then(crate::catalogue::artwork),
+            }
         })
         .collect())
 }
@@ -241,6 +248,7 @@ mod tests {
             id: "1".into(),
             title: "Fixture".into(),
             artist: "Fixture".into(),
+            cover_url: None,
         };
         let first = source
             .tag(

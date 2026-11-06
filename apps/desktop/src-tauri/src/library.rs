@@ -151,6 +151,7 @@ fn ordered_metadata(ids: &[String], value: &Value) -> Result<Vec<Track>, &'stati
                 id: id.clone(),
                 title: "Недоступный трек".into(),
                 artist: String::new(),
+                cover_url: None,
             })
         })
         .collect())

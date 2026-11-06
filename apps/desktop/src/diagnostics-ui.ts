@@ -16,7 +16,7 @@ export function mountDiagnostics(onConnection:(state:string)=>void=()=>{}){
    const platforms:Record<string,string>={windows:'Windows',macos:'macOS',linux:'Linux'};
    version.textContent='YCore Music '+value.version+' · '+(platforms[value.platform]??value.platform)+' '+value.architecture;
    storage.textContent=value.storageAvailable?'Хранилище открыто.':'Хранилище недоступно. Существующие данные сохранены.';
-   yandex.textContent=messages[value.yandex];status.textContent=checkYandex?'Проверено в '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'';loaded=true;
+   yandex.textContent=value.platform==='linux'&&value.yandex==='store_unavailable'?'Хранилище паролей Linux недоступно. Нужен разблокированный Secret Service, например GNOME Keyring или KeePassXC.':messages[value.yandex];status.textContent=checkYandex?'Проверено в '+new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'';loaded=true;
    onConnection(value.yandex);
   }catch{status.textContent='Не удалось проверить состояние. Повторите попытку.';}
   finally{busy=false;button.disabled=false;}

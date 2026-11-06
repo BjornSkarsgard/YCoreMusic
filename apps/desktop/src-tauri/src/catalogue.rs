@@ -61,6 +61,24 @@ fn artists(value: &Value) -> String {
         })
         .unwrap_or_default()
 }
+pub(crate) fn valid_artwork_url(value: &str) -> bool {
+    Url::parse(value).is_ok_and(|url| {
+        url.scheme() == "https"
+            && url.host_str() == Some("avatars.mds.yandex.net")
+            && url.username().is_empty()
+            && url.password().is_none()
+            && url.port().is_none()
+            && value.len() <= 2048
+    })
+}
+pub(crate) fn artwork(value: &Value) -> Option<String> {
+    let raw = value
+        .get("coverUri")
+        .or_else(|| value.pointer("/albums/0/coverUri"))?
+        .as_str()?;
+    let url = format!("https://{}", raw.trim_start_matches("https://")).replace("%%", "400x400");
+    valid_artwork_url(&url).then_some(url)
+}
 pub(crate) fn track(value: &Value) -> Option<Track> {
     let value = value
         .get("track")
@@ -70,6 +88,7 @@ pub(crate) fn track(value: &Value) -> Option<Track> {
         id: id(value.get("id")?)?,
         title: value.get("title")?.as_str()?.to_owned(),
         artist: artists(value),
+        cover_url: artwork(value),
     })
 }
 fn ordered_track(value: &Value) -> Result<Track, &'static str> {
@@ -88,6 +107,7 @@ fn ordered_track(value: &Value) -> Result<Track, &'static str> {
         id,
         title: "Недоступный трек".into(),
         artist: String::new(),
+        cover_url: None,
     })
 }
 fn entities(result: &Value, section: &str, kind: Kind) -> Vec<Entity> {
@@ -283,6 +303,19 @@ pub fn collection(
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn album_artwork_uses_only_the_expected_https_image_host() {
+        assert_eq!(
+            artwork(&json!({"albums":[{"coverUri":"avatars.mds.yandex.net/get-music/123/%%"}]}))
+                .as_deref(),
+            Some("https://avatars.mds.yandex.net/get-music/123/400x400")
+        );
+        assert!(artwork(&json!({"coverUri":"evil.example/image"})).is_none());
+        assert!(!valid_artwork_url(
+            "https://user:password@avatars.mds.yandex.net/image"
+        ));
+        assert!(!valid_artwork_url("http://avatars.mds.yandex.net/image"));
+    }
     #[test]
     #[ignore = "Explicit read-only anonymous catalogue API probe; never reads credentials"]
     fn live_guest_catalogue() {

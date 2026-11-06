@@ -1,0 +1,40 @@
+name: Windows installation lifecycle
+on:
+  push:
+    paths:
+      - scripts/windows-install-smoke.ps1
+      - .github/workflows/windows-install-smoke.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-install-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  installation:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+          cache-on-failure: true
+      - run: npm ci --prefix apps/desktop
+      - run: cargo install tauri-driver --version 2.1.0 --locked
+      - name: Install, upgrade, native data preservation, uninstall and reinstall
+        shell: pwsh
+        run: ./scripts/windows-install-smoke.ps1
+      - name: Preserve installation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installation-report
+          if-no-files-found: ignore
+          path: .tools/windows-installation-result.json

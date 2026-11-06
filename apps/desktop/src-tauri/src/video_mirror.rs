@@ -45,8 +45,8 @@ impl Surface {
     }
 }
 #[derive(Clone, Copy, Debug)]
-struct Tile {
-    destination: Rect,
+pub(crate) struct Tile {
+    pub(crate) destination: Rect,
     source: Rect,
 }
 fn subtract(rect: Rect, hole: Rect) -> Vec<Rect> {
@@ -87,7 +87,12 @@ fn subtract(rect: Rect, hole: Rect) -> Vec<Rect> {
     .filter(|r| r.width >= 1.0 && r.height >= 1.0)
     .collect()
 }
-fn tiles(stage: Rect, holes: &[Rect], source_width: f64, source_height: f64) -> Vec<Tile> {
+pub(crate) fn tiles(
+    stage: Rect,
+    holes: &[Rect],
+    source_width: f64,
+    source_height: f64,
+) -> Vec<Tile> {
     if stage.width < 1.0 || stage.height < 1.0 || source_width <= 0.0 || source_height <= 0.0 {
         return vec![];
     }
@@ -132,6 +137,8 @@ impl Mirrors {
             .unwrap_or(0)
     }
     pub fn remove(&self, label: &str) {
+        #[cfg(all(target_os = "linux", feature = "linux-player-host"))]
+        crate::linux_video::remove(label);
         if let Ok(mut mirrors) = self.0.lock() {
             if let Some(handles) = mirrors.remove(label) {
                 unregister(handles);
@@ -239,7 +246,20 @@ pub fn update(window: &WebviewWindow, mirrors: &Mirrors, surface: &Surface) -> R
         }
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(all(target_os = "linux", feature = "linux-player-host"))]
+    {
+        crate::linux_video::update(window, surface)?;
+        mirrors
+            .0
+            .lock()
+            .map_err(|_| "Video surfaces unavailable")?
+            .insert(window.label().into(), vec![1]);
+        Ok(())
+    }
+    #[cfg(not(any(
+        target_os = "windows",
+        all(target_os = "linux", feature = "linux-player-host")
+    )))]
     {
         let _ = mirrors;
         Err("Local video mirrors are not available on this platform".into())

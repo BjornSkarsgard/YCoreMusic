@@ -1,6 +1,6 @@
 import {test,expect} from './fixtures';
 
-test('Overview keeps its height and scroll position while another track resolves and alternatives disappear',async({page})=>{
+test('right panel fills the released alternatives space and shrinks again when videos return',async({page})=>{
  await page.setViewportSize({width:1200,height:820});
  await page.route('https://i.ytimg.com/**',route=>route.fulfill({contentType:'image/svg+xml',body:'<svg xmlns="http://www.w3.org/2000/svg" width="100" height="60"/>'}));
  await page.addInitScript(()=>{
@@ -25,10 +25,18 @@ test('Overview keeps its height and scroll position while another track resolves
  await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await expect(page.locator('.alternative-video')).toHaveCount(2);
  await page.locator('[data-panel=discovery]').click();await expect(page.locator('.discovery-track')).toHaveCount(200);
  const pane=page.locator('.panel-scroll');await pane.evaluate(el=>el.scrollTop=el.scrollHeight);
+ const scrollbar=await pane.evaluate(el=>getComputedStyle(el).scrollbarColor);
+ await expect(page.locator('#video-alternatives')).toHaveCSS('scrollbar-color',scrollbar);
  const height=(await pane.boundingBox())!.height,scroll=await pane.evaluate(el=>el.scrollTop),slot=(await page.locator('#video-alternatives').boundingBox())!.height;
  await page.locator('.discovery-track button').last().click();await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseLayoutMatch)).toBe('function');
  await expect(page.locator('#video-alternatives')).toHaveAttribute('hidden','');
- expect((await pane.boundingBox())!.height).toBe(height);expect(await pane.evaluate(el=>el.scrollTop)).toBe(scroll);expect((await page.locator('#video-alternatives').boundingBox())!.height).toBe(slot);
+ expect((await pane.boundingBox())!.height).toBeCloseTo(height+slot,0);await expect(page.locator('#video-alternatives')).toBeHidden();
+ expect(await pane.evaluate(el=>el.scrollTop)).toBeLessThanOrEqual(scroll);
  await page.evaluate(()=>(window as any).releaseLayoutMatch());await expect(page.locator('#video-alternatives')).not.toHaveAttribute('hidden','');await expect(page.locator('#status')).toHaveText('Воспроизведение');
- expect((await pane.boundingBox())!.height).toBe(height);expect(await pane.evaluate(el=>el.scrollTop)).toBe(scroll);
+ expect((await pane.boundingBox())!.height).toBe(height);
+ await page.locator('#window-layout').selectOption('controls');
+ const rail=page.locator('.controls-queue-scroll'),before=(await rail.boundingBox())!.height,alternativeHeight=(await page.locator('#video-alternatives').boundingBox())!.height;
+ await expect(rail).toHaveCSS('scrollbar-color',scrollbar);
+ await page.locator('#video-alternatives').evaluate(el=>el.hidden=true);
+ expect((await rail.boundingBox())!.height).toBeCloseTo(before+alternativeHeight,0);
 });

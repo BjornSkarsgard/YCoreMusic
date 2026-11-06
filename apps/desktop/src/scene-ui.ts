@@ -1,7 +1,9 @@
 import {invoke,isTauri} from '@tauri-apps/api/core';
+import {listen,type UnlistenFn} from '@tauri-apps/api/event';
 import {icon} from './icons';
+import {platformCapabilities,type PlatformCapabilities} from './platform';
 import type {VisualOptions} from './spectrum';
-export interface SceneSnapshot {revision:number;generation:number;videoId:string|null;title:string;artist:string;position:number;duration:number;playback:number}
+export interface SceneSnapshot {revision:number;generation:number;videoId:string|null;title:string;artist:string;position:number;duration:number;playback:number;coverUrl?:string;locked?:boolean}
 interface SceneStatus {enabled:boolean;visible:boolean;topmost:boolean;screenId?:string|null;detached?:boolean;options?:VisualOptions}
 interface Display {id:string;name:string;stable:boolean;primary:boolean;width:number;height:number;scaleFactor:number;refreshHz:number|null}
 export function mountScenes(read:()=>Omit<SceneSnapshot,'revision'>){
@@ -22,6 +24,8 @@ export function mountScenes(read:()=>Omit<SceneSnapshot,'revision'>){
  document.getElementById('screens-controls')!.onclick=()=>{const layout=document.getElementById('window-layout') as HTMLSelectElement;layout.value='controls';layout.dispatchEvent(new Event('change'));dialog.close();};
  const open=document.getElementById('scene-open') as HTMLButtonElement,off=document.getElementById('scene-off') as HTMLButtonElement,status=document.getElementById('scene-window-status')!;
  let enabled=false,busy=false,publishing=false,pending=false,revision=Date.now()*1000,windowRevision=0;
+ let nativeRefreshPending=false,disposed=false,unlisten:UnlistenFn|undefined;
+ let capabilities:PlatformCapabilities|null=null;
  const scenes=new Map<string,SceneStatus>();
  let readingScenes=false;
  const monitor=document.getElementById('scene-monitor') as HTMLSelectElement,refresh=document.getElementById('monitor-refresh') as HTMLButtonElement,monitorStatus=document.getElementById('monitor-status')!;
@@ -29,12 +33,18 @@ export function mountScenes(read:()=>Omit<SceneSnapshot,'revision'>){
  let desired:VisualOptions={content:'video',fps:0,quality:'high'},dirty=false;
  const videoChoice=document.getElementById('scene-video-choice') as HTMLButtonElement,visualChoice=document.getElementById('scene-visualizer-choice') as HTMLButtonElement;
  const fps=document.getElementById('visualizer-fps') as HTMLSelectElement,quality=document.getElementById('visualizer-quality') as HTMLSelectElement;
+ const preset=document.getElementById('visualizer-preset') as HTMLSelectElement;
+ preset.replaceChildren(...['Spectrum','Ambient','Liquid','Particles'].map(name=>new Option(name,name.toLowerCase())));
+ visualChoice.querySelector('small')!.textContent='Spectrum · Ambient · Liquid · Particles';
+ document.getElementById('visualizer-unavailable')!.textContent='Реакция на звук YCore. При нулевой громкости визуализаторы затихают. Анализ звука пока доступен на Windows.';
+ preset.onchange=()=>{desired={...desired};if(preset.value==='spectrum')delete desired.preset;else desired.preset=preset.value as VisualOptions['preset'];dirty=true;};
  function settings(){
   const hz=displays.find(display=>display.id===monitor.value)?.refreshHz;
   fps.replaceChildren(new Option('Частота экрана','0'));
   for(const value of [30,60,90,120,144,165,180,240])if(!hz||value<=hz)fps.append(new Option(value+' кадров/с',String(value)));
   if(desired.fps&&![...fps.options].some(option=>option.value===String(desired.fps)))fps.append(new Option(desired.fps+' кадров/с · сохранено',String(desired.fps)));
   fps.value=String(desired.fps);quality.value=desired.quality;
+  preset.value=desired.preset??'spectrum';
   videoChoice.setAttribute('aria-pressed',String(desired.content==='video'));visualChoice.setAttribute('aria-pressed',String(desired.content==='visualizer'));
   document.getElementById('visualizer-options')!.hidden=desired.content!=='visualizer';
  }
@@ -43,15 +53,15 @@ export function mountScenes(read:()=>Omit<SceneSnapshot,'revision'>){
  fps.onchange=()=>{desired={...desired,fps:Number(fps.value)};dirty=true;};quality.onchange=()=>{desired={...desired,quality:quality.value as VisualOptions['quality']};dirty=true;};
  function loadSettings(){if(!dirty){desired=scenes.get(monitor.value)?.options??{content:'video',fps:0,quality:'high'};settings();}}
 
- function syncActions(){const selected=listValid&&displays.some(display=>display.id===monitor.value);open.disabled=busy||readingMonitors||!selected;off.disabled=busy||!scenes.has(monitor.value);monitor.disabled=busy;document.getElementById('scene-video-choice')!.toggleAttribute('disabled',busy||!selected);document.getElementById('scene-content-step')!.setAttribute('aria-disabled',String(!selected));visualChoice.disabled=busy||!selected;fps.disabled=quality.disabled=busy||!selected;open.textContent=desired.content==='visualizer'?'Показать визуализатор':scenes.has(monitor.value)?'Показать окно снова':'Показать клип на экране';}
+ function syncActions(){const selected=listValid&&displays.some(display=>display.id===monitor.value);const supported=desired.content==='video'?capabilities?.videoMirrors!==false:capabilities?.videoMirrors!==false&&capabilities?.audioAnalysis!==false;open.disabled=busy||readingMonitors||!selected||!supported;off.disabled=busy||!scenes.has(monitor.value);monitor.disabled=busy;document.getElementById('scene-video-choice')!.toggleAttribute('disabled',busy||!selected||capabilities?.videoMirrors===false);document.getElementById('scene-content-step')!.setAttribute('aria-disabled',String(!selected));visualChoice.disabled=busy||!selected||capabilities?.videoMirrors===false||capabilities?.audioAnalysis===false;fps.disabled=quality.disabled=preset.disabled=busy||!selected||!supported;open.textContent=desired.content==='visualizer'?'Показать визуализатор':scenes.has(monitor.value)?'Показать окно снова':'Показать клип на экране';}
  function describe(){const current=scenes.get(monitor.value);status.textContent=current?(current.detached?'Экран отключён. Показ сохранён за ним и восстановится после подключения.':current.visible?'Окно на выбранном экране включено. Остальные экраны настраиваются независимо.':'Окно на выбранном экране скрыто. Нажмите «Показать окно снова».'):'';}
  function pendingOptions(){for(const id of scenes.keys())if(!displays.some(display=>display.id===id)&&![...monitor.options].some(option=>option.value===id))monitor.append(new Option('Отключённый экран · показ сохранён',id));}
  async function readPersistence(){try{const value=await invoke<{persistenceError:boolean}>('scene_layout_status');layoutStatus.textContent=value?.persistenceError?'Не удалось сохранить настройки экранов. Текущие окна работают, но после перезапуска настройки могут не восстановиться.':'';}catch{/* Other actions remain usable if diagnostics cannot be read. */}}
  async function readScenes(){
-  if(!isTauri()||readingScenes)return;readingScenes=true;const version=windowRevision;
-  try{const values=await invoke<SceneStatus[]>('scene_windows');if(Array.isArray(values)&&version===windowRevision&&!busy){scenes.clear();for(const value of values)if(value.enabled&&value.screenId)scenes.set(value.screenId,value);enabled=scenes.size>0;pendingOptions();loadSettings();syncActions();describe();}void readPersistence();}
+  if(!isTauri()||readingScenes)return;readingScenes=true;nativeRefreshPending=false;const version=windowRevision;
+  try{const values=await invoke<SceneStatus[]>('scene_windows');if(Array.isArray(values)&&version===windowRevision&&!busy){scenes.clear();for(const value of values)if(value.enabled&&value.screenId)scenes.set(value.screenId,value);enabled=values.some(value=>value.enabled);pendingOptions();loadSettings();syncActions();describe();if(enabled)void publish();}void readPersistence();}
   catch{/* A failed refresh must not forget a scene opened in this session. */}
-  finally{readingScenes=false;}
+  finally{readingScenes=false;if(nativeRefreshPending&&!disposed)void readScenes();}
  }
  monitor.onchange=()=>{dirty=false;loadSettings();describe();syncActions();};
  async function refreshMonitors(){
@@ -86,8 +96,20 @@ export function mountScenes(read:()=>Omit<SceneSnapshot,'revision'>){
   finally{busy=false;refresh.disabled=false;syncActions();void readPersistence();}
  }
  open.onclick=()=>void action('open');off.onclick=()=>void action('off');
- if(isTauri())void readScenes();
+ if(isTauri()){
+  void readScenes();
+  void listen('scene-windows-changed',()=>{++windowRevision;nativeRefreshPending=true;void readScenes();},{target:{kind:'WebviewWindow',label:'main'}}).then(stop=>{if(disposed)stop();else unlisten=stop;}).catch(()=>{});
+ }
+ void platformCapabilities().then(value=>{
+  capabilities=value;
+  if(value?.videoMirrors===false){
+   document.querySelector('.scene-limit')!.textContent='Дополнительные окна видео и визуализаторов пока недоступны на этой платформе. Клип и управление работают в основном окне.';
+   document.getElementById('visualizer-unavailable')!.textContent='Вывод на другие экраны требует адаптера этой платформы.';
+  }else if(value?.audioAnalysis===false)document.getElementById('visualizer-unavailable')!.textContent='Анализ звука пока недоступен в этой сборке. Можно показывать клип.';
+  syncActions();
+ });
  if(isTauri())void refreshMonitors();
  const timer=setInterval(()=>void publish(),500);
- window.addEventListener('beforeunload',()=>clearInterval(timer));
+ document.addEventListener('scene-playback-state',()=>void publish());
+ window.addEventListener('beforeunload',()=>{disposed=true;clearInterval(timer);unlisten?.();});
 }

@@ -5,6 +5,19 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager,
 };
+
+#[tauri::command]
+pub fn desktop_test_windows(window: tauri::WebviewWindow) -> Result<Vec<String>, String> {
+    if window.label() != "main"
+        || !cfg!(debug_assertions)
+        || !window.state::<crate::storage::StorageState>().test_mode
+    {
+        return Err("Window inventory requires an isolated debug profile".into());
+    }
+    let mut labels: Vec<_> = window.app_handle().webview_windows().into_keys().collect();
+    labels.sort();
+    Ok(labels)
+}
 #[derive(Default)]
 pub struct DesktopState {
     available: AtomicBool,
@@ -65,6 +78,12 @@ pub fn action(app: &AppHandle, action: Action) -> Result<(), String> {
             app.exit(0);
             Ok(())
         }
+    }
+}
+pub fn prepare_exit(app: &AppHandle) {
+    let _ = app.state::<crate::crash_recovery::Recovery>().clean();
+    if let Ok(store) = &app.state::<crate::storage::StorageState>().store {
+        let _ = store.finish_open();
     }
 }
 pub fn install(app: &AppHandle) -> tauri::Result<()> {

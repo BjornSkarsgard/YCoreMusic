@@ -39,6 +39,72 @@ fn words(value: &str) -> Vec<String> {
 fn contains_all(expected: &[String], actual: &[String]) -> bool {
     !expected.is_empty() && expected.iter().all(|word| actual.contains(word))
 }
+fn artist_credits(value: &str) -> Vec<Vec<String>> {
+    let normalized = value
+        .to_lowercase()
+        .replace(" featuring ", ",")
+        .replace(" feat. ", ",")
+        .replace(" feat ", ",")
+        .replace(" ft. ", ",")
+        .replace(" ft ", ",")
+        .replace(['&', ';'], ",");
+    let mut credits = Vec::new();
+    for credit in normalized
+        .split(',')
+        .map(words)
+        .filter(|name| !name.is_empty())
+    {
+        if !credits.contains(&credit) {
+            credits.push(credit);
+        }
+    }
+    credits
+}
+
+fn close_credit(expected: &[String], actual: &[String]) -> bool {
+    if expected.len() != actual.len() {
+        return false;
+    }
+    let mut differences = 0;
+    for (left, right) in expected.iter().zip(actual) {
+        if left == right {
+            continue;
+        }
+        // A bounded final-letter spelling variation is useful only with full
+        // collaboration corroboration, never as a single-artist identity gate.
+        let (short, long) = if left.chars().count() < right.chars().count() {
+            (left, right)
+        } else {
+            (right, left)
+        };
+        if short.chars().count() < 3
+            || long.chars().count() != short.chars().count() + 1
+            || !long.starts_with(short)
+        {
+            return false;
+        }
+        differences += 1;
+    }
+    differences <= 1
+}
+
+fn collaboration_match(expected: &[Vec<String>], actual: &[Vec<String>]) -> bool {
+    if expected.len() < 2 || expected.len() > 8 || expected.len() != actual.len() {
+        return false;
+    }
+    fn assign(expected: &[Vec<String>], actual: &[Vec<String>], used: u16) -> bool {
+        let Some((first, rest)) = expected.split_first() else {
+            return true;
+        };
+        actual.iter().enumerate().any(|(index, name)| {
+            used & (1 << index) == 0
+                && close_credit(first, name)
+                && assign(rest, actual, used | (1 << index))
+        })
+    }
+    assign(expected, actual, 0)
+}
+
 fn score(
     title: &str,
     artist: &str,
@@ -46,13 +112,10 @@ fn score(
     canonical_artist: &str,
     kind: &str,
 ) -> Option<(u32, String, bool)> {
-    if kind == "MUSIC_VIDEO_TYPE_ATV" {
-        return None;
-    }
     let target = words(title);
-    let name = words(artist.split(',').next().unwrap_or(artist));
+    let names = artist_credits(artist);
     let candidate = words(candidate_title);
-    if !contains_all(&target, &candidate) || name.is_empty() {
+    if !contains_all(&target, &candidate) || names.is_empty() {
         return None;
     }
     let blocked = [
@@ -91,24 +154,41 @@ fn score(
     {
         return None;
     }
-    let named_in_title = candidate.windows(name.len()).any(|phrase| phrase == name);
-    // Canonical performer metadata is used only for OMV music records, never as a channel-name gate.
-    let canonical_match = kind == "MUSIC_VIDEO_TYPE_OMV"
-        && canonical_artist
-            .split(',')
-            .any(|credit| words(credit) == name);
-    if kind == "MUSIC_VIDEO_TYPE_OMV"
-        && !canonical_artist.is_empty()
-        && !canonical_match
-        && !named_in_title
-    {
+    let exact_title_credit = names
+        .iter()
+        .any(|name| candidate.windows(name.len()).any(|phrase| phrase == name));
+    let title_parts = candidate_title
+        .replace(" — ", " | ")
+        .replace(" – ", " | ")
+        .replace(" - ", " | ");
+    let named_in_title = exact_title_credit
+        || title_parts
+            .split(" | ")
+            .any(|part| collaboration_match(&names, &artist_credits(part)));
+    let canonical_names = artist_credits(canonical_artist);
+    let music_record = matches!(kind, "MUSIC_VIDEO_TYPE_OMV" | "MUSIC_VIDEO_TYPE_ATV");
+    let exact_credit = names.iter().any(|name| canonical_names.contains(name));
+    let canonical_match = music_record
+        && (words(artist) == words(canonical_artist)
+            || exact_credit
+            || collaboration_match(&names, &canonical_names));
+    if music_record && !canonical_artist.is_empty() && !canonical_match && !named_in_title {
+        return None;
+    }
+    // Official audio records must have a real performer credit. An arbitrary
+    // uploader/byline, even if named like the artist, cannot establish it.
+    if kind == "MUSIC_VIDEO_TYPE_ATV" && !canonical_match {
         return None;
     }
     let needs_review = !named_in_title && !canonical_match;
     let mut score = if needs_review { 40 } else { 100 };
     let reason = if canonical_match {
         score += 100;
-        "Музыкальное видео: совпали песня и исполнитель в метаданных"
+        if kind == "MUSIC_VIDEO_TYPE_ATV" {
+            "Официальная запись YouTube: совпали песня и исполнители"
+        } else {
+            "Музыкальное видео: совпали песня и исполнитель в метаданных"
+        }
     } else if named_in_title
         && candidate
             .iter()
@@ -201,7 +281,7 @@ fn row(row: &Value, title: &str, artist: &str) -> Option<Candidate> {
         .collect::<Vec<_>>()
         .join(", ");
     let kind=title_runs.pointer("/0/navigationEndpoint/watchEndpoint/watchEndpointMusicSupportedConfigs/watchEndpointMusicConfig/musicVideoType").and_then(Value::as_str).unwrap_or("");
-    let canonical_artist = if kind == "MUSIC_VIDEO_TYPE_OMV" {
+    let canonical_artist = if matches!(kind, "MUSIC_VIDEO_TYPE_OMV" | "MUSIC_VIDEO_TYPE_ATV") {
         artist_runs.iter().filter(|run|run.pointer("/navigationEndpoint/browseEndpoint/browseEndpointContextSupportedConfigs/browseEndpointContextMusicConfig/pageType").and_then(Value::as_str)==Some("MUSIC_PAGE_TYPE_ARTIST")).filter_map(|run|run.get("text").and_then(Value::as_str)).collect::<Vec<_>>().join(", ")
     } else {
         String::new()
@@ -290,31 +370,16 @@ fn parse(value: &Value, title: &str, artist: &str) -> Vec<Candidate> {
     results.truncate(5);
     results
 }
-pub fn search(
-    matcher: &Matcher,
+fn request_candidates(
+    client: &Client,
     title: &str,
     artist: &str,
+    params: &str,
+    timeout: Duration,
 ) -> Result<Vec<Candidate>, &'static str> {
-    if title.trim().is_empty() || artist.trim().is_empty() || title.len() + artist.len() > 512 {
-        return Err("Invalid search metadata");
-    }
-    let key = format!("{}\n{}", title, artist);
-    let mut cache = matcher.0.lock().map_err(|_| "Search unavailable")?;
-    if let Some((time, results)) = cache.get(&key) {
-        if time.elapsed() < Duration::from_secs(if results.is_empty() { 30 } else { 3600 }) {
-            return Ok(results.clone());
-        }
-    }
-    let client = Client::builder()
-        .timeout(Duration::from_secs(15))
-        .connect_timeout(Duration::from_secs(8))
-        .redirect(Policy::none())
-        .https_only(true)
-        .build()
-        .map_err(|_| "Cannot initialize search")?;
-    let response=client.post("https://music.youtube.com/youtubei/v1/search?prettyPrint=false").header("Origin","https://music.youtube.com").json(&json!({
+    let response=client.post("https://music.youtube.com/youtubei/v1/search?prettyPrint=false").timeout(timeout).header("Origin","https://music.youtube.com").json(&json!({
         "context":{"client":{"clientName":"WEB_REMIX","clientVersion":format!("1.{}.01.00",chrono::Utc::now().format("%Y%m%d")),"hl":"en"}},
-        "query":format!("{artist} {title}"),"params":"EgWKAQIQAWoKEAkQBRAKEAMQBA%3D%3D"
+        "query":format!("{artist} {title}"),"params":params
     })).send().map_err(|_|"Search network error")?;
     if !response.status().is_success() {
         return Err("Search service unavailable");
@@ -331,7 +396,67 @@ pub fn search(
     if value.get("contents").is_none() {
         return Err("Search schema changed");
     }
-    let results = parse(&value, title, artist);
+    Ok(parse(&value, title, artist))
+}
+
+pub fn search(
+    matcher: &Matcher,
+    title: &str,
+    artist: &str,
+) -> Result<Vec<Candidate>, &'static str> {
+    if title.trim().is_empty() || artist.trim().is_empty() || title.len() + artist.len() > 512 {
+        return Err("Invalid search metadata");
+    }
+    let key = format!("{}\n{}", title, artist);
+    let mut cache = matcher.0.lock().map_err(|_| "Search unavailable")?;
+    if let Some((time, results)) = cache.get(&key) {
+        if time.elapsed()
+            < Duration::from_secs(if results.iter().any(|candidate| !candidate.needs_review) {
+                3600
+            } else {
+                30
+            })
+        {
+            return Ok(results.clone());
+        }
+    }
+    let client = Client::builder()
+        .timeout(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(8))
+        .redirect(Policy::none())
+        .https_only(true)
+        .build()
+        .map_err(|_| "Cannot initialize search")?;
+    let started = Instant::now();
+    let mut results = request_candidates(
+        &client,
+        title,
+        artist,
+        "EgWKAQIQAWoKEAkQBRAKEAMQBA%3D%3D",
+        Duration::from_secs(15),
+    )?;
+    if !results.iter().any(|candidate| !candidate.needs_review) {
+        // A real music video remains the first choice. Official recordings are
+        // a second bounded metadata query, played by the very same iframe.
+        let remaining = Duration::from_secs(15).saturating_sub(started.elapsed());
+        if !remaining.is_zero() {
+            match request_candidates(
+                &client,
+                title,
+                artist,
+                "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D",
+                remaining,
+            ) {
+                Ok(recordings) => results.extend(recordings),
+                Err(error) if results.is_empty() => return Err(error),
+                Err(_) => {} // Retain manually selectable candidates on a failed fallback.
+            }
+        }
+        rank(&mut results);
+        let mut seen = HashSet::new();
+        results.retain(|candidate| seen.insert(candidate.id.clone()));
+        results.truncate(5);
+    }
     if cache.len() >= 128 {
         cache.clear();
     }
@@ -341,6 +466,98 @@ pub fn search(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn real_collaboration_recording_is_not_discarded_by_video_type_or_spelling() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/youtube-collaboration.json"))
+                .unwrap();
+        let found = parse(&fixture, "Мой сельский", "GORILLA GLU, LIL NAKU");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "eWBdgvhNwF8");
+        assert!(!found[0].needs_review);
+        assert_eq!(found[0].duration_seconds, Some(105));
+        assert!(parse(&fixture, "Другая песня", "GORILLA GLU, LIL NAKU").is_empty());
+        assert!(parse(&fixture, "Мой сельский", "Другая группа, Другой артист").is_empty());
+    }
+    #[test]
+    fn collaborations_accept_reordered_credits_and_features_for_other_artists() {
+        for kind in ["MUSIC_VIDEO_TYPE_OMV", "MUSIC_VIDEO_TYPE_ATV"] {
+            for (expected, actual) in [
+                (
+                    "Daft Punk, Pharrell Williams",
+                    "Pharrell Williams & Daft Punk",
+                ),
+                ("Artist One feat. Artist Two", "Artist Two, Artist One"),
+                ("Beyoncé, Shakira", "Shakira & Beyonce"),
+            ] {
+                assert!(!score("Song", expected, "Song", actual, kind).unwrap().2);
+            }
+        }
+        // One near-looking artist cannot be treated as a verified alias.
+        assert!(score("Song", "Artist", "Song", "Artists", "MUSIC_VIDEO_TYPE_ATV").is_none());
+        assert!(!collaboration_match(
+            &artist_credits("Artist One, Artist Two"),
+            &artist_credits("Artist Ones, Unrelated Band")
+        ));
+        assert!(!collaboration_match(
+            &artist_credits("Artist One, Artist Two"),
+            &artist_credits("Artist Ones, Artist Ones")
+        ));
+    }
+    #[test]
+    fn third_party_concerts_remain_eligible_and_bad_versions_remain_blocked() {
+        assert!(
+            !score(
+                "Мой сельский",
+                "GORILLA GLU, LIL NAKU",
+                "GORILLA GLUE & LIL NAKUR — Мой сельский (live)",
+                "Случайный зритель",
+                "MUSIC_VIDEO_TYPE_UGC"
+            )
+            .unwrap()
+            .2
+        );
+        assert!(
+            !score(
+                "Группа крови",
+                "Кино",
+                "Кино — Группа крови, концерт",
+                "Случайный зритель",
+                "MUSIC_VIDEO_TYPE_UGC"
+            )
+            .unwrap()
+            .2
+        );
+        for suffix in ["cover", "karaoke", "remix", "reaction", "slowed"] {
+            assert!(score(
+                "Song",
+                "Artist One, Artist Two",
+                &format!("Artist One & Artist Two - Song {suffix}"),
+                "Unrelated channel",
+                "MUSIC_VIDEO_TYPE_UGC"
+            )
+            .is_none());
+        }
+        assert!(
+            score(
+                "Song",
+                "Artist One, Artist Two",
+                "Song",
+                "Artist One & Artist Two",
+                "MUSIC_VIDEO_TYPE_UGC"
+            )
+            .unwrap()
+            .2
+        );
+    }
+    #[test]
+    #[ignore = "Explicit public metadata regression; no credentials or media downloads"]
+    fn live_user_collaboration_regression() {
+        let found = search(&Matcher::default(), "Мой сельский", "GORILLA GLU, LIL NAKU").unwrap();
+        assert!(found
+            .iter()
+            .any(|c| c.id == "eWBdgvhNwF8" && !c.needs_review));
+    }
     #[test]
     fn rejects_cover_wrong_artist_and_unrequested_remix() {
         for (title, artist) in [
@@ -469,6 +686,14 @@ mod tests {
             "Oasis",
             "Wonderwall",
             "Oasis",
+            "MUSIC_VIDEO_TYPE_ATV"
+        )
+        .is_some());
+        assert!(score(
+            "Wonderwall",
+            "Oasis",
+            "Wonderwall",
+            "Cover Artist",
             "MUSIC_VIDEO_TYPE_ATV"
         )
         .is_none());

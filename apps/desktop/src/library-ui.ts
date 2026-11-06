@@ -1,4 +1,5 @@
 import {setIconLabel} from './icons';
+import {bindPlaybackRow} from './playback-rows';
 import {invoke,isTauri} from '@tauri-apps/api/core';
 import {collectionPage,type CatalogueEntity,type CatalogueSelection} from './catalogue-ui';
 import type {Track} from './queue';
@@ -32,7 +33,7 @@ export function mountLibrary(select:(selection:CatalogueSelection)=>void){
   async function load(next:number){
    if(busy)return;busy=true;more.disabled=true;status.textContent='Загрузка списка…';
    try{const result=await collectionPage(entity,next);if(epoch!==revision)return;tracks.push(...result.tracks);page=next;hasMore=result.hasMore;
-    rows.replaceChildren(...tracks.map((track,index)=>{const row=document.createElement('div');row.className='catalogue-track';const text=document.createElement('span');text.className='track-text';const title=document.createElement('strong'),artist=document.createElement('small');title.textContent=track.title;artist.textContent=track.artist;text.append(title,artist);const play=button('Воспроизвести',()=>select({tracks:tracks.slice(index),title:entity.title,collection:{entity,page,hasMore}}));setIconLabel(play,'play','Воспроизвести',true);play.setAttribute('aria-label','Воспроизвести '+track.title);row.append(text,play);return row;}));
+    rows.replaceChildren(...tracks.map((track,index)=>{const row=document.createElement('div');row.className='catalogue-track';const text=document.createElement('span');text.className='track-text';const title=document.createElement('strong'),artist=document.createElement('small');title.textContent=track.title;artist.textContent=track.artist;text.append(title,artist);const play=document.createElement('button');bindPlaybackRow(row,play,track,()=>select({tracks:tracks.slice(index),title:entity.title,collection:{entity,page,hasMore}}));row.append(text,play);return row;}));
     playAll.disabled=!tracks.length;more.hidden=!hasMore;status.textContent=tracks.length?'Список загружен.':'В этом списке пока нет треков.';
    }catch{if(epoch===revision)status.textContent='Не удалось открыть список. Попробуйте обновить медиатеку.';}
    finally{busy=false;more.disabled=false;}

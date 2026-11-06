@@ -12,6 +12,10 @@ on:
           - ubuntu-24.04
           - macos-15-intel
           - macos-latest
+      deb_only:
+        description: Build only the Linux DEB for local testing
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -38,7 +42,8 @@ jobs:
           cache-on-failure: true
       - name: Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev libdbus-1-dev libfuse2
+        timeout-minutes: 8
+        run: sh ../../scripts/install-linux-deps.sh package
       - run: npm ci
       - run: npm run check
       - run: npm test
@@ -46,8 +51,19 @@ jobs:
         if: runner.os == 'Windows'
         run: npm run package:windows
       - name: Linux packages
+        if: runner.os == 'Linux' && !inputs.deb_only
+        run: npm run package:linux -- --features linux-embed-referrer
+      - name: Linux DEB
+        if: runner.os == 'Linux' && inputs.deb_only
+        run: npx tauri build --config src-tauri/tauri.bundle.conf.json --features linux-embed-referrer --bundles deb
+      - name: Inspect Linux DEB
         if: runner.os == 'Linux'
-        run: npm run package:linux
+        run: |
+          for package in src-tauri/target/release/bundle/deb/*.deb; do
+            dpkg-deb --info "$package"
+            dpkg-deb --contents "$package"
+            sha256sum "$package"
+          done
       - name: macOS packages
         if: runner.os == 'macOS'
         run: npm run package:macos

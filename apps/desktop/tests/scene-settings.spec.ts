@@ -1,5 +1,58 @@
 import {test,expect} from './fixtures';
 
+test('native scene restore starts publishing without reopening screen settings',async({page})=>{
+ await page.addInitScript(()=>{
+  const w=window as any;w.isTauri=true;w.nativeScenes=[];w.published=[];w.callbacks={};w.listeners={};let next=0;
+  w.__TAURI_INTERNALS__={transformCallback:(callback:unknown)=>{w.callbacks[++next]=callback;return next;},invoke:async(command:string,args:any)=>{
+   if(command==='plugin:event|listen'){w.listeners[args.event]=w.callbacks[args.handler];return 1;}
+   if(command==='scene_windows')return w.nativeScenes;
+   if(command==='scene_publish'){w.published.push(args.snapshot);return;}
+   if(command==='monitor_list')return [{id:'monitor-tv',name:'TV',stable:true,width:1920,height:1080,refreshHz:60}];
+   if(command==='platform_capabilities')return {videoMirrors:true,audioAnalysis:true};
+   if(command==='source_fetch'||command==='smart_history_fetch')return [];
+  }};
+ });
+ await page.goto('/');await expect.poll(()=>page.evaluate(()=>!!(window as any).listeners['scene-windows-changed'])).toBe(true);
+ expect(await page.evaluate(()=>(window as any).published.length)).toBe(0);
+ await page.evaluate(()=>{const w=window as any;w.nativeScenes=[{screenId:'monitor-tv',enabled:true,visible:true,topmost:false}];w.listeners['scene-windows-changed']({payload:null});});
+ await expect.poll(()=>page.evaluate(()=>(window as any).published.length)).toBeGreaterThan(0);
+ await page.evaluate(()=>{const w=window as any;w.nativeScenes=[];w.listeners['scene-windows-changed']({payload:null});});
+ await page.waitForTimeout(150);const count=await page.evaluate(()=>(window as any).published.length);
+ await page.waitForTimeout(650);expect(await page.evaluate(()=>(window as any).published.length)).toBe(count);
+});
+
+test('a platform without mirror/audio adapters keeps playback usable and does not offer unsupported windows',async({page})=>{
+ await page.addInitScript(()=>{
+  const w=window as any;w.isTauri=true;localStorage.setItem('encore.mainLayout.v1','spectrum');
+  w.__TAURI_INTERNALS__={invoke:async(command:string)=>{
+   if(command==='platform_capabilities')return {videoMirrors:false,audioAnalysis:false};
+   if(command==='monitor_list')return [{id:'a',name:'A',stable:true,width:1920,height:1080,refreshHz:60}];
+   if(command==='scene_windows'||command==='source_fetch'||command==='smart_history_fetch')return [];
+  }};
+ });
+ await page.goto('/');await expect(page.locator('#window-layout')).toHaveValue('video');
+ await expect(page.locator('#window-layout option[value=spectrum]')).toHaveJSProperty('disabled',true);
+ expect(await page.evaluate(()=>localStorage.getItem('encore.mainLayout.v1'))).toBe('spectrum');
+ await page.locator('#window-layout').selectOption('controls');await expect(page.locator('body')).toHaveClass(/controls-layout/);
+ await page.locator('#screens').click();await page.locator('#scene-monitor').selectOption('a');
+ await expect(page.locator('#scene-video-choice')).toBeDisabled();await expect(page.locator('#scene-visualizer-choice')).toBeDisabled();await expect(page.locator('#scene-open')).toBeDisabled();
+ await expect(page.locator('.scene-limit')).toContainText('Клип и управление работают в основном окне');
+});
+
+test('a build with video mirrors but no analysis keeps video available and disables only visualizers',async({page})=>{
+ await page.addInitScript(()=>{
+  const w=window as any;w.isTauri=true;
+  w.__TAURI_INTERNALS__={invoke:async(command:string)=>{
+   if(command==='platform_capabilities')return {videoMirrors:true,audioAnalysis:false};
+   if(command==='monitor_list')return [{id:'a',name:'A',stable:true,width:1920,height:1080,refreshHz:60}];
+   if(command==='scene_windows'||command==='source_fetch'||command==='smart_history_fetch')return [];
+  }};
+ });
+ await page.goto('/');await page.locator('#screens').click();await page.locator('#scene-monitor').selectOption('a');
+ await expect(page.locator('#scene-video-choice')).toBeEnabled();await expect(page.locator('#scene-open')).toBeEnabled();await expect(page.locator('#scene-visualizer-choice')).toBeDisabled();
+ await expect(page.locator('#visualizer-unavailable')).toContainText('Можно показывать клип');
+});
+
 test('visualizer settings belong to the selected monitor and explicit FPS respects its refresh rate',async({page})=>{
  await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.scenes={};w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
   if(command==='source_fetch'||command==='smart_history_fetch')return [];
@@ -9,10 +62,12 @@ test('visualizer settings belong to the selected monitor and explicit FPS respec
  }};});
  await page.goto('/');await page.locator('#screens').click();await page.locator('#scene-monitor').selectOption('a');await page.locator('#scene-visualizer-choice').click();
  await expect(page.locator('#visualizer-options')).toBeVisible();expect(await page.locator('#visualizer-fps option').allTextContents()).toEqual(['Частота экрана','30 кадров/с','60 кадров/с']);
+ await page.locator('#visualizer-preset').selectOption('liquid');
  await page.locator('#visualizer-fps').selectOption('30');await page.locator('#visualizer-quality').selectOption('low');await page.locator('#scene-open').click();await expect(page.locator('#scene-open')).toBeEnabled();
  await page.locator('#scene-monitor').selectOption('b');await expect(page.locator('#scene-video-choice')).toHaveAttribute('aria-pressed','true');await page.locator('#scene-visualizer-choice').click();await page.locator('#visualizer-fps').selectOption('144');await page.locator('#scene-open').click();await expect(page.locator('#scene-open')).toBeEnabled();
  await page.locator('#scene-monitor').selectOption('a');await expect(page.locator('#scene-visualizer-choice')).toHaveAttribute('aria-pressed','true');await expect(page.locator('#visualizer-fps')).toHaveValue('30');await expect(page.locator('#visualizer-quality')).toHaveValue('low');
  expect(await page.evaluate(()=>(window as any).scenes.b.options)).toEqual({content:'visualizer',fps:144,quality:'high'});
+ await expect(page.locator('#visualizer-preset')).toHaveValue('liquid');expect(await page.evaluate(()=>(window as any).scenes.a.options.preset)).toBe('liquid');
 });
 
 test('late initial window status cannot disable a newly opened scene; open and off coalesce while pending',async({page})=>{

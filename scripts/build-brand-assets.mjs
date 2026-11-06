@@ -9,8 +9,8 @@ const desktop=resolve(root,'apps/desktop'),assets=resolve(desktop,'src/assets'),
 const cli=resolve(desktop,'node_modules/@tauri-apps/cli/tauri.js');
 for(const directory of [assets,icons,temporary])mkdirSync(directory,{recursive:true});
 const mark=readFileSync(resolve(assets,'ycore-mark.svg'),'utf8'),inner=mark.slice(mark.indexOf('>')+1,mark.lastIndexOf('</svg>'));
-const frame='<defs><linearGradient id="frame" x2="1" y2="1"><stop stop-color="#00E5FF"/><stop offset=".48" stop-color="#6D28FF"/><stop offset="1" stop-color="#FF4FD8"/></linearGradient></defs>';
-writeFileSync(resolve(desktop,'app-icon.svg'),`<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 256 256">${frame}<rect x="7" y="7" width="242" height="242" rx="56" fill="#0B0B14" stroke="url(#frame)" stroke-width="1.5"/><svg x="8" y="8" width="240" height="240" viewBox="0 0 256 256">${inner}</svg></svg>\n`);
+// The app icon uses the same transparent master as every in-app logo.
+writeFileSync(resolve(desktop,'app-icon.svg'),mark);
 const wordmark=`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="176" viewBox="0 0 600 176"><svg width="176" height="176" viewBox="0 0 256 256">${inner}</svg><text x="210" y="105" fill="#E6E8FF" font-family="Segoe UI,Arial,sans-serif" font-size="92" font-weight="700" textLength="350" lengthAdjust="spacing">YCORE</text><text x="215" y="155" fill="#A855FF" font-family="Segoe UI,Arial,sans-serif" font-size="30" font-weight="600" textLength="340" lengthAdjust="spacing">MUSIC</text></svg>`;
 writeFileSync(resolve(assets,'ycore-wordmark.svg'),wordmark);
 const run=(input,output,sizes=[])=>execFileSync(process.execPath,[cli,'icon',input,'--output',output,...sizes.flatMap(size=>['--png',String(size)])],{cwd:root,stdio:'ignore'});
