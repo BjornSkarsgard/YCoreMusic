@@ -3,7 +3,7 @@ set -eu
 # The hosted Azure mirror stalled this project's CI at tens of KB/s. Change only
 # the ephemeral Actions runner, retaining Ubuntu's signed repositories and TLS.
 if [ "${GITHUB_ACTIONS:-}" = true ]; then
-  for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+  for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources /etc/apt/apt-mirrors.txt /etc/apt/apt-security-mirrors.txt; do
     if [ -f "$source" ]; then
       sudo sed -i 's|https\?://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
     fi
@@ -11,7 +11,7 @@ if [ "${GITHUB_ACTIONS:-}" = true ]; then
 fi
 case "${1:-build}" in
   build) extra='' ;;
-  native) extra='webkit2gtk-driver xvfb xauth openbox dbus-x11 fonts-dejavu x11-utils' ;;
+  native) extra='webkit2gtk-driver xvfb xauth openbox dbus-x11 fonts-dejavu x11-utils gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-libav' ;;
   package) extra='libfuse2' ;;
   *) echo 'Expected build, native or package' >&2; exit 2 ;;
 esac
