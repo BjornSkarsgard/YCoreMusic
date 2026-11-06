@@ -1,3 +1,36 @@
+## 2026-11-07: реальная причина Absence/Catch-22 — native null metadata
+
+Пользователь снова получил prep deadline для Absence / Xalv и дал ссылку
+https://www.youtube.com/watch?v=bTB8_-BcuG8. Live Rust search нашёл bohtMtdGPx8,
+views=None,duration285,needs_review=false. Нативный запуск ЧЕРЕЗ ПОИСК Яндекса
+(числовойtrack ID -> savedVideos -> matching -> UI) воспроизвёл падение:
+Uncaught TypeError: Cannot read properties of null (reading toLocaleString).
+Обе renderCandidates/renderAlternatives проверяли только undefined, а Rust
+Option<u64> сериализует отсутствие как null. Исключение происходило ДО loadVideo;
+тайм-ауты предыдущих правок лишь пропускали этот сломанный renderer шаг.
+
+Исправление de48727, branch codex/continuous-playback-20261107:
+Candidate views/durationSeconds теперь явно number|null|undefined; null-safe guards
+в обеих карточках и duration. Нет hardcoded video binding/ослабления matching.
+Rust live Absence probe и native ENCORE_TRACK_MATCH_PROBE добавлены. Последний
+теперь проходит оба user fixtures через настоящий UI и проверяет position>2,
+один player и nativeErrors.length0. До фикса этот же путь FAILED.
+
+Проверки: renderer151 PASS/1 optional skipped; targeted native-null views/duration
+Wave+playlist PASS; TS/build PASS. Реальный нативный UI Absence и What I Need
+(включая storage/matching) PASS, затем mini/topmost/instance PASS. Не подменять
+эту проверку старым ручным вводом найденного video ID: он обходил ошибочный шаг.
+Windows debug NSIS собран и передан в commentary:
+C:/Users/Skar/Downloads/YCoreMusic-null-metadata-fix-2026-11-07/YCoreMusic-Windows-test-setup.exe
+Linux DEB run42298273064 SUCCESS наde48727, скачан и сверён с CI:
+C:/Users/Skar/Downloads/YCoreMusic-null-metadata-fix-2026-11-07/Linux/deb/YCore Music_0.0.1_amd64.deb
+SHA256 f4b8a4fd5a05cc1ad04c709381638feb8a34e0d762a72857241c1f01e5ac8fc3.
+Windows NSIS SHA256 b66844458c3dec4b79382dea8d8aa456087323daa234ef65548f91c9da6145fd.
+Пакеты переданы, установка не выполнялась. Для Linux0.0.1 нужен --reinstall. Релиз и установленный exe не заменяли.
+DonationAlerts пользователя записан в PRODUCT-DECISIONS:
+https://www.donationalerts.com/r/affor_1337
+Только ссылка для будущей кнопки поддержки; платежей не совершали.
+
 ## 2026-11-07: устранено зависание «Подбор клипа»
 
 Пользователь сообщил о сохранении остановки после предыдущего progress-fix.
