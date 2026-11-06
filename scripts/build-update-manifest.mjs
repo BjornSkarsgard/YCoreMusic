@@ -27,7 +27,9 @@ for(const entry of entries){
  const trustedComment=Buffer.from(signature,'base64').toString('utf8').split('\n').find(line=>line.startsWith('trusted comment:'));
  assert(trustedComment?.split(/\s+/).includes('version:'+version),'Signature must be bound to the current application version');
  assert(platform.startsWith('windows-')?/\.(exe|msi)$/.test(name):platform.startsWith('darwin-')?/\.app\.tar\.gz$/.test(name):/\.(AppImage|deb|rpm)$/.test(name),'Package format does not match its platform');
- platforms[platform]={url:'https://github.com/BjornSkarsgard/YCoreMusic/releases/download/'+encodeURIComponent('v'+version)+'/'+encodeURIComponent(name),signature};
+ // GitHub replaces spaces in uploaded release asset names with periods.
+ const assetName=name.replace(/ /g,'.');
+ platforms[platform]={url:'https://github.com/BjornSkarsgard/YCoreMusic/releases/download/'+encodeURIComponent('v'+version)+'/'+encodeURIComponent(assetName),signature};
 }
 writeFileSync(output,JSON.stringify({version,notes:notes.slice(0,12000),pub_date:new Date().toISOString(),platforms},null,2)+'\n');
 console.log('Local update manifest prepared for '+Object.keys(platforms).length+' platform(s). Nothing published.');

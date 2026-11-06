@@ -14,18 +14,24 @@
 - Логотипы UI — прозрачные PNG, ICO/ICNS содержат прозрачный raster. Удалены
   тёмные подложки бренда, альбомные обложки сохраняют собственное оформление.
 - Wayland: автоматический XWayland, read-only connector identity и два экрана
-  проверяются в изолированном KWin. Чистый GTK/Wayland не имеет полной поддержки
+  прошли проверку в изолированном KWin, включая placement/fullscreen/topmost on/off. Чистый GTK/Wayland не имеет полной поддержки
   topmost/placement. См. ADR-050. Нельзя обещать поддержку всех compositor/distro.
-- Windows NSIS с updater signature успешно собирается; DEB и AppImage собраны,
-  идёт финальная пересборка после оконных исправлений. Code signing Windows нет.
-- Rust 81 PASS/12 ignored, Clippy clean перед последним общим topmost исправлением;
-  окончательные renderer/native/package проверки продолжаются.
-- Итоговые Windows NSIS и Linux DEB/AppImage с updater signatures находятся в
-  builds/YCoreMusic; latest.json и SHA256SUMS подготовлены. Релиз ещё не опубликован:
-  GitHub connector возвращает 403 при записи. По прямому указанию пользователя
-  дополнительные тесты прекращены; нужна Git/CLI авторизация для публикации.
-  Windows installation lifecycle текущего snapshot ещё должен пройти: предыдущий
-  прогон не был успешен. Cross-compile не заменяет Windows runtime проверку.
+- Итоговые Windows NSIS, Linux DEB и AppImage собраны из одного состояния runtime
+  исходников и подписаны для updater. Code signing Windows нет.
+- Окончательные проверки: renderer 128 PASS/1 optional skipped, Rust 81 PASS/12
+  ignored, Clippy clean, TS unit PASS. Дополнительные прогоны прекращены по
+  прямому указанию пользователя.
+- Пакеты, latest.json и SHA256SUMS находятся в builds/YCoreMusic.
+- Релиз v0.0.1 опубликован: https://github.com/BjornSkarsgard/YCoreMusic/releases/tag/v0.0.1
+  Восемь assets, draft=false. Runtime source commit f60a717; исходники запушены в main.
+  GitHub заменяет пробелы в именах assets точками; ссылки manifest соответствуют
+  фактическим именам. Подписи версионные, приватный ключ не передавался на GitHub.
+- GitHub connector отказал в записи (403), публикация выполнена официальным GitHub
+  CLI после браузерной авторизации пользователя.
+- Windows installation lifecycle текущего snapshot не принят: по указанию
+  пользователя релиз опубликован без дополнительных Windows прогонов. Нельзя
+  выдавать cross-compile за нативную приёмку. Длительный прогон и аппаратные
+  disconnect/sleep/wake остаются отложенными.
 
 Записи ниже — история предыдущих остановок, не актуальный список блокеров.
 
