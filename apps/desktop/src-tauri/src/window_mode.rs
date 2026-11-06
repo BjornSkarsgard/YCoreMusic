@@ -99,7 +99,48 @@ pub fn window_topmost_state(window: WebviewWindow) -> Result<bool, String> {
     if window.label() != "main" {
         return Err("Untrusted window".into());
     }
+    #[cfg(target_os = "linux")]
+    if let Some(above) = x11_topmost(&window)? {
+        return Ok(above);
+    }
     window
         .is_always_on_top()
         .map_err(|_| "Cannot read window state".to_string())
+}
+
+// On GTK/X11 the toolkit's cached ABOVE flag can lag behind the WM property
+// indefinitely. Read the actual EWMH state; never substitute the requested flag.
+#[cfg(target_os = "linux")]
+fn x11_topmost(window: &WebviewWindow) -> Result<Option<bool>, String> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt};
+    let handle = window
+        .window_handle()
+        .map_err(|_| "Cannot read native window")?;
+    let id = match handle.as_raw() {
+        RawWindowHandle::Xlib(handle) => {
+            u32::try_from(handle.window).map_err(|_| "Invalid X11 window")?
+        }
+        RawWindowHandle::Xcb(handle) => handle.window.get(),
+        _ => return Ok(None), // Wayland retains its own compositor/toolkit path.
+    };
+    let (connection, _) = x11rb::connect(None).map_err(|_| "Cannot connect to X11")?;
+    let atom = |name: &[u8]| -> Result<u32, String> {
+        Ok(connection
+            .intern_atom(false, name)
+            .map_err(|_| "Cannot read X11 state")?
+            .reply()
+            .map_err(|_| "Cannot read X11 state")?
+            .atom)
+    };
+    let state = atom(b"_NET_WM_STATE")?;
+    let above = atom(b"_NET_WM_STATE_ABOVE")?;
+    let reply = connection
+        .get_property(false, id, state, AtomEnum::ATOM, 0, 64)
+        .map_err(|_| "Cannot read X11 window state")?
+        .reply()
+        .map_err(|_| "Cannot read X11 window state")?;
+    Ok(Some(reply.value32().is_some_and(|mut atoms| {
+        atoms.any(|value| value == above)
+    })))
 }

@@ -48,6 +48,10 @@ required-features = ["yandex-probe"]
 windows = { version = "0.62.2", features = ["Win32_System_Power", "Win32_Graphics_Gdi", "Win32_Graphics_Dwm", "Win32_UI_WindowsAndMessaging"] }
 windows-core = "0.62.2"
 
+[target.'cfg(target_os = "linux")'.dependencies]
+raw-window-handle = "0.6.2"
+x11rb = { version = "0.14.0", default-features = false }
+
 [patch.crates-io]
 tauri-plugin-power-monitor = { path = "../../../vendor/tauri-plugin-power-monitor" }
 
