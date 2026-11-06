@@ -38,7 +38,8 @@ jobs:
           cache-on-failure: true
       - name: Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev libssl-dev librsvg2-dev libayatana-appindicator3-dev libdbus-1-dev libfuse2
+        timeout-minutes: 8
+        run: sh ../../scripts/install-linux-deps.sh package
       - run: npm ci
       - run: npm run check
       - run: npm test
