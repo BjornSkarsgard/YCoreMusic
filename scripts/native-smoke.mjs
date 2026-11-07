@@ -198,9 +198,31 @@ try {
     assert(/^[A-Za-z0-9_-]{11}$/.test(smokeVideo),'Native playback fixture must be a YouTube video ID');
     const press=async id=>{const element=await request('/session/'+session+'/element',{using:'css selector',value:'#'+id});await request('/session/'+session+'/element/'+element['element-6066-11e4-a52e-4f735466cecf']+'/click',{});};
     await execute('const layout=document.getElementById("window-layout");layout.value="video";layout.dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value=arguments[0];document.getElementById("load").requestSubmit();',[smokeVideo]);
-    await until('return !document.getElementById("play").disabled',45000);await press('play');
+    await until('return !document.getElementById("play").disabled',45000);
+    if(process.env.ENCORE_CUE_BRAND_SMOKE==='1'&&(await nativeInvoke('player_host_status'))?.supported){
+      const main=await request('/session/'+session+'/window'),handles=await request('/session/'+session+'/window/handles');
+      let source;
+      for(const handle of handles){await request('/session/'+session+'/window',{handle});if(await execute('return window.__TAURI_INTERNALS__?.metadata.currentWindow.label')==='player-host'){source=handle;break;}}
+      assert(source,'The sole engine must own the composited mark');
+      await until('return !!document.querySelector(".cue-brand:not([hidden]) img")');
+      assert.equal(await execute('return getComputedStyle(document.querySelector(".cue-brand")).backgroundColor'),'rgba(0, 0, 0, 0)');
+      writeFileSync(resolve(root,'.tools/native-source-cue-brand.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
+      await request('/session/'+session+'/window',{handle:main});
+      assert.equal(await execute('return getComputedStyle(document.querySelector(".cue-brand")).display'),'none','Destination must not cut a black rectangle out of the video');
+      console.log('Native source cue logo with transparent background, no destination cutout: PASS');
+    }
+    await press('play');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',45000);
     await until('return Number(document.getElementById("seek").value)>1',30000);await playbackTopology();
+    if(process.env.ENCORE_MEDIA_KEYS_SMOKE==='1'){
+      await mediaUntil('playing');
+      await nativeInvoke('plugin:event|emit',{event:'encore-media',payload:{action:'pause',value:0}});await mediaUntil('paused');
+      await nativeInvoke('desktop_close');assert.equal((await nativeInvoke('desktop_status')).visible,false);
+      await nativeInvoke('plugin:event|emit',{event:'encore-media',payload:{action:'toggle',value:0}});await mediaUntil('playing');
+      assert.equal((await nativeInvoke('desktop_status')).visible,false,'Media commands must not raise the hidden window');
+      await nativeInvoke('desktop_action',{action:'open'});
+      console.log('Native SMTC available; media event delivery pauses and resumes hidden playback without focus: PASS (physical keyboard not simulated)');
+    }
     if(process.platform==='linux'&&process.env.ENCORE_LINUX_FEATURES_SMOKE==='1')await (await import('./native-linux-features.mjs')).verifyLinuxVideo({execute,nativeInvoke,sleep,request,session,until});
     await press('pause');await until('return document.getElementById("status").textContent==="Пауза"');
     const paused=Number(await execute('return document.getElementById("seek").value'));await sleep(1500);assert(Math.abs(Number(await execute('return document.getElementById("seek").value'))-paused)<1.5);

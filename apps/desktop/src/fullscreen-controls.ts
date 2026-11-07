@@ -6,7 +6,8 @@ export function mountFullscreenControls(workspace:HTMLElement,hud:HTMLElement){
  function hide(){
    clearTimeout(timer);
    if(!active())return;
-   if(dragging||hud.matches(':hover')||hud.querySelector(':focus-visible')){
+   const pickerOpen=CSS.supports('selector(select:open)')&&hud.querySelector('select:open');
+   if(dragging||pickerOpen||hud.matches(':hover')||hud.querySelector(':focus-visible')){
      timer=setTimeout(hide,3000);return;
    }
    workspace.classList.remove('hud-visible');

@@ -1,3 +1,4 @@
+import './cue-brand.css';
 const mark=new URL('./assets/ycore-mark-512.png',import.meta.url).href;
 /** Decoration for the cued state; transport stays in our existing controls. */
 export function mountCueBrand(stage:HTMLElement){

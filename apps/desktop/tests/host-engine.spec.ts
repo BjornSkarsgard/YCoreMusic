@@ -10,7 +10,7 @@ test('sole engine cues without autoplay, destroys the old iframe before replacem
   }};
  });
  await page.route('https://www.youtube.com/iframe_api',route=>route.fulfill({contentType:'text/javascript',body:`window.YT={Player:class{
- constructor(id,options){this.options=options;this.state=-1;this.position=0;this.el=document.createElement('iframe');this.el.id=id;document.getElementById(id).replaceWith(this.el);window.livePlayers++;window.peakPlayers=Math.max(window.peakPlayers,window.livePlayers);setTimeout(()=>options.events.onReady({target:this}),0);}
+ constructor(id,options){window.enginePlayer=this;this.options=options;this.state=-1;this.position=0;this.el=document.createElement('iframe');this.el.id=id;document.getElementById(id).replaceWith(this.el);window.livePlayers++;window.peakPlayers=Math.max(window.peakPlayers,window.livePlayers);setTimeout(()=>options.events.onReady({target:this}),0);}
  cueVideoById(value){this.id=value.videoId;this.position=value.startSeconds;this.state=5;this.options.events.onStateChange({target:this,data:5});}getCurrentTime(){return this.position;}getDuration(){return 120;}getPlayerState(){return this.state;}getPlaybackQuality(){return 'hd1080';}
  playVideo(){window.plays.push(this.id);this.state=1;this.options.events.onStateChange({target:this,data:1});}pauseVideo(){this.state=2;this.options.events.onStateChange({target:this,data:2});}setVolume(){}seekTo(value){this.position=value;}destroy(){window.livePlayers--;this.el.remove();}
  }};window.onYouTubeIframeAPIReady();`}));
@@ -18,8 +18,17 @@ test('sole engine cues without autoplay, destroys the old iframe before replacem
  expect(await page.evaluate(()=>(window as any).plays)).toEqual([]);
  await page.evaluate(()=>{const w=window as any;w.handlers['player-host-command']({payload:{epoch:1,command:{type:'cue',videoId:'Aaaaaaaaaaa',position:5}}});});
  await expect(page.locator('iframe')).toHaveCount(1);expect(await page.evaluate(()=>(window as any).plays)).toEqual([]);
+ await expect(page.locator('.cue-brand')).toBeVisible();
+ expect(await page.locator('.cue-brand').evaluate(element=>getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+ // Check the actual shipped pixels, including the transparent centre of the mark.
+ expect(await page.locator('.cue-brand img').evaluate(async(element:HTMLImageElement)=>{await element.decode();const canvas=document.createElement('canvas');canvas.width=canvas.height=512;const context=canvas.getContext('2d')!;context.drawImage(element,0,0,512,512);return [context.getImageData(0,0,1,1).data[3],context.getImageData(250,250,1,1).data[3]];})).toEqual([0,0]);
+ await page.evaluate(()=>{const player=(window as any).enginePlayer;player.state=3;player.options.events.onStateChange({data:3});});
+ await expect(page.locator('.cue-brand')).toBeHidden();
+ await page.evaluate(()=>{const player=(window as any).enginePlayer;player.state=5;player.options.events.onStateChange({data:5});});
+ await expect(page.locator('.cue-brand')).toBeVisible();
  await page.evaluate(()=>{const w=window as any;w.handlers['player-host-command']({payload:{epoch:1,command:{type:'play'}}});w.handlers['player-host-load']({payload:{epoch:2,controls:false}});});
  await expect.poll(()=>page.evaluate(()=>(window as any).packets.some((packet:any)=>packet.kind==='ready'&&packet.epoch===2))).toBe(true);
+ await expect(page.locator('.cue-brand')).toBeHidden();
  await page.evaluate(()=>{const w=window as any;w.handlers['player-host-command']({payload:{epoch:1,command:{type:'destroy'}}});w.handlers['player-host-command']({payload:{epoch:1,command:{type:'play'}}});});
  await expect(page.locator('iframe')).toHaveCount(1);expect(await page.evaluate(()=>(window as any).peakPlayers)).toBe(1);expect(await page.evaluate(()=>(window as any).plays)).toEqual(['Aaaaaaaaaaa']);
 });

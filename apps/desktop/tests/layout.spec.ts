@@ -7,7 +7,7 @@ test('right panel fills the released alternatives space and shrinks again when v
   const w=window as any;w.isTauri=true;
   w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
    if(cmd==='source_fetch')return [{id:'1',title:'Initial',artist:'Fixture'}];
-   if(cmd==='discovery_fetch')return {title:'Chart',tracks:Array.from({length:200},(_,i)=>({id:String(i+10),title:'Song '+i,artist:'Fixture'})),playlists:[]};
+   if(cmd==='discovery_fetch')return {title:'Чарт',tracks:Array.from({length:200},(_,i)=>({id:String(i+10),title:'Song '+i,artist:'Fixture'})),playlists:[]};
    if(cmd==='search_videos'){
     if(args.title!=='Initial')await new Promise(resolve=>w.releaseLayoutMatch=resolve);
     return [{id:'Aaaaaaaaaaa',title:args.title,views:100,durationSeconds:120,score:100,reason:'fixture'},{id:'Bbbbbbbbbbb',title:'Alternative',views:50,durationSeconds:180,score:100,reason:'fixture'}];
@@ -23,7 +23,18 @@ test('right panel fills the released alternatives space and shrinks again when v
   destroy(){this.el.remove();}setVolume(){}getDuration(){return 120;}getCurrentTime(){return 5;}
  }};window.onYouTubeIframeAPIReady();` }));
  await page.goto('/');await expect(page.locator('#play')).toBeEnabled();await expect(page.locator('.alternative-video')).toHaveCount(2);
+ // A short title used to centre the entire button contents, shifting its thumbnail.
+ for(const width of [1200,900]){
+  await page.setViewportSize({width,height:820});
+  const lefts=await page.locator('.alternative-video').evaluateAll(rows=>rows.map(row=>row.querySelector('img')!.getBoundingClientRect().left-row.getBoundingClientRect().left));
+  expect(lefts[0]).toBeCloseTo(7,0);expect(lefts[1]).toBeCloseTo(lefts[0],1);
+ }
+ await page.setViewportSize({width:1200,height:820});
  await page.locator('[data-panel=discovery]').click();await expect(page.locator('.discovery-track')).toHaveCount(200);
+ await expect(page.locator('[data-panel=discovery]')).toHaveText('Чарт');await expect(page.locator('#panel-title')).toHaveText('Чарт');
+ await expect(page.locator('#discovery h2')).toHaveCount(0);await expect(page.locator('#discovery-refresh')).toBeVisible();
+ await expect(page.locator('#discovery-content h3')).toHaveCount(0);
+ expect(await page.locator('#discovery-content').evaluate(element=>element.querySelector('.discovery-track')!.getBoundingClientRect().top-element.querySelector('#discovery-play-all')!.getBoundingClientRect().bottom)).toBeGreaterThanOrEqual(12);
  const pane=page.locator('.panel-scroll');await pane.evaluate(el=>el.scrollTop=el.scrollHeight);
  const scrollbar=await pane.evaluate(el=>getComputedStyle(el).scrollbarColor);
  await expect(page.locator('#video-alternatives')).toHaveCSS('scrollbar-color',scrollbar);

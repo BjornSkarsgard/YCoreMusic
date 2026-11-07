@@ -11,6 +11,7 @@ import {mountCueBrand} from './cue-brand';
 import {mountSleepTimer} from './sleep-timer';
 import {allowPlaybackChange,mountPlaybackGuard,playbackLocked} from './playback-guard';
 import {mountUpdates,updatesInstalling} from './updates';
+import {mountSupport} from './support-ui';
 import {bindPlaybackRow,setRowPlayback} from './playback-rows';
 import {mountScenes} from './scene-ui';
 import {hostAvailable,createPlayer} from './player-host';
@@ -26,6 +27,7 @@ import {favoriteOrder,type SavedVideos} from './video-favorites';
 import {historyBatch,type SmartCandidate} from './smart-history';
 import {mountFeedback} from './feedback-ui';
 import './style.css';
+import './select.css';
 import {appShell,mountShellNavigation,showPanel} from './shell';
 import {mountLibrary} from './library-ui';
 import {mountFullscreenControls} from './fullscreen-controls';
@@ -886,6 +888,7 @@ mountSleepTimer(()=>{powerPause(false);report('Таймер сна заверш�
 function hideYouTubePanel(){if(!youtubeControls)return;youtubeControls=false;element('youtube-settings').setAttribute('aria-pressed','false');element('youtube-settings').textContent='Панель YouTube';element('player-options-status').textContent='';document.querySelector('.screen')!.classList.remove('interactive');if(isTauri())void invoke('player_host_presentation',{interactive:false}).catch(()=>{});intentUI();}
 mountPlaybackGuard(hideYouTubePanel);
 mountShellNavigation();
+mountSupport(()=>playIntent||historyStarting||updatesInstalling());
 mountVisualControls();
 const windowLayout=mountWindowLayout();
 const mainSpectrum=mountMainSpectrum(document.querySelector<HTMLElement>('.screen')!,()=>windowLayout.layout(),()=>queue.current?.coverUrl);

@@ -273,6 +273,7 @@ fn main() {
             desktop::desktop_action,
             desktop::desktop_status,
             desktop::desktop_close,
+            desktop::support_open,
             catalogue_search,
             catalogue_collection,
             library::library_overview,

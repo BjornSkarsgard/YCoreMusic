@@ -36,6 +36,18 @@ test('search, library, history, settings and dialogs keep working at desktop and
  await page.setViewportSize({width:1200,height:820});await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
  await page.locator('#catalogue-query').fill('рамштайн');await expect(page.locator('.catalogue-track')).toHaveCount(5);await page.screenshot({path:'../../.tools/ycore-theme-search.png'});
  for(const section of ['library','history','settings','queue']){await page.locator(`[data-panel=${section}]`).click();await expect(page.locator(`[data-pane=${section}]`)).toBeVisible();await page.screenshot({path:`../../.tools/ycore-theme-${section}.png`});}
+ await page.locator('[data-panel=settings]').click();
+ for(const width of [1200,800]){
+  await page.setViewportSize({width,height:820});
+  for(const id of ['account-settings','autostart-settings','sleep-timer-settings','diagnostics','updates-settings']){
+   const gaps=await page.locator('#'+id).evaluate(element=>{const rects=[...element.children].map(child=>child.getBoundingClientRect()).filter(rect=>rect.width>0&&rect.height>0);return rects.slice(1).map((rect,index)=>rect.top-rects[index].bottom);});
+   for(const gap of gaps)expect(gap,id+' spacing').toBeGreaterThanOrEqual(11.5);
+  }
+  const actionRects=await page.locator('.account-actions>button:visible').evaluateAll(buttons=>buttons.map(button=>{const r=button.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom};}));
+  for(let i=1;i<actionRects.length;i++){const a=actionRects[i-1],b=actionRects[i];expect(Math.max(b.left-a.right,b.top-a.bottom),'account buttons spacing').toBeGreaterThanOrEqual(8);}
+  expect(await page.locator('.panel-scroll').evaluate(element=>element.scrollWidth-element.clientWidth)).toBeLessThanOrEqual(1);
+ }
+ await page.setViewportSize({width:1200,height:820});
  await page.locator('#edit-video').click();await expect(page.locator('#video-dialog')).toBeVisible();await page.screenshot({path:'../../.tools/ycore-theme-dialog.png'});await page.locator('#close-video-dialog').click();
  await page.locator('#window-layout').selectOption('controls');await page.locator('[data-panel=search]').click();await expect(page.locator('#queue-list')).toBeVisible();await page.screenshot({path:'../../.tools/ycore-theme-controls.png'});
  await page.setViewportSize({width:800,height:650});await expect(page.locator('#play')).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(800);await page.screenshot({path:'../../.tools/ycore-theme-minimum.png'});

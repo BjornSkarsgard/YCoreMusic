@@ -67,9 +67,9 @@ test('video window only mirrors the existing engine without loading YouTube or c
  expect(await page.evaluate(()=>(window as any).controls)).toEqual([]);
 });
 
-test('scene covers the cued YouTube center with YCore and clears the cover on buffering or playing',async({page})=>{
- await page.evaluate(value=>(window as any).send(value),snapshot(1,1,'Aaaaaaaaaaa',5));await expect(page.locator('.cue-brand')).toBeVisible();
- await expect.poll(()=>page.evaluate(()=>(window as any).mirrors.at(-1)?.holes.length)).toBe(2);
+test('native scene mirrors the source logo without a black rectangular destination cutout',async({page})=>{
+ await page.evaluate(value=>(window as any).send(value),snapshot(1,1,'Aaaaaaaaaaa',5));await expect(page.locator('.cue-brand')).toBeHidden();
+ await expect.poll(()=>page.evaluate(()=>(window as any).mirrors.at(-1)?.holes.length)).toBe(1);
  await page.evaluate(value=>(window as any).send(value),snapshot(2,1,'Aaaaaaaaaaa',3));await expect(page.locator('.cue-brand')).toBeHidden();
  await page.evaluate(value=>(window as any).send(value),snapshot(3,1,'Aaaaaaaaaaa',1));await expect(page.locator('.cue-brand')).toBeHidden();
 });

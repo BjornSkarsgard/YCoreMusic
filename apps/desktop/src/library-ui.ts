@@ -28,7 +28,7 @@ export function mountLibrary(select:(selection:CatalogueSelection)=>void){
   content.replaceChildren(button('Моя музыка',()=>{home();status.textContent='Твои плейлисты и любимые треки из Яндекс Музыки.';}));setIconLabel(content.firstElementChild as HTMLElement,'back','Моя музыка');
   const heading=document.createElement('h3');heading.textContent=entity.title;
   const playAll=button('Воспроизвести список',()=>select({tracks:[...tracks],title:entity.title,collection:{entity,page,hasMore}}));setIconLabel(playAll,'play','Воспроизвести список');playAll.disabled=true;playAll.id='library-play-all';
-  const rows=document.createElement('div'),more=button('Ещё песни',()=>void load(page+1));more.hidden=true;content.append(heading,playAll,rows,more);
+  const rows=document.createElement('div'),more=button('Ещё песни',()=>void load(page+1));more.className='library-more';more.hidden=true;content.append(heading,playAll,rows,more);
   const pane=root.closest('.panel-scroll');if(pane)pane.scrollTop=0;
   async function load(next:number){
    if(busy)return;busy=true;more.disabled=true;status.textContent='Загрузка списка…';

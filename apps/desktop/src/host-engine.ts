@@ -1,6 +1,12 @@
 import {invoke} from '@tauri-apps/api/core';
 import {listen} from '@tauri-apps/api/event';
 import type {HostCache,HostCommand,HostLoad,HostPacket} from './host-protocol';
+import {mountCueBrand} from './cue-brand';
+
+// Composite the transparent mark with the sole source image, before native
+// mirroring. A rectangular cutout in the destination exposed its black stage.
+const cueBrand=mountCueBrand(document.body);
+let hasVideo=false,showBrand=true;
 
 type Engine=YT.Player&{getOptions?(module:string):string[];getOption?(module:string,option:string):unknown;loadModule?(module:string):void;unloadModule?(module:string):void;setOption?(module:string,option:string,value:unknown):void};
 let player:Engine|undefined,epoch=0,sequence=0,ready=false,apiPromise:Promise<void>|undefined;
@@ -17,10 +23,10 @@ function cache():HostCache{
  }catch{/* Caption options are absent until YouTube loads the module. */}
  return {position:player?.getCurrentTime?.()??0,duration:player?.getDuration?.()??0,playback:player?.getPlayerState?.()??-1,quality:player?.getPlaybackQuality?.()??'default',captionOptions:captionOptions.slice(0,16),captionTracks,iframeCount:document.querySelectorAll('iframe').length};
 }
-function report(kind:HostPacket['kind'],errorCode?:number,overrides:Partial<HostCache>={}){const packet:HostPacket={epoch,sequence:++sequence,kind,cache:{...cache(),...overrides},...(errorCode===undefined?{}:{errorCode})};void invoke('player_host_event',{packet}).catch(()=>{});}
+function report(kind:HostPacket['kind'],errorCode?:number,overrides:Partial<HostCache>={}){const packet:HostPacket={epoch,sequence:++sequence,kind,cache:{...cache(),...overrides},...(errorCode===undefined?{}:{errorCode})};cueBrand.update(hasVideo&&showBrand,packet.cache.playback);void invoke('player_host_event',{packet}).catch(()=>{});}
 async function load(options:HostLoad){
  if(options.epoch<=epoch)return;
- epoch=options.epoch;sequence=0;ready=false;player?.destroy();player=undefined;
+ epoch=options.epoch;sequence=0;ready=false;hasVideo=false;showBrand=!options.controls;cueBrand.update(false,-1);player?.destroy();player=undefined;
  const current=epoch;
  try{
   await api();if(epoch!==current)return;
@@ -37,10 +43,10 @@ async function load(options:HostLoad){
 }
 function command(value:{epoch:number;command:HostCommand}){
  if(value.epoch!==epoch)return;const action=value.command;
- if(action.type==='destroy'){ready=false;player?.destroy();player=undefined;report('tick');return;}
+ if(action.type==='destroy'){ready=false;hasVideo=false;player?.destroy();player=undefined;report('tick');return;}
  if(!ready||!player)return;
  switch(action.type){
-  case 'cue':player.cueVideoById({videoId:action.videoId,startSeconds:action.position});break;
+  case 'cue':hasVideo=true;cueBrand.update(showBrand,-1);player.cueVideoById({videoId:action.videoId,startSeconds:action.position});break;
   case 'play':player.playVideo();break;case 'pause':player.pauseVideo();break;
   case 'seek':player.seekTo(action.position,true);break;case 'volume':player.setVolume(action.level);break;
   case 'load_captions':player.loadModule?.('captions');break;case 'unload_captions':player.unloadModule?.('captions');break;

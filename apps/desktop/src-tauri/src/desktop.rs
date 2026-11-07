@@ -44,6 +44,81 @@ pub struct Status {
     pub maximized: bool,
     pub quitting: bool,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SupportDestination {
+    Donate,
+    Review,
+}
+
+/// Opens a fixed public destination chosen by the user.
+#[tauri::command]
+pub async fn support_open(
+    window: tauri::WebviewWindow,
+    destination: Option<SupportDestination>,
+) -> Result<(), String> {
+    if window.label() != "main"
+        || (cfg!(debug_assertions) && window.state::<crate::storage::StorageState>().test_mode)
+    {
+        return Err("Support link requires the main application".into());
+    }
+    let url = match destination.unwrap_or(SupportDestination::Donate) {
+        SupportDestination::Donate => "https://www.donationalerts.com/r/affor_1337",
+        SupportDestination::Review => "https://ycore-music.ru/#reviews",
+    };
+    tauri::async_runtime::spawn_blocking(move || open_support_page(url))
+        .await
+        .map_err(|_| "Cannot open support page".to_string())?
+}
+fn open_support_page(url: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL};
+        let url: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
+        let result = unsafe {
+            ShellExecuteW(
+                None,
+                windows_core::w!("open"),
+                windows_core::PCWSTR(url.as_ptr()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            )
+        };
+        if result.0 as isize > 32 {
+            Ok(())
+        } else {
+            Err("Cannot open browser".into())
+        }
+    }
+    #[cfg(all(target_os = "linux", feature = "linux-player-host"))]
+    {
+        gtk::gio::AppInfo::launch_default_for_uri(url, None::<&gtk::gio::AppLaunchContext>)
+            .map_err(|_| "Cannot open browser".into())
+    }
+    #[cfg(any(
+        target_os = "macos",
+        all(target_os = "linux", not(feature = "linux-player-host"))
+    ))]
+    {
+        let launcher = if cfg!(target_os = "macos") {
+            "open"
+        } else {
+            "xdg-open"
+        };
+        std::process::Command::new(launcher)
+            .arg(url)
+            .status()
+            .map_err(|_| "Cannot open browser".to_string())
+            .and_then(|status| {
+                if status.success() {
+                    Ok(())
+                } else {
+                    Err("Cannot open browser".into())
+                }
+            })
+    }
+}
 pub fn open(app: &AppHandle) -> Result<(), String> {
     crate::scene_layout::request_show_all(app);
     for window in app.webview_windows().values() {

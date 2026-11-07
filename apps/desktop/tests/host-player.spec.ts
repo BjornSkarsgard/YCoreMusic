@@ -6,12 +6,17 @@ test.beforeEach(async({page})=>{
   w.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
   const cache={position:0,duration:120,playback:-1,quality:'hd1080',captionOptions:[],captionTracks:[],iframeCount:1};
   w.sleepTimer={remainingSeconds:0,active:false,expired:false,revision:0};
-  w.updateState={phase:'disabled',notes:'',downloaded:0};w.updateCalls=[];
+  w.startupUpdate=sessionStorage.getItem('startup-update-fixture');
+  w.updateState={phase:w.startupUpdate?'idle':'disabled',notes:'',downloaded:0};w.updateCalls=[];
+  w.updatePublished=!!w.startupUpdate;
   w.packet=(kind:string,overrides:any={})=>w.handlers['player-host-event']?.({payload:{epoch,sequence:++sequence,kind,cache:{...cache},...overrides}});
   w.__TAURI_INTERNALS__={transformCallback:(callback:any)=>{w.callbacks[++id]=callback;return id;},invoke:async(command:string,args:any)=>{
    if(command==='updates_command'){
     w.updateCalls.push(args.action);
-    if(args.action==='check')w.updateState={phase:w.updateCheckFailure?'error':w.updatePublished?'available':'unpublished',version:w.updatePublished?'0.0.2':null,notes:'<img src=x onerror="window.updateXss=true">',downloaded:0,error:w.updateCheckFailure?'check_failed':null};
+    if(args.action==='check'){
+     if(w.startupUpdate==='held')await new Promise(resolve=>w.releaseStartupCheck=resolve);
+     w.updateState={phase:w.updateCheckFailure?'error':w.updatePublished?'available':'unpublished',version:w.updatePublished?'0.0.2':null,notes:'<img src=x onerror="window.updateXss=true">',downloaded:0,error:w.updateCheckFailure?'check_failed':null};
+    }
     if(args.action==='download')w.updateState={...w.updateState,phase:w.updateBadSignature?'error':'ready',error:w.updateBadSignature?'download_or_signature_failed':null,downloaded:100,total:100};
     if(args.action==='install'){if(w.holdUpdateInstall)return new Promise(resolve=>w.finishUpdateInstall=resolve);w.updateState={...w.updateState,phase:'error',error:'install_failed'};}
     return {...w.updateState};
@@ -49,6 +54,32 @@ test.beforeEach(async({page})=>{
  });
  await page.route('https://www.youtube.com/**',route=>route.abort());
  await page.goto('/');await expect(page.locator('#play')).toBeEnabled();
+});
+
+test('startup offers an update after other dialogs and remembers postponement across launches',async({page})=>{
+ await page.evaluate(()=>{
+  sessionStorage.setItem('startup-update-fixture','held');
+  localStorage.setItem('ycore.updateCheck.v1',String(Date.now()));
+ });
+ await page.reload();
+ await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseStartupCheck)).toBe('function');
+ await page.evaluate(()=>{
+  const dialog=document.createElement('dialog');dialog.id='other-startup-dialog';
+  document.body.append(dialog);dialog.showModal();(window as any).releaseStartupCheck();
+ });
+ await expect(page.locator('#updates-summary')).toHaveText('Доступна версия 0.0.2.');
+ await expect(page.locator('#updates-dialog')).toBeHidden();
+ await page.locator('#other-startup-dialog').evaluate((dialog:HTMLDialogElement)=>dialog.close());
+ await expect(page.locator('#updates-dialog')).toBeVisible();
+ await page.locator('#updates-later').click();
+ await page.evaluate(()=>sessionStorage.setItem('startup-update-fixture','available'));
+ await page.reload();
+ await expect(page.locator('#updates-summary')).toHaveText('Доступна версия 0.0.2.');
+ await expect(page.locator('#updates-dialog')).toBeHidden();
+ expect(await page.evaluate(()=>(window as any).updateCalls)).toContain('check');
+ expect(await page.evaluate(()=>(window as any).updateCalls)).not.toContain('download');
+ await page.locator('[data-panel=settings]').click();await page.locator('#updates-details').click();
+ await expect(page.locator('#updates-dialog')).toBeVisible();
 });
 
 test('updates distinguish an absent release and a failed check, render notes safely and persist deferral',async({page})=>{
@@ -180,7 +211,8 @@ test('main visualizer type persists without loading a second player',async({page
 });
 
 test('native host bridge keeps the controller iframe-free and forwards the existing transport without autoplay',async({page})=>{
- await expect(page.locator('.cue-brand')).toBeVisible();
+ // The source engine composites the logo; no black rectangular destination cutout.
+ await expect(page.locator('.cue-brand')).toBeHidden();
  await expect(page.locator('iframe')).toHaveCount(0);await expect(page.locator('script[src*=youtube]')).toHaveCount(0);
  expect(await page.evaluate(()=>(window as any).commands.some((value:any)=>value.command.type==='play'))).toBe(false);
  await page.locator('#play').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');await expect.poll(()=>page.evaluate(()=>(window as any).records.length)).toBe(1);
@@ -189,6 +221,24 @@ test('native host bridge keeps the controller iframe-free and forwards the exist
  const loads=await page.evaluate(()=>(window as any).loads.length);await page.locator('#window-layout').selectOption('controls');
  expect(await page.evaluate(()=>(window as any).loads.length)).toBe(loads);await expect.poll(()=>page.evaluate(()=>(window as any).mirrors.at(-1)?.visible)).toBe(false);
  await page.locator('#pause').click();await expect(page.locator('#status')).toHaveText('Пауза');
+});
+
+test('system media Play/Pause, Next and Previous control the sole engine and preserve pause',async({page})=>{
+ const media=async(action:string)=>page.evaluate(action=>(window as any).handlers['encore-media']({payload:{action,value:0}}),action);
+ await media('play');await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await expect(page.locator('#track-title')).toHaveText('First');
+ await media('toggle');await expect(page.locator('#status')).toHaveText('Пауза');
+ await media('toggle');await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await media('next');await expect(page.locator('#track-title')).toHaveText('Second');
+ await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await media('pause');await expect(page.locator('#status')).toHaveText('Пауза');
+ const plays=await page.evaluate(()=>(window as any).commands.filter((value:any)=>value.command.type==='play').length);
+ await media('previous');await expect.poll(()=>page.evaluate(()=>(window as any).commands.at(-1)?.command)).toEqual({type:'seek',position:0});
+ await media('previous');await expect(page.locator('#track-title')).toHaveText('First');
+ await expect(page.locator('#status')).not.toHaveText('Воспроизведение');
+ expect(await page.evaluate(()=>(window as any).commands.filter((value:any)=>value.command.type==='play').length)).toBe(plays);
+ await media('play');await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await expect(page.locator('iframe')).toHaveCount(0);
 });
 
 test('old engine generations and reordered packets cannot finish or pause a newer selected track',async({page})=>{
@@ -205,6 +255,33 @@ test('actual end of the current engine advances the shared queue exactly once',a
  await expect(page.locator('#track-title')).toHaveText('Second');await expect(page.locator('#status')).toHaveText('Воспроизведение');
  await page.evaluate(epoch=>(window as any).packet('state',{epoch,sequence:999,cache:{position:120,duration:120,playback:0,quality:'hd1080',captionOptions:[],captionTracks:[],iframeCount:1}}),old);
  expect(await page.evaluate(()=>(window as any).loads.length)).toBe(2);await expect(page.locator('#track-title')).toHaveText('Second');
+});
+
+test('the styled picker has no open focus ring and stays above the fullscreen video mirror',async({page})=>{
+ const layout=page.locator('#window-layout');
+ await page.locator('#screens').focus();await page.keyboard.press('Tab');
+ await expect(layout).toBeFocused();await expect(layout).toHaveCSS('outline-style','solid');
+ await layout.click();await expect(page.locator('#window-layout:open')).toBeVisible();
+ await expect(layout).toHaveCSS('outline-style','none');await expect(layout).toHaveCSS('box-shadow','none');
+ await page.screenshot({path:'../../.tools/ycore-dropdown-preview.png'});
+ await page.getByRole('option',{name:'Клип и списки',exact:true}).click();
+ await expect(page.locator('#window-layout:open')).toHaveCount(0);
+
+ await page.evaluate(()=>{(window as any).packet('tick',{cache:{position:0,duration:120,playback:5,quality:'hd1080',captionOptions:['fontSize','tracklist','track'],captionTracks:[{languageCode:'en',kind:'',name:'',displayName:'English'}],iframeCount:1}});});
+ await expect(page.locator('#captions')).toBeEnabled();
+ await page.locator('#fullscreen').click();
+ await expect.poll(()=>page.evaluate(()=>!!document.fullscreenElement)).toBe(true);
+ await page.mouse.move(250,250);
+ await page.locator('#captions').click();
+ await expect(page.locator('#captions:open')).toBeVisible();
+ await expect.poll(()=>page.evaluate(()=>{
+  const row=document.querySelector('#captions option:focus')?.getBoundingClientRect();
+  const surface=(window as any).mirrors.at(-1);
+  return !!row&&surface?.visible&&surface.holes.some((hole:any)=>hole.x<=row.left&&hole.y<=row.top&&hole.x+hole.width>=row.right-1&&hole.y+hole.height>=row.bottom-1);
+ })).toBe(true);
+ await page.getByRole('option',{name:'English',exact:true}).click();
+ await expect(page.locator('#captions:open')).toHaveCount(0);
+ await expect.poll(()=>page.evaluate(()=>(window as any).commands.some((item:any)=>item.command.type==='caption_track'&&item.command.languageCode==='en'))).toBe(true);
 });
 
 test('caption metadata arriving after Ready enables the selector and forwards language and font size',async({page})=>{

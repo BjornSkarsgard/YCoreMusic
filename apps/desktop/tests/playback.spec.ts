@@ -712,6 +712,10 @@ test('catalogue detail has back navigation and ignores a late collection after r
 });
 
 test('personal library browses playlists and paginated likes without replacing playback',async({page})=>{
+ const balanced=async(row:ReturnType<typeof page.locator>,first='.track-text')=>{
+  const gap=await row.evaluate((element,selector)=>{const rect=element.getBoundingClientRect(),start=element.querySelector(selector)!.getBoundingClientRect(),end=element.querySelector('button .ui-icon')!.getBoundingClientRect();return Math.abs((start.left-rect.left)-(rect.right-end.right));},first);
+  expect(gap).toBeLessThan(1);
+ };
  await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.libraryCalls=[];w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
   if(cmd==='source_fetch')return [{id:'99',title:'Current',artist:'Fixture'}];
   if(cmd==='search_videos')return [{id:'M7lc1UVf-VE',title:'Current',score:100,reason:'fixture'}];
@@ -725,16 +729,20 @@ test('personal library browses playlists and paginated likes without replacing p
  await page.locator('.library-playlist').click();await expect(page.locator('#library-content .catalogue-track')).toHaveCount(1);await expect(page.locator('#track-title')).toHaveText('Current');
  await page.locator('#library-content').getByRole('button',{name:'Моя музыка'}).click();await page.locator('#library-likes').click();await page.getByRole('button',{name:'Ещё песни',exact:true}).click();
  await expect(page.locator('#library-content .catalogue-track')).toHaveCount(2);expect(await page.evaluate(()=>(window as any).played)).toEqual([]);
+ expect(await page.locator('#library-content').evaluate(element=>element.querySelector('.catalogue-track')!.getBoundingClientRect().top-element.querySelector('#library-play-all')!.getBoundingClientRect().bottom)).toBeGreaterThanOrEqual(12);
  await page.locator('#library-play-all').click();await expect(page.locator('#queue-list li')).toHaveText(['Liked 0 · Fixture','Liked 1 · Fixture']);
  expect(await page.evaluate(()=>(window as any).libraryCalls.map((c:any)=>c.kind))).toEqual(['playlist','likes','likes']);
  const libraryRow=page.locator('#library-content .catalogue-track').first();await expect(libraryRow).toHaveClass(/track-playing/);await expect(libraryRow.locator('.icon-pause')).toBeVisible();
+ await balanced(libraryRow);
  await page.evaluate(()=>(window as any).listPlayer=(window as any).activePlayer);
  await libraryRow.locator('button').click();await expect(page.locator('#status')).toHaveText('Пауза');await expect(libraryRow.locator('.icon-play')).toBeVisible();
  await libraryRow.locator('button').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
  await page.locator('[data-panel=discovery]').click();const chart=page.locator('.discovery-track').first();await expect(chart).toHaveClass(/track-playing/);await chart.locator('button').click();await expect(page.locator('#status')).toHaveText('Пауза');
+ await balanced(chart,'.chart-position');
  await page.locator('#play').click();await expect(chart.locator('.icon-pause')).toBeVisible();
  await page.locator('[data-panel=search]').click();await page.locator('#catalogue-query').fill('Liked');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
  const search=page.locator('#catalogue-results .catalogue-track').first();await expect(search).toHaveClass(/track-playing/);await search.locator('button').click();await expect(page.locator('#status')).toHaveText('Пауза');
+ await balanced(search);
  await page.locator('[data-panel=history]').click();const history=page.locator('#history-list li').first();await expect(history).toHaveClass(/track-current/);await history.getByRole('button',{name:'Воспроизвести',exact:true}).click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
  await page.locator('[data-panel=queue]').click();const current=page.locator('#queue-list li[aria-current=true]');await expect(current.locator('.icon-pause')).toBeVisible();await current.locator('.queue-play').click();await expect(page.locator('#status')).toHaveText('Пауза');
  expect(await page.evaluate(()=>(window as any).activePlayer===(window as any).listPlayer)).toBe(true);

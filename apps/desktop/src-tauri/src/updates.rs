@@ -157,14 +157,14 @@ pub async fn updates_command(window: WebviewWindow, action: Action) -> Result<St
                 session.status.total = None;
             }
             Action::Install => {
+                if session.update.is_none() || session.bytes.is_none() {
+                    return Err("Download the update first".into());
+                }
                 if crate::media::playback_busy(&app) {
                     session.status.phase = Phase::Ready;
                     session.status.error = Some("playback_active");
                     session.status.revision += 1;
                     return Ok(session.status.clone());
-                }
-                if session.update.is_none() || session.bytes.is_none() {
-                    return Err("Download the update first".into());
                 }
                 session.status.phase = Phase::Installing;
                 session.status.revision += 1;
@@ -229,13 +229,6 @@ pub async fn updates_command(window: WebviewWindow, action: Action) -> Result<St
             }
         }
         Action::Install => {
-            let bytes = state
-                .0
-                .lock()
-                .map_err(|_| "Updater unavailable")?
-                .bytes
-                .take()
-                .ok_or("No downloaded update")?;
             let update = update.ok_or("No update selected")?;
             let handle = app.clone();
             let result = tauri::async_runtime::spawn_blocking(move || {
@@ -243,14 +236,27 @@ pub async fn updates_command(window: WebviewWindow, action: Action) -> Result<St
                 if crate::media::playback_busy(&handle) {
                     return Err("playback_active");
                 }
+                let bytes = handle
+                    .state::<Updates>()
+                    .0
+                    .lock()
+                    .map_err(|_| "install_failed")?
+                    .bytes
+                    .take()
+                    .ok_or("install_failed")?;
                 update.install(bytes).map_err(|_| "install_failed")
             })
             .await
-            .map_err(|_| "Install worker failed")?;
+            .unwrap_or(Err("install_failed"));
             match result {
                 Ok(()) => {
                     crate::desktop::prepare_exit(&app);
                     app.restart();
+                }
+                Err("playback_active") => {
+                    let mut session = state.0.lock().map_err(|_| "Updater unavailable")?;
+                    session.status.phase = Phase::Ready;
+                    session.status.error = Some("playback_active");
                 }
                 Err(code) => {
                     let mut session = state.0.lock().map_err(|_| "Updater unavailable")?;
@@ -278,6 +284,10 @@ mod tests {
             serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         assert_eq!(config["plugins"]["updater"]["pubkey"], PUBLIC_KEY.trim());
         assert_eq!(config["plugins"]["updater"]["requireSignedVersion"], true);
+        assert_eq!(
+            config["plugins"]["updater"]["windows"]["installMode"],
+            "quiet"
+        );
         assert_eq!(
             config["plugins"]["updater"]["endpoints"],
             serde_json::json!([ENDPOINT])
