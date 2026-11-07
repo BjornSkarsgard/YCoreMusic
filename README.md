@@ -3,7 +3,7 @@
 **YCore** · Юкор Мьюзик  
 **Your Music. Your Core, Your World.**
 
-Актуальный выпуск: [YCore Music 0.0.2 — Windows x64, Linux DEB и AppImage](https://github.com/BjornSkarsgard/YCoreMusic/releases/tag/v0.0.2). [Исправления и проверки](docs/releases/v0.0.2.md).
+Актуальный выпуск — [YCore Music 0.0.3 для Windows x64 и Linux x86_64](https://github.com/BjornSkarsgard/YCoreMusic/releases/tag/v0.0.3). [Изменения и проверки](docs/releases/v0.0.3.md).
 
 Прежнее имя проекта — Encore. Исполняемый файл Windows — `YCoreMusic.exe`, репозиторий — [BjornSkarsgard/YCoreMusic](https://github.com/BjornSkarsgard/YCoreMusic).
 
