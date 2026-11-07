@@ -124,3 +124,7 @@ dialog{border-color:var(--color-border-strong);background:var(--color-panel);box
 .dialog-actions{flex-wrap:wrap}
 #discovery-play-all,#library-play-all,#catalogue-play-all{margin-bottom:var(--space-content)}
 #library-content>.library-more{margin-top:var(--space-content)}
+
+#remote-settings{display:flex;flex-direction:column;gap:var(--space-content);margin:var(--space-section) 0}
+.remote-actions{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-actions);margin-block:6px}
+#remote-qr svg{display:block;max-width:100%;height:auto;margin-bottom:8px}

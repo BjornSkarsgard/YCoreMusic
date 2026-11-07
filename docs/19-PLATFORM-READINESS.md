@@ -1,3 +1,13 @@
+# macOS preview — 2026-11-07
+
+Пакетные CI-прогоны на `8ddc89e` прошли для [Intel](https://github.com/BjornSkarsgard/YCoreMusic/actions/runs/42381308979)
+и [Apple Silicon](https://github.com/BjornSkarsgard/YCoreMusic/actions/runs/42381311116).
+В обоих DMG отдельно проверены CPU-архитектуры исполняемого Mach-O.
+Локальные артефакты владельца лежат в `Downloads/YCoreMusic-macOS-preview-0.0.3`.
+Это базовая версия 0.0.3 без экспериментального пульта. Нативная приёмка
+на Mac, Developer ID и нотариализация остаются открытыми. Оконные зеркала
+и захват аудио процесса для визуализаторов требуют отдельных macOS-адаптеров.
+
 # Актуализация Linux — 2026-11-06
 
 Новый X11-срез реализует single host, Cairo mirrors, PulseAudio/PipeWire-Pulse FFT и XRandR/EDID. Настоящая проверка двух мониторов с обычным GPU PASS. Подробная матрица и оставшиеся проверки: [21-LINUX-READINESS.md](21-LINUX-READINESS.md). Таблица ниже описывает предыдущее состояние; отсутствие Linux adapters в ней уже историческое. Wayland и macOS этим срезом не подтверждены.

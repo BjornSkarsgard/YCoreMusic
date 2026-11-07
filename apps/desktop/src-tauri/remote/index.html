@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+  <meta name="theme-color" content="#0b0b14">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icon-192.png">
+  <link rel="stylesheet" href="./remote.css">
+  <script src="./remote.js" defer></script>
+  <title>YCore Music · Пульт</title>
+</head>
+<body>
+  <p id="connection" role="status">Подключаемся к компьютеру…</p>
+  <section id="pair" hidden aria-labelledby="pair-title">
+    <h1 id="pair-title">Подключить телефон</h1>
+    <p id="pair-hint"></p>
+    <div class="reconnect-actions">
+      <button id="pair-retry" type="button">Переподключиться</button>
+      <button id="pair-scan" type="button">Сканировать QR-код</button>
+    </div>
+  </section>
+  <main id="player" hidden>
+    <header class="top">
+      <button id="menu-toggle" class="icon" data-icon="menu" aria-label="Меню" aria-controls="menu" aria-expanded="false"></button>
+      <form id="search-form" role="search">
+        <span class="search-icon" data-icon="search"></span>
+        <input id="query" type="search" aria-label="Поиск в Яндекс Музыке" placeholder="Поиск в Яндекс Музыке" maxlength="100" autocomplete="off" enterkeyhint="search">
+      </form>
+      <button id="close-panel" class="icon" data-icon="close" aria-label="Закрыть панель" hidden></button>
+    </header>
+    <div class="stage">
+      <section id="queue-panel" class="scroll" aria-labelledby="queue-title">
+        <div class="section-head">
+          <h1 id="queue-title">Очередь</h1>
+          <span id="source"></span>
+        </div>
+        <p id="empty-queue">Включите «Мою волну» или найдите музыку через поиск.</p>
+        <ol id="queue" class="rows"></ol>
+        <button id="more-queue" type="button" data-command="more" hidden>Ещё рекомендации</button>
+      </section>
+      <section id="browse" class="scroll overlay" hidden aria-labelledby="browse-title">
+        <h1 id="browse-title">Поиск</h1>
+        <p id="results-status" role="status"></p>
+        <div id="results"></div>
+      </section>
+      <aside id="menu" class="scroll overlay" hidden aria-labelledby="menu-title">
+        <h1 id="menu-title">YCore Music</h1>
+        <label class="station">Жанр Моей волны <select id="station"></select></label>
+        <button id="wave" class="primary" type="button">Включить Мою волну</button>
+        <p id="wave-status" role="status"></p>
+        <nav aria-label="Музыка">
+          <button id="chart" type="button">Чарт</button>
+          <button id="library" type="button">Моя музыка</button>
+          <button id="history" type="button">История</button>
+          <button id="clips" type="button" hidden>Варианты клипа</button>
+          <button id="show-install" type="button">Установить пульт</button>
+          <button id="scan" type="button">Подключить другой ПК</button>
+        </nav>
+      </aside>
+    </div>
+    <footer class="deck" aria-label="Плеер">
+      <div id="player-notice" hidden></div>
+      <div id="reconnect-actions" class="reconnect-actions" hidden>
+        <button id="retry-connection" type="button">Переподключиться</button>
+        <button id="reconnect-scan" type="button">Сканировать QR-код</button>
+      </div>
+      <button id="undo-dislike" type="button" hidden>Отменить дизлайк</button>
+      <div class="now">
+        <div class="track-info"><strong id="title"></strong><small id="artist"></small></div>
+        <div class="reactions">
+          <button id="like" class="icon" data-icon="heart" aria-label="Лайк трека" aria-pressed="false"></button>
+          <button id="dislike" class="icon" data-icon="down" aria-label="Дизлайк трека" aria-pressed="false"></button>
+          <button id="clip-like" class="icon" data-icon="star" aria-label="Клип в избранное" aria-pressed="false"></button>
+        </div>
+      </div>
+      <div class="timeline">
+        <output id="elapsed">0:00</output>
+        <input id="seek" type="range" min="0" max="1" step="1" value="0" aria-label="Позиция трека">
+        <output id="duration">0:00</output>
+      </div>
+      <div class="transport">
+        <button id="repeat" class="icon" data-icon="repeat" data-command="repeat" aria-label="Повтор выключен" aria-pressed="false"></button>
+        <button class="icon" data-icon="previous" data-command="previous" aria-label="Предыдущий трек"></button>
+        <button id="toggle" class="icon primary" data-icon="play" aria-label="Воспроизвести"></button>
+        <button class="icon" data-icon="next" data-command="next" aria-label="Следующий трек"></button>
+        <button id="mute" class="icon" data-icon="sound" data-command="mute" aria-label="Выключить звук" aria-pressed="false"></button>
+      </div>
+      <input id="volume" type="range" min="0" max="100" step="1" value="50" aria-label="Громкость">
+      <p id="command-status" role="status" hidden></p>
+    </footer>
+  </main>
+  <dialog id="scanner" aria-labelledby="scanner-title">
+    <h2 id="scanner-title">Подключить компьютер</h2>
+    <p>Откройте «Настройки → Пульт» на ПК и наведите камеру на QR-код.</p>
+    <video id="scan-video" playsinline muted></video>
+    <p id="scan-status" role="status"></p>
+    <label class="scan-file">Выбрать фото QR-кода
+      <input id="scan-file" type="file" accept="image/*">
+    </label>
+    <div class="dialog-actions"><button id="scan-close" type="button">Закрыть</button></div>
+  </dialog>
+  <script src="./scanner.js" defer></script>
+  <dialog id="install" aria-labelledby="install-title">
+    <h2 id="install-title">Установить пульт?</h2>
+    <p id="install-help">Добавьте YCore Music на главный экран, чтобы открывать пульт одним нажатием.</p>
+    <div class="dialog-actions">
+      <button id="install-later" type="button">Позже</button>
+      <button id="install-now" class="primary" type="button" hidden>Установить</button>
+    </div>
+  </dialog>
+</body>
+</html>

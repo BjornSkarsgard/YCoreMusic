@@ -67,6 +67,14 @@ jobs:
       - name: macOS packages
         if: runner.os == 'macOS'
         run: npm run package:macos
+      - name: macOS updater archive
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          architecture=$(uname -m)
+          if [ "$architecture" = arm64 ]; then architecture=aarch64; fi
+          tar -czf "src-tauri/target/release/bundle/macos/YCoreMusic_${version}_${architecture}.app.tar.gz" -C src-tauri/target/release/bundle/macos "YCore Music.app"
       - name: Save installation artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -79,3 +87,4 @@ jobs:
             apps/desktop/src-tauri/target/release/bundle/appimage/*.AppImage
             apps/desktop/src-tauri/target/release/bundle/macos/*.app
             apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            apps/desktop/src-tauri/target/release/bundle/macos/*.app.tar.gz

@@ -11,7 +11,7 @@ pub enum Kind {
     Playlist,
     Likes,
 }
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct Entity {
     pub kind: Kind,
     pub id: String,

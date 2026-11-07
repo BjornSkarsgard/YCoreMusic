@@ -35,6 +35,12 @@ mod monitors;
 mod platform;
 mod player_host;
 mod power;
+#[cfg(feature = "remote-probe")]
+mod remote;
+#[cfg(feature = "remote-probe")]
+mod remote_auth;
+#[cfg(feature = "remote-probe")]
+mod remote_relay;
 mod scene_layout;
 mod scenes;
 mod sleep_timer;
@@ -180,6 +186,8 @@ fn main() {
         .manage(media::MediaState::default())
         .on_window_event(desktop::closing)
         .setup(move |app| {
+            #[cfg(feature = "remote-probe")]
+            app.manage(remote::Remote::default());
             let test_directory = if cfg!(debug_assertions) {
                 std::env::var_os("ENCORE_TEST_DATA_DIR")
             } else {
@@ -231,6 +239,10 @@ fn main() {
         .manage(audio_probe::AudioProbeState::default())
         .manage(audio_analysis::Analysis::default())
         .invoke_handler(tauri::generate_handler![
+            #[cfg(feature = "remote-probe")]
+            remote::remote_command,
+            #[cfg(feature = "remote-probe")]
+            remote::remote_publish,
             updates::updates_command,
             embed_identity::embed_identity_status,
             updates::updates_verify_probe,

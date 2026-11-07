@@ -12,6 +12,7 @@ import {mountSleepTimer} from './sleep-timer';
 import {allowPlaybackChange,mountPlaybackGuard,playbackLocked} from './playback-guard';
 import {mountUpdates,updatesInstalling} from './updates';
 import {mountSupport} from './support-ui';
+import {mountRemote} from './remote-ui';
 import {bindPlaybackRow,setRowPlayback} from './playback-rows';
 import {mountScenes} from './scene-ui';
 import {hostAvailable,createPlayer} from './player-host';
@@ -504,6 +505,13 @@ function renderCandidates(items:Candidate[],epoch:number,ordinal:number){
     button.onclick=()=>{if(epoch!==queue.generation||queue.current?.ordinal!==ordinal)return;element<HTMLInputElement>('url').value=candidate.id;element<HTMLFormElement>('load').requestSubmit();};return button;
   }));
 }
+function selectAlternative(id:string,epoch:number,ordinal:number|undefined){
+  if(!allowPlaybackChange()||epoch!==queue.generation||ordinal!==queue.current?.ordinal)return;
+  const track=queue.current;clearRetry();
+  const entry=choices.get(epoch+':'+ordinal);if(entry)entry.index=entry.items.findIndex(item=>item.id===id);
+  if(isTauri()&&track&&/^\d+$/.test(track.id))void storage({type:'save_video',trackId:track.id,videoId:id}).then(()=>{refreshVideoFavorites();void favoritesChanged(track.id);}).catch(()=>{element('storage-status').textContent='Этот выбор не удалось сохранить.';});
+  void loadVideo(id,playIntent,true);
+}
 function renderAlternatives(items?:Candidate[],epoch=queue.generation,ordinal=queue.current?.ordinal){
   const section=element('video-alternatives'),container=element('alternative-list');
   const candidates=items??choices.get(epoch+':'+ordinal)?.items??[];
@@ -514,14 +522,7 @@ function renderAlternatives(items?:Candidate[],epoch=queue.generation,ordinal=qu
     const body=document.createElement('span'),title=document.createElement('strong'),meta=document.createElement('small');title.textContent=candidate.title;
     const duration=candidate.durationSeconds==null?'длительность неизвестна':clock(candidate.durationSeconds);
     meta.textContent=(candidate.views==null?'просмотры неизвестны':candidate.views.toLocaleString('ru-RU')+' просмотров')+' · '+duration+(candidate.needsReview?' · проверить исполнителя':'');body.append(title,meta);button.append(image,body);
-    button.onclick=()=>{
-      if(!allowPlaybackChange())return;
-      if(epoch!==queue.generation||ordinal!==queue.current?.ordinal)return;
-      const track=queue.current;clearRetry();
-      const entry=choices.get(epoch+':'+ordinal);if(entry)entry.index=entry.items.findIndex(item=>item.id===candidate.id);
-      if(isTauri()&&track&&/^\d+$/.test(track.id))void storage({type:'save_video',trackId:track.id,videoId:candidate.id}).then(()=>{refreshVideoFavorites();void favoritesChanged(track.id);}).catch(()=>{element('storage-status').textContent='Этот выбор не удалось сохранить.';});
-      void loadVideo(candidate.id,playIntent,true);
-    };
+    button.onclick=()=>selectAlternative(candidate.id,epoch,ordinal);
     return button;
   }));
 }
@@ -753,12 +754,13 @@ function enqueueHistory(entry:HistoryEntry,next:boolean){
   if(detached&&!activeVideo)void loadVideo(entry.videoId,false);
   else prepareAhead();
 }
-mountHistory(entry=>{
+function playHistoryEntry(entry:Pick<HistoryEntry,'trackId'|'title'|'artist'|'videoId'>){
   if(!allowPlaybackChange())return;
   stopPlayer();queue.reset([{id:entry.trackId,title:entry.title,artist:entry.artist,playbackSource:'history'}]);finiteSource=true;historySource=false;activeCollection=undefined;++sourceRevision;choices.clear();bypassSaved.clear();renderQueue();element<HTMLButtonElement>('source-more').disabled=true;
   element('source-name').textContent='История';element('source-status').textContent='История · для возврата выберите новую сессию Моей волны.';
   powerPaused=false;void loadVideo(entry.videoId,true);
-},enqueueHistory,()=>historyWriter);
+}
+mountHistory(playHistoryEntry,enqueueHistory,()=>historyWriter);
 
 const selectCatalogue:Parameters<typeof mountCatalogue>[0]=selection=>{
   if(!allowPlaybackChange())return;
@@ -889,6 +891,83 @@ function hideYouTubePanel(){if(!youtubeControls)return;youtubeControls=false;ele
 mountPlaybackGuard(hideYouTubePanel);
 mountShellNavigation();
 mountSupport(()=>playIntent||historyStarting||updatesInstalling());
+void mountRemote(()=>{
+ const entries=queue.snapshot;
+ const index=entries.findIndex(entry=>entry.ordinal===queue.current?.ordinal);
+ const start=Math.max(0,index-15);
+ const station=element<HTMLSelectElement>('station-select');
+ const undo=document.querySelector<HTMLButtonElement>('#feedback-undo:not(:disabled)');
+ const reaction=(id:string)=>{
+  const button=element<HTMLButtonElement>(id);
+  return button.disabled?null:button.getAttribute('aria-pressed')==='true';
+ };
+ return {
+  title:mediaTitle,
+  artist:mediaArtist,
+  playing:playIntent,
+  position:playerReady?player?.getCurrentTime()??0:0,
+  duration:playerReady?player?.getDuration()??0:0,
+  volume:volume.level,
+  queue_generation:queue.generation,
+  queue:entries.slice(start,start+120).map(({ordinal,title,artist})=>({ordinal,title,artist,current:ordinal===queue.current?.ordinal})),
+  repeat:repeatMode,
+  clips:(choices.get(queue.generation+':'+queue.current?.ordinal)?.items??[]).slice(0,6).map(({id,title,views,durationSeconds,needsReview})=>({
+   id,title,views,durationSeconds,needsReview,current:queue.current?.videoId===id,
+  })),
+  music:{
+   stations:Array.from(station.options,option=>({id:option.value,title:option.text})).slice(0,256),
+   station:station.value,
+   source:element('source-name').textContent??'',
+   wave_status:element('source-status').textContent??'',
+   wave_busy:element<HTMLButtonElement>('source-start').disabled,
+   more:!element<HTMLButtonElement>('source-more').disabled,
+   muted:element('mute').getAttribute('aria-pressed')==='true',
+   track_like:reaction('like'),track_dislike:reaction('dislike'),clip_like:reaction('save-current-video'),
+   video_id:activeVideo?.id===queue.current?.id?activeVideo?.videoId??null:null,
+   undo_key:undo?.dataset.actionKey??null,
+  },
+ };
+},action=>{
+ if(updatesInstalling())return;
+ if(action.type==='volume'){volume.set(action.level);updateVolume();}
+ else if(action.type==='mute')element('mute').click();
+ else if(action.type==='repeat'){if(allowPlaybackChange())element('repeat').click();}
+ else if(action.type==='queue')void jumpQueue(action.ordinal,action.generation);
+ else if(action.type==='wave'){
+  const station=element<HTMLSelectElement>('station-select');
+  const start=element<HTMLButtonElement>('source-start');
+  if(!start.disabled&&Array.from(station.options).some(option=>option.value===action.station)&&allowPlaybackChange()){
+   station.value=action.station;
+   start.click();
+  }
+ }
+ else if(action.type==='more')element('source-more').click();
+ else if(action.type==='undo_dislike'){
+  const undo=document.querySelector<HTMLButtonElement>('#feedback-undo:not(:disabled)');
+  if(undo?.dataset.actionKey===action.key)undo.click();
+ }
+ else if(action.type==='reaction'){
+  if(queue.generation!==action.generation||queue.current?.ordinal!==action.ordinal)return;
+  if(action.target==='clip'&&activeVideo?.videoId!==action.video_id)return;
+  const buttons={like:'like',dislike:'dislike',clip:'save-current-video'} as const;
+  const button=element<HTMLButtonElement>(buttons[action.target]);
+  const pressed=button.getAttribute('aria-pressed')==='true';
+  if(!button.disabled&&pressed!==action.active&&(action.target!=='dislike'||action.active))button.click();
+ }
+ else if(action.type==='clip'){
+  const candidates=choices.get(action.generation+':'+action.ordinal)?.items.slice(0,6);
+  if(candidates?.some(candidate=>candidate.id===action.id))selectAlternative(action.id,action.generation,action.ordinal);
+ }
+ else if(action.type==='catalogue')selectCatalogue({tracks:[{id:action.id,title:action.title,artist:action.artist}],title:action.title});
+ else if(action.type==='track')selectCatalogue({tracks:[action.track],title:action.track.title});
+ else if(action.type==='list')selectCatalogue({tracks:action.tracks,title:action.title,collection:action.entity?{entity:action.entity,page:action.page,hasMore:action.has_more}:undefined});
+ else if(action.type==='history')playHistoryEntry({trackId:action.id,title:action.title,artist:action.artist,videoId:action.video_id});
+ else if(action.type==='seek'){
+  if(playerReady&&player&&allowPlaybackChange()){
+   previousGesture.reset();seekPlayer(Math.min(player.getDuration(),action.seconds));
+  }
+ }else systemControl(action.type);
+});
 mountVisualControls();
 const windowLayout=mountWindowLayout();
 const mainSpectrum=mountMainSpectrum(document.querySelector<HTMLElement>('.screen')!,()=>windowLayout.layout(),()=>queue.current?.coverUrl);

@@ -1,3 +1,298 @@
+## 2026-11-07 — управление при ошибке соединения (REQ-044, REQ-062)
+
+На первоначальном экране ошибки и при потере связи во время работы
+показываются «Переподключиться» и «Сканировать QR-код». При недоступном
+ПК сообщение предлагает открыть YCore и включить пульт. В новой локальной
+desktop-сборке включённое состояние пульта сохраняется, после запуска
+восстанавливается с повтором при отсутствии интернета. Явное выключение
+отключает восстановление. Нативный тест прошёл восстановление и повторное
+подключение телефона без QR, показ кнопок на экране ошибки и смену ПК.
+Веб-обновление опубликовано на HTTPS-сервисе.
+
+## 2026-11-07 — переподключение из установленного пульта (REQ-044, REQ-062)
+
+Кнопка сканирования QR доступна из меню и при истёкшем доступе или потере
+связи. Камера запускается по нажатию и выключается после сканирования,
+закрытия диалога и ухода в фон. Доступен выбор фото QR. При смене ПК
+пульт сохраняет новую привязку и продолжает работу в своём окне.
+Постоянный адрес запуска нового PWA — `/remote/app/`.
+Обновление опубликовано. Локальный и публичный HTTPS-прогоны подтвердили
+смену идентификатора ПК внутри прежнего окна, сохранение привязки после
+перезагрузки и запуск по постоянному адресу. Декодирование настоящего QR
+из изображения и имитированной камеры прошло, видеотрек завершён после
+сканирования. Физическая камера телефона остаётся отдельной проверкой.
+
+## 2026-11-07 — карточки других видео в пульте (REQ-062)
+
+Пульт показывает варианты клипа с превью слева, названием, просмотрами,
+длительностью и выделением текущего варианта. ПК передаёт метаданные из
+существующего подбора. Когда данных нет, карточка показывает это явно.
+Разметка опубликована на HTTPS-сервисе. Нативный тест проверяет карточки
+с подставленными метаданными и загрузку тестового превью в Chromium.
+
+## 2026-11-07 — музыкальные функции мобильного пульта (REQ-044, REQ-062)
+
+Очередь прокручивается между поиском и плеером. Меню открывает жанры
+«Моей волны», чарт, «Мою музыку», историю и варианты клипа. Полноэкранная
+выдача поиска показывает треки, исполнителей, альбомы и плейлисты.
+Реакции на трек и избранное клипа разделены. При первом открытии
+предлагается установить PWA. Страница опубликована на действующем
+HTTPS-сервисе. Нативный Windows-прогон через публичный адрес прошёл
+поиск, запуск списка исполнителя, чарт, чтение личной медиатеки,
+сопряжение, переподключение и отзыв доступа. Локальный HTTPS-прогон
+подтвердил запуск жанровой волны, лайк, дизлайк и отмену в изолированном
+профиле. Доставка реакций в Яндекс отключена в тестовом профиле.
+Физическая установка PWA остаётся отдельной проверкой.
+
+## 2026-11-07 — пульт по QR и 10 дней без использования (REQ-044, REQ-062)
+
+Служба `ycore-remote.service` работает на VPS. Пульт открывается на HTTPS
+с `www` по пути `/remote/p/<id>/`. Один клик на ПК выдаёт одноразовый QR.
+При открытии ссылки пульт подключается сразу. Настройка телефона и сети
+не требуется. Доступ истекает через 10 дней после последнего открытия или
+успешной команды, поиска или просмотра истории.
+
+PASS на локальном TLS и публичном HTTPS с нативным Windows-приложением и
+двумя браузерными профилями. Проверены отсутствие формы, QR replay, cookie,
+команды и состояние, переподключение, выборочный отзыв и истечение доступа
+с сохранённым временем последнего использования. Физические телефоны
+остаются отдельной проверкой. Сборка в `Downloads/YCoreMusic-QR-preview`.
+[Инструкция и развёртывание](08-MOBILE-REMOTE.md).
+
+## 2026-11-07 — macOS preview и экспериментальный пульт (REQ-049, REQ-062)
+
+DMG Intel и Apple Silicon собраны в CI и проверены по Mach-O архитектуре.
+Проверки на физическом Mac, подпись и адаптеры зеркал и аудио остаются открытыми.
+Прежний прототип пульта с явным локальным HTTPS, QR и отзывом доступа включался флагом
+`remote-probe`. Два мобильных браузерных профиля прошли синхронизацию и
+переподключение к Windows. Реальные Android и iOS, упрощение TLS, реакции,
+выбор источника и управление экранами остаются в работе.
+Подробности в [08-MOBILE-REMOTE.md](08-MOBILE-REMOTE.md) и
+[19-PLATFORM-READINESS.md](19-PLATFORM-READINESS.md).
+
+## 2026-11-07 — подтверждение Search Console (REQ-058)
+
+На VPS опубликованы предоставленный HTML-файл и метатег в head главной.
+Материалы проверки лежат в /var/lib/ycore-web/search-verification вне Git
+и каталога релиза. Публично проверены HTTP200, точное совпадение файла,
+наличие метатега в HTML, доступность главной и счётчика. Локальная модерация PASS.
+Подтверждение в аккаунте Google остаётся за владельцем ресурса.
+
+## 2026-11-07 — подготовка сайта к индексации (REQ-058)
+
+На ycore-music.ru главная доступна роботу как готовый HTML. Опубликованы
+canonical, robots.txt и sitemap.xml. Сборка, tsc, браузерное переключение
+платформ, модерация и публичные HTTPS-проверки прошли. Яндекс IndexNow
+вернул 202, проверка ключа ожидается. Появление в выдаче пока не подтверждено.
+
+## 2026-11-07 — счётчик скачиваний на ycore-music.ru
+
+В VPS-версии рядом с кнопками загрузки опубликован счётчик переходов к файлам
+(REQ-058). Агрегат хранится в SQLite, стартует с нуля и сохраняется при
+перезапуске. Сборка, локальные проверки счётчика и модерации, публичные
+JS/API и перенаправления загрузок прошли. Подробности в docs/23-WEBSITE.md.
+
+## 2026-11-07: запуск обновления и напоминание о поддержке
+
+REQ-066: фоновая проверка при запуске, предложение новой версии с отсрочкой
+на сутки и тихая установка Windows с перезапуском. REQ-060: недельное
+напоминание об отзыве или поддержке с возможностью отключения. UI 155 PASS,
+1 опциональный тест пропущен. TS 16 PASS, Rust 78 PASS, Clippy и сборка PASS.
+Изолированное обновление NSIS и нативная проверка подписи прошли отдельно.
+Подробности и границы проверки в docs/20-APPLICATION-UPDATES.md и
+docs/releases/UNRELEASED.md. Публикация отложена по просьбе пользователя.
+
+## 2026-11-07: v0.0.2 опубликован
+
+По явному запросу пользователя обновлён GitHub Release:
+https://github.com/BjornSkarsgard/YCoreMusic/releases/tag/v0.0.2
+Windows release NSIS, Linux DEB и AppImage, три .sig, latest.json и SHA256SUMS.
+Runtime source9e54591, tag1c06a48 (только test PLAYING wait после build).
+Версия0.0.2 согласована package/package-lock/Cargo/Cargo.lock/tauri.conf.
+Source/fixes/version запушены в main; сайт и его docs23 остаются чужим WIP,
+не добавляли в release commit и не откатывали.
+
+Linux package run42301466188 SUCCESS. Пакеты лежат builds/YCoreMusic/v0.0.2.
+Приватный ключ не покидал C:/Users/Skar/.tauri; подписи CLI app-version0.0.2,
+все3 проверены minisign_verify закреплённым публичным ключом. Все8 remote asset
+hashes совпали с local. Anonymous latest/download/latest.json вернул точный
+manifest0.0.2; HEAD всех3 installation URLs200. Настоящая установка update не
+выполнялась. Draft перед публикацией проверен, предыдущийv0.0.1 не меняли.
+
+Основная CI42301394294: UbuntuPASS; macARM150PASS/1testfailed из-за тестового
+END до PLAYING (не runtime failure). Исправлено1c06a48: ждать PLAYING у B/C.
+Локальный targetedPASS. Новый Desktop run42302905345 queued на момент записи.
+Не объявлять все4CIзелёными или macOS нативно принятым.
+
+Пользователь спросил про публичность репозитория. Read-only проверка:
+secret scanning и push protection enabled, open alerts0. Явные токены/приватные
+ключи первичным поискoм в history/index не найдены; это НЕ полный security audit.
+Сайт sites/ycore-music/app/api/releases/release-service.ts берёт public GitHub
+latest без auth; приватизация этого repo сломает текущие anonymous downloads.
+Ничего в настройках видимости/security не меняли.
+
+## Публичный сайт: HTTPS работает — 2026-11-07
+
+https://ycore-music.ru доступен публично. VPS watcher автоматически выпустил
+Let's Encrypt, включил HTTPS и завершился со статусом ready. Повторная проверка
+с компьютера владельца: главная/releases/reviews HTTP200; Windows/DEB/AppImage
+HTTP302 прямо на бинарники актуальной v0.0.2; HTTP и www перенаправляют на HTTPS.
+Публичные /api/inbox и /admin возвращают404. Backend5180 и admin5182 слушают
+только127.0.0.1; панель владельца по SSH через desktop shortcut. Certbot timer enabled.
+Отзывы требуют одобрения владельца и согласия; начальнаястраница6, далее12,
+даты и cursor pagination. Вымышленные отзывы удалены. Daily SQLite backups.
+Подробности и история проверок: docs/23-WEBSITE.md.
+## 2026-11-07: реальная причина Absence/Catch-22 — native null metadata
+
+Пользователь снова получил prep deadline для Absence / Xalv и дал ссылку
+https://www.youtube.com/watch?v=bTB8_-BcuG8. Live Rust search нашёл bohtMtdGPx8,
+views=None,duration285,needs_review=false. Нативный запуск ЧЕРЕЗ ПОИСК Яндекса
+(числовойtrack ID -> savedVideos -> matching -> UI) воспроизвёл падение:
+Uncaught TypeError: Cannot read properties of null (reading toLocaleString).
+Обе renderCandidates/renderAlternatives проверяли только undefined, а Rust
+Option<u64> сериализует отсутствие как null. Исключение происходило ДО loadVideo;
+тайм-ауты предыдущих правок лишь пропускали этот сломанный renderer шаг.
+
+Исправление de48727, branch codex/continuous-playback-20261107:
+Candidate views/durationSeconds теперь явно number|null|undefined; null-safe guards
+в обеих карточках и duration. Нет hardcoded video binding/ослабления matching.
+Rust live Absence probe и native ENCORE_TRACK_MATCH_PROBE добавлены. Последний
+теперь проходит оба user fixtures через настоящий UI и проверяет position>2,
+один player и nativeErrors.length0. До фикса этот же путь FAILED.
+
+Проверки: renderer151 PASS/1 optional skipped; targeted native-null views/duration
+Wave+playlist PASS; TS/build PASS. Реальный нативный UI Absence и What I Need
+(включая storage/matching) PASS, затем mini/topmost/instance PASS. Не подменять
+эту проверку старым ручным вводом найденного video ID: он обходил ошибочный шаг.
+Windows debug NSIS собран и передан в commentary:
+C:/Users/Skar/Downloads/YCoreMusic-null-metadata-fix-2026-11-07/YCoreMusic-Windows-test-setup.exe
+Linux DEB run42298273064 SUCCESS наde48727, скачан и сверён с CI:
+C:/Users/Skar/Downloads/YCoreMusic-null-metadata-fix-2026-11-07/Linux/deb/YCore Music_0.0.1_amd64.deb
+SHA256 f4b8a4fd5a05cc1ad04c709381638feb8a34e0d762a72857241c1f01e5ac8fc3.
+Windows NSIS SHA256 b66844458c3dec4b79382dea8d8aa456087323daa234ef65548f91c9da6145fd.
+Пакеты переданы, установка не выполнялась. Для Linux0.0.1 нужен --reinstall. Релиз и установленный exe не заменяли.
+DonationAlerts пользователя записан в PRODUCT-DECISIONS:
+https://www.donationalerts.com/r/affor_1337
+Только ссылка для будущей кнопки поддержки; платежей не совершали.
+
+## Сайт на собственном VPS — 2026-11-07
+
+Перенос закрытой версии на Ubuntu VPS владельца выполнен. ycore-web.service
+под отдельным user, Node24.22.2, SQLite вне релизов; loopback127.0.0.1:5180.
+Просмотр через SSH tunnel: http://127.0.0.1:5181 . Повторное открытие:
+sites/ycore-music/scripts/open-vps-preview.ps1. Сам сайт работает независимо
+от компьютера, локальный адрес требует открытого туннеля.
+VPS build/tsc, remote API/формы/downloads, SQLite после restart PASS.
+DonationAlerts владельца affor_1337 подключён. Реальный browser href проверен.
+VPN не перенастраивался; UDP47821 и awg0 сохранились. Публичного запуска ещё нет:
+домен не выбран/не куплен, DNS/HTTPS не подключены. Старый GPT Sitesv2 сохранён
+как предыдущий снимок; его D1 не удалялась. Подробности: docs/23-WEBSITE.md.
+## 2026-11-07: устранено зависание «Подбор клипа»
+
+Пользователь сообщил о сохранении остановки после предыдущего progress-fix.
+Воспроизведён отдельный дефект: unbounded ensureAlternatives запросы занимали
+общий searching Set, после ошибки prefetch основной поиск нового трека не мог
+стартовать. Новый regression до правки оставался на «Подбор клипа…», после PASS.
+
+Commit8411502 (codex/continuous-playback-20261107): все metadata alternatives
+ограничены20sec, максимум2 слота из3 для необязательных альтернатив. Есть отдельный
+общий30sec prep deadline текущего ordinal, не зависящий от старта matching job.
+Истечение -> техническая причина -> Next. Explicit Pause/Play, source/load и
+network/power сбрасывают дедлайны. Source/history/page awaits ограничены30sec,
+чтобы не удерживать advancing/sourceWork навсегда. Поздние ответы timed-out
+requests не исполняют продолжение. Resolved current videoId без activeVideo
+снова загружается вместо вечного continue. Repeat/end/source order сохранены.
+
+Проверки текущего snapshot: renderer149 PASS/1 optional skipped; TS unit16 PASS;
+native real Catch-22 dHXRzRxb5b4 Play/advancing position/Pause/seek/hidden/mini/
+instance PASS. Предварительно33 targeted PASS; добавлены tests hung alternatives,
+общий current preparation budget Wave/playlist и page hang/late original response.
+Windows debug NSIS уже собран и скопирован:
+C:/Users/Skar/Downloads/YCoreMusic-matching-fix-2026-11-07/YCoreMusic-Windows-test-setup.exe
+DEB run42296103008 SUCCESS, runtime8411502. Готовый файл:
+C:/Users/Skar/Downloads/YCoreMusic-matching-fix-2026-11-07/Linux/deb/YCore Music_0.0.1_amd64.deb
+SHA256 0f68523b333646a412336119a07ee8418dcd6804c14f51913336e99982795551,
+совпадает с CI. Windows NSIS hash647acde34269b69bd6b4a5b5d0c2217caa0af44a82e33f0aa137e493db3fee34. Публичный релиз не меняли, не устанавливали пакеты.
+Тестовые версии всё ещё0.0.1: для DEB при обновлении нужен apt install --reinstall
+с явным локальным файлом. Не утверждать, что apt обновил идентичный номер сам.
+
+## 2026-11-07: ложный PLAYING и Catch-22
+
+Дополнительный пользовательский дефект: What I Need / Catch-22 NZ, UI говорит
+PLAYING, но клип не идёт и очередь не продолжается. Причина пропуска watchdog:
+первый PLAYING обнулял loadStarted, а media position не проверялся.
+Добавлен PlaybackProgress: монотонный15sec budget без продвижения media time,
+не сбрасывается повторными PLAYING. Load/seek/explicit Pause/Play/offline/power
+сбрасывают наблюдение. Зависший клип -> другой кандидат -> следующий трек всей
+очереди. prepareAhead без активного видео теперь пишет «Подбор клипа…», чтобы
+не оставлять статус PLAYING от предыдущего трека.
+
+Проверки: TS/build/unit16 PASS; continuous17 PASS (включая false PLAYING и heartbeat
+для Wave/playlist); recovery7 PASS. Полный renderer:144 PASS/1 optional skipped,
+1 offline-test прерван HMR navigation во время правки файла; последующий отдельный
+recovery7 PASS. Clippy all-targets/yandex-probe clean. Native metadata probe нашёл
+подтверждённую официальную запись dHXRzRxb5b4,293s. Настоящий Windows YouTube этого
+ID: advancing position, Pause/seek/resume, controls-only/hidden, mini/instance PASS.
+В рамках этого прогона сторонние uploader/alias ограничения matching не меняли.
+Нельзя обещать одинаковую сетевую/региональную доступность у пользователя.
+
+Commit7557320 в codex/continuous-playback-20261107. Linux DEB run42292552306 SUCCESS, скачан:
+C:/Users/Skar/Downloads/YCoreMusic-stall-fix-2026-11-07/Linux/deb/YCore Music_0.0.1_amd64.deb
+SHA256 873c523913d0dc35144c4818b95c045bcc6d7f9257ecd3f39db56ac0fb7670d7,
+совпадает с опубликованным CI hash. Новые тестовые пакеты переданы без установки
+и без замены публичного релиза. Runtime7557320 включает все предыдущие правки.
+Windows debug NSIS пересобран после последней строки статуса и сохранён:
+C:/Users/Skar/Downloads/YCoreMusic-stall-fix-2026-11-07/YCoreMusic-Windows-test-setup.exe
+Основной main по-прежнему dirty, содержит также чужие/параллельные изменения сайта;
+не откатывать их и не копировать их в patch branch. Установку/релиз не выполняли.
+
+## Лендинг YCore Music — 2026-11-07
+
+Реализован и опубликован owner-private сайт для проверки владельцем:
+https://ycore-music.bjornskarsgarddev.chatgpt.site
+Sites v2, source commit 0020c71f9eedc7c906b21c8af384c1b64b870ef0.
+Исходники: sites/ycore-music (отдельный Sites Git repository), docs/23-WEBSITE.md.
+REQ-058–061: адаптивная страница, настоящие скриншоты, анимации, прямая загрузка
+latest Windows/DEB/AppImage без страницы GitHub, macOS soon, D1 формы трёх типов.
+DonationAlerts без URL — кнопка-заглушка. Три отзыва временные, вымышленные по
+просьбе владельца для закрытой проверки; перед public заменить/удалить.
+Многомониторная сцена — подписанная иллюстрация, настоящего фото рабочего места нет.
+TypeScript/build, release mapping test, local D1 и browser form PASS; три реальных
+бинарника GitHub HEAD200. Native Sites deployment succeeded. Hosted: / и /api/releases 200, download Windows/DEB/AppImage 302, macOS 404, feedback201. GitHub API403 устранён fallback latest tag + expanded assets. Desktop WIP сохранён.
+## Непрерывное воспроизведение всех очередей — 2026-11-07
+
+Пользователь уточнил: автопропуск отсутствующих/не загрузившихся клипов нужен
+для любых очередей, включая плейлисты, альбомы, поиск, историю и «Мою волну»,
+в обычном окне и fullscreen. Конечный список сохраняет свой конец/repeat;
+явная Pause и offline не прокручивают очередь и не включают autoplay.
+
+Исправлены main.ts: автоматическая обработка ошибок cached video IDs, гонка
+пропуска пустого результата во время advance, watchdog без activeVideo/Ready,
+AutoplayBlocked, bounded match20sec/2 attempts и retry страниц конечного списка.
+Сетевой запрос matcher.rs больше не удерживает mutex всего кеша, независимые
+prefetch-запросы не блокируют друг друга. Технические пропуски отмечены в очереди;
+дизлайк и ложное прослушивание не создаются. Бесконечность Wave не означает
+обход отсутствующей сети/авторизации или ограничений внешних сервисов.
+
+Регрессии: полный renderer141 PASS/1 optional skipped; после изменения бюджета
+с15 до20sec повторные13 continuous tests PASS. TS unit14 PASS; Rust matcher10 PASS,
+4 live ignored. Windows native real YouTube pause/seek/hidden/mini/instance PASS
+до последнего изменения только cache lock и match budget. Debug NSIS пересобран.
+Реальная установка и длинный unattended прогон этой правки не выполнялись.
+
+Patch branch codex/continuous-playback-20261107, commits e728795/99a9e3e в отдельном
+CI worktree. Основной main остаётся с текущими правками в рабочем дереве.
+DEB build42288714656 SUCCESS на99a9e3e, пакет скачан и хеш сверён с CI:
+C:/Users/Skar/Downloads/YCoreMusic-continuous-playback-2026-11-07/Linux/deb/YCore Music_0.0.1_amd64.deb
+SHA256 654eac217f1f60d05af7f036f1638277e81ce3e4c5ae09c23388c3e8c0637fc2.
+Windows debug NSIS5.22MiB, собран из того же состояния исходников:
+C:/Users/Skar/Downloads/YCoreMusic-continuous-playback-2026-11-07/YCoreMusic-Windows-test-setup.exe
+Clippy all-targets/yandex-probe -D warnings PASS. Установку на ПК пользователя
+не выполняли, работающий установленный экземпляр не закрывали.
+Старый промежуточный42288427884 отменён.
+Релиз v0.0.1 не заменять автоматически; подготовлены тестовые сборки без публикации.
+Переименование старых технических ключей всё ещё отложено пользователем.
+
 ## Актуальное состояние — 2026-11-06, подготовка общего релиза
 
 Пользователь поручил подготовить одинаковый набор функций Windows/Linux,
@@ -808,3 +1103,24 @@ PASS:51app+6probeRust/10ignored,Clippy,11TSunit;renderer77PASS+1opt-in skipped. 
 Реализованы REQ054/055: кнопки в строках, ordinal/generation selection, текущая/предыдущие/следующие позиции, согласованное продолжение после выбранной, защита от поздних matching/Next/порций. Queue-scroll загружает следующую Waveпорцию у нижнего края, не запускает музыку и не смещает current/scroll; coalescing/retry/около500futurebuffer. Ранее существовавший rollingpast50 сохранён, render выполняется после trim. Debounced focus-read реакций обновляет внешний like/unlike без Set.
 
 PASS:12TSunit,82renderer+1opt-in skipped,check/build;последний маленький переносrenderпослеtrim дополнительно4queuePASS и новыйbuildPASS. Native basic/metrics/storage/mini/topmost/maximized/instancePASS. ENCORE_QUEUE_SMOKE native click→выбраннаяпозиция→ручнойNext→назад→1cuediframePASS. Два прогона настоящего stream/END на M7lc1UVf-VE не завершились из-за buffering/recovery, JSerrorsпусты; НЕ считать native END-next проверенным. END-next и поздниеответы проверены renderer, настоящийYT/listening былPASS в предыдущемсрезе. После userexit normaldebugexe успешно обновлён. Native-testбинарник до последнего переносаrender, перед новымnativeсобрать заново. Usercredentials/предпочтения тестами не менялись.
+
+
+
+
+
+2026-11-07: по подтверждению владельца уточнён текст Windows-загрузки:
+«WebView2 установится автоматически при необходимости — для этого нужен интернет».
+Основание: generated release NSIS INSTALLWEBVIEW2MODE=downloadBootstrapper,
+проверка runtime и download Microsoft bootstrapper при отсутствии. Clean Windows
+без runtime этим изменением не тестировался; desktop/installer не менялись.
+VPS build PASS, release webview-copy-20261107 развёрнут, текст в отдаваемом JS
+проверен. Предупреждение об отсутствии Authenticode сохранено.
+
+2026-11-07: по прямому поручению владельца исходники сайта загружены в приватный
+https://github.com/BjornSkarsgard/YCoreMusic-site , ветка main. Видимость PRIVATE
+сохранена. Включены frontend, VPS server/moderation, миграции, проверки и scripts;
+добавлен README с командами запуска. Проверены tracked154файла: базы/секретные
+ключи/токены не найдены; .gitignore усилен для SQLite и приватных сертификатов.
+Сборки/node_modules/.sites-runtime/обращения/серверные бэкапы не загружались.
+GitHub HEAD и локальный HEAD совпадают; хостинг и доступность домена этим push
+не менялись. Remote origin отдельного website checkout теперь GitHub-сайт.

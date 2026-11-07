@@ -11,6 +11,9 @@ const nativeApp=process.env.ENCORE_NATIVE_APP??resolve(root,'apps/desktop/src-ta
 const nativeDriver=process.env.ENCORE_NATIVE_DRIVER??(process.platform==='win32'?(process.env.ENCORE_EDGE_DRIVER??resolve(root,'.tools/edgedriver/msedgedriver.exe')):'/usr/bin/WebKitWebDriver');
 assert(existsSync(nativeApp),'Build the native-test profile first; see README native smoke instructions.');
 const nativeEnvironment={...process.env,ENCORE_TEST_DATA_DIR:process.env.ENCORE_NATIVE_TEST_DATA_DIR??resolve(root,'.tools/native-test-data')};
+const remoteSmoke=process.env.ENCORE_REMOTE_SMOKE==='1'?await import('./native-remote-smoke.mjs'):null;
+const remoteFixture=remoteSmoke?await remoteSmoke.launchRelay(root,nativeEnvironment.ENCORE_TEST_DATA_DIR):null;
+if(remoteFixture)nativeEnvironment.ENCORE_REMOTE_TEST_ORIGIN=remoteFixture.origin;
 const driver=spawn(process.env.ENCORE_TAURI_DRIVER ?? 'tauri-driver',[
   '--port',String(driverPort),'--native-port',String(driverPort+1),'--native-driver',nativeDriver
 ],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
@@ -61,6 +64,10 @@ try {
   assert.equal(storageStatus.testMode,true,'Refuse storage tests against the personal database');
   assert.deepEqual(await nativeInvoke('wave_sync'),{disabled:true,pending:0,sent:0},'Isolated tests must never write recommendation events');
   isolated=true;
+  if(remoteSmoke){
+    await execute('if(document.getElementById("account-welcome")?.open)document.getElementById("account-welcome-later").click();');
+    await remoteSmoke.verifyRemote({root,execute,nativeInvoke,until,sleep,fixture:remoteFixture});
+  }
   const expectedInstallation=process.env.ENCORE_EXPECT_INSTALLATION_SENTINEL;
   if(expectedInstallation){
     assert.equal(await execute('return localStorage.getItem("ycore.installation-probe")'),expectedInstallation,'Update must preserve UI preferences');
@@ -1151,6 +1158,7 @@ try {
   }
   throw error;
 } finally {
+  remoteFixture?.stop();
   if(isolated&&session&&networkEmulated)await network(false).catch(()=>{});
   if(isolated && session && volumeCaptured) await execute('if(arguments[0]===null)localStorage.removeItem("encore.volume.v1");else localStorage.setItem("encore.volume.v1",arguments[0]);',[originalVolume]).catch(()=>{});
   if(isolated && session) await nativeInvoke('desktop_action',{action:'quit'}).catch(()=>{});

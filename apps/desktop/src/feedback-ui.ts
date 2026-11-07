@@ -6,7 +6,7 @@ export function mountFeedback(current:()=>{id:string}|undefined,next:()=>void){
  const notice=document.getElementById('feedback-notice')!;
  let knownGeneration=0;
  const saving=new Set<string>();
- let epoch=0,record:Reaction|undefined,syncing=false,attempt=0,needsSync=false;
+ let epoch=0,record:Reaction|undefined,syncing=false,attempt=0,needsSync=false,undoRevision=0;
  let retry:ReturnType<typeof setTimeout>|undefined,undoTimer:ReturnType<typeof setTimeout>|undefined;
  const notify=(trackId:string,state:number,pending=false)=>window.dispatchEvent(new CustomEvent('feedback-changed',{detail:{trackId,state,pending}}));
  const call=<T>(request:object)=>invoke<T>('feedback_command',{request});
@@ -32,7 +32,7 @@ export function mountFeedback(current:()=>{id:string}|undefined,next:()=>void){
   const promise=call<Reaction>({type:'set',trackId:id,state});notify(id,state,true);
   if(disliked){
    const message=document.createElement('span');message.textContent='Трек не рекомендовать. ';
-   const undo=document.createElement('button');undo.textContent='Отменить';undo.id='feedback-undo';
+   const undo=document.createElement('button');undo.textContent='Отменить';undo.id='feedback-undo';undo.dataset.actionKey=String(++undoRevision);
    undo.onclick=()=>{undo.disabled=true;void promise.then(saved=>call<Reaction>({type:'set',trackId:id,state:previous.state,expected:saved.revision})).then(saved=>{knownGeneration=Math.max(knownGeneration,saved.generation??0);needsSync=true;notice.dataset.action='undo';notice.textContent='Дизлайк отменён. Текущий клип продолжается.';void sync();notify(id,previous.state);}).catch(()=>{notice.textContent='Не удалось отменить: реакция уже изменилась или хранилище недоступно.';});};
    notice.append(message,undo);undoTimer=setTimeout(()=>{undo.remove();},5000);next();
   }else notice.textContent=state===1?'Добавляем в любимое…':'Убираем из любимого…';
