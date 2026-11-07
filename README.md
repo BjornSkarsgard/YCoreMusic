@@ -10,7 +10,7 @@
 [история версий](https://ycore-music.ru/#changelog). Нативная приёмка macOS,
 Developer ID и нотариализация пока не выполнены.
 
-Прежнее имя проекта — Encore. Исполняемый файл Windows — `YCoreMusic.exe`, репозиторий — [BjornSkarsgard/YCoreMusic](https://github.com/BjornSkarsgard/YCoreMusic).
+Исполняемый файл Windows — `YCoreMusic.exe`, репозиторий — [BjornSkarsgard/YCoreMusic](https://github.com/BjornSkarsgard/YCoreMusic).
 
 Личный музыкальный телеканал для Windows, Linux и macOS. На Windows работает один YouTube engine с локальными зеркалами на дополнительных мониторах. Полный продукт и платформенная приёмка ещё не завершены; одинаковые многомониторные возможности Linux/macOS пока не реализованы.
 
@@ -70,12 +70,12 @@ cargo clippy --manifest-path apps/desktop/src-tauri/Cargo.toml --all-targets --f
 ```powershell
 npm run build --prefix apps/desktop
 cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol --bin YCoreMusic
-$env:ENCORE_LIVE_YOUTUBE='1'
-$env:ENCORE_LIVE_LIBRARY='1'
+$env:YCORE_LIVE_YOUTUBE='1'
+$env:YCORE_LIVE_LIBRARY='1'
 node scripts/native-smoke.mjs
 ```
 
-Используется отдельный instance/profile/SQLite в `.tools`, реальный звук выключен. Настоящие preference writes и OSautostart mutations запрещены тестовым режимом. `ENCORE_AUTOSTART_SMOKE=1` проверяет запуск аргументом в трей, не регистрируя автозапуск; `ENCORE_LIVE_RECOVERY=1` проверяет outage только собственного WebView через CDP. `ENCORE_WAVE_SOAK_MINUTES=60` запускает настоящий неускоренный прогон, отдельный каталог задаёт ENCORE_NATIVE_TEST_DATA_DIR. Тест не завершает пользовательский YCore Music.
+Используется отдельный instance/profile/SQLite в `.tools`, реальный звук выключен. Настоящие preference writes и OSautostart mutations запрещены тестовым режимом. `YCORE_AUTOSTART_SMOKE=1` проверяет запуск аргументом в трей, не регистрируя автозапуск; `YCORE_LIVE_RECOVERY=1` проверяет outage только собственного WebView через CDP. `YCORE_WAVE_SOAK_MINUTES=60` запускает настоящий неускоренный прогон, отдельный каталог задаёт YCORE_NATIVE_TEST_DATA_DIR. Тест не завершает пользовательский YCore Music.
 
 ## Установочные пакеты
 

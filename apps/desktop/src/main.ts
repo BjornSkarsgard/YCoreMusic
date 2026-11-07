@@ -161,7 +161,7 @@ const searching=new Set<string>();
 const bypassSaved=new Set<string>();
 let sourceRevision=0;
 const previousGesture=new PreviousGesture();
-const volumeKey='encore.volume.v1';
+const volumeKey='ycore.volume.v1';
 let volume:VolumeState;
 try{volume=VolumeState.restore(localStorage.getItem(volumeKey));}catch{volume=new VolumeState();}
 element<HTMLInputElement>('volume').value=String(volume.level);
@@ -819,7 +819,7 @@ function powerPause(resume:boolean){
 if(isTauri()){
   void listen('power-monitor://suspend',()=>powerPause(false)).catch(()=>{});
   void listen('power-monitor://resume',()=>powerPause(true)).catch(()=>{});
-  void listen<{action:string,value:number}>('encore-media',event=>{
+  void listen<{action:string,value:number}>('ycore-media',event=>{
     const {action,value}=event.payload;
     if(action==='seek')seek(value);
     else if(action==='position' && playerReady&&player&&allowPlaybackChange()){previousGesture.reset();seekPlayer(Math.max(0,Math.min(player.getDuration(),value)));}
@@ -827,7 +827,7 @@ if(isTauri()){
     else systemControl(action);
   }).catch(()=>{});
   publishMedia();
-  void listen<string>('encore-control',event=>systemControl(event.payload)).catch(()=>{element('storage-status').textContent='Управление из трея пока недоступно.';});
+  void listen<string>('ycore-control',event=>systemControl(event.payload)).catch(()=>{element('storage-status').textContent='Управление из трея пока недоступно.';});
   void invoke<{tray_available:boolean}>('desktop_status').then(status=>{
     if(status)element('storage-status').textContent=status.tray_available?'Крестик скрывает YCore Music в трей. Выход — через меню значка.':'Трей недоступен. Закрытие окна завершит приложение.';
   }).catch(()=>{});

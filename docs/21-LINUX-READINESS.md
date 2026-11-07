@@ -2,7 +2,7 @@
 
 Поручение пользователя: довести Linux до уровня Windows. Работа сохранена при предупреждении об оставшихся 3% лимита. Полную готовность всех Linux-сценариев НЕ объявлять.
 
-Реализовано: Linux single-player-host (default), локальные GTK/Cairo зеркала одного WebKit snapshot без дополнительных iframe/декодеров/загрузок; отключение проблемного MediaCapabilities официальным WebKit feature API; PulseAudio/PipeWire-Pulse анализ единственного собственного sink input с проверкой дерева PID и запретом переноса записи на другой источник; четыре визуализатора; XRandR/EDID идентичность и частота дисплеев; idle inhibition через ScreenSaver или portal (только Idle); подтверждение GTK resize перед завершением mini-перехода. Исправлена публикация состояния восстановленным/нативно открытым сценам. Namespace io.encore.desktop сохранён.
+Реализовано: Linux single-player-host (default), локальные GTK/Cairo зеркала одного WebKit snapshot без дополнительных iframe/декодеров/загрузок; отключение проблемного MediaCapabilities официальным WebKit feature API; PulseAudio/PipeWire-Pulse анализ единственного собственного sink input с проверкой дерева PID и запретом переноса записи на другой источник; четыре визуализатора; XRandR/EDID идентичность и частота дисплеев; idle inhibition через ScreenSaver или portal (только Idle); подтверждение GTK resize перед завершением mini-перехода. Исправлена публикация состояния восстановленным/нативно открытым сценам. Namespace io.ycore.desktop сохранён.
 
 Проверено:
 - 128 renderer PASS, 1 optional skipped; TypeScript/build и 14 TS unit ранее PASS.

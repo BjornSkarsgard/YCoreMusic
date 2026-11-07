@@ -23,7 +23,7 @@ test('native scene restore starts publishing without reopening screen settings',
 
 test('a platform without mirror/audio adapters keeps playback usable and does not offer unsupported windows',async({page})=>{
  await page.addInitScript(()=>{
-  const w=window as any;w.isTauri=true;localStorage.setItem('encore.mainLayout.v1','spectrum');
+  const w=window as any;w.isTauri=true;localStorage.setItem('ycore.mainLayout.v1','spectrum');
   w.__TAURI_INTERNALS__={invoke:async(command:string)=>{
    if(command==='platform_capabilities')return {videoMirrors:false,audioAnalysis:false};
    if(command==='monitor_list')return [{id:'a',name:'A',stable:true,width:1920,height:1080,refreshHz:60}];
@@ -32,7 +32,7 @@ test('a platform without mirror/audio adapters keeps playback usable and does no
  });
  await page.goto('/');await expect(page.locator('#window-layout')).toHaveValue('video');
  await expect(page.locator('#window-layout option[value=spectrum]')).toHaveJSProperty('disabled',true);
- expect(await page.evaluate(()=>localStorage.getItem('encore.mainLayout.v1'))).toBe('spectrum');
+ expect(await page.evaluate(()=>localStorage.getItem('ycore.mainLayout.v1'))).toBe('spectrum');
  await page.locator('#window-layout').selectOption('controls');await expect(page.locator('body')).toHaveClass(/controls-layout/);
  await page.locator('#screens').click();await page.locator('#scene-monitor').selectOption('a');
  await expect(page.locator('#scene-video-choice')).toBeDisabled();await expect(page.locator('#scene-visualizer-choice')).toBeDisabled();await expect(page.locator('#scene-open')).toBeDisabled();

@@ -1,3 +1,23 @@
+## 2026-11-07 — очистка исходников и служебных идентификаторов от прежнего имени
+
+Текущие код, тесты, скрипты, документация и имя vendor patch используют YCore.
+Идентификатор io.ycore.desktop, база ycore.sqlite, keyring io.ycore.desktop,
+localStorage ycore.*, IPC ycore-*, тестовые ENV YCORE_*, --ycore-autostart.
+Старый аргумент больше не поддерживается; дублирующая ветка удалена.
+Прежнее исключение совместимости отменено по прямому запросу; ADR-057.
+
+PASS: tsc, production UI build, Windows native-test build, Rust79/13ignored,
+clippy all-targets и fmt. UI160PASS/1optional live skip. Изолированный нативный
+Windows-прогон с новым namespace подтвердил SQLite/history/preferences,
+настоящий YouTube и движение времени, паузу/seek/resume, controls-only,
+hidden playback, миниплеер/topmost и single-instance/background autostart.
+Пользовательские данные не трогали. Новый публичный релиз не создавали.
+
+Смена namespace разрывает автоматический доступ к установленному профилю;
+перед следующим публичным выпуском обязательна отдельная проверка переноса
+аккаунта, истории, WebView-настроек и доверия телефона. Физическая папка проекта,
+история Git и старые выпущенные пакеты не изменены. Полная платформенная
+совместимость обновления этим чистым Windows-прогоном не подтверждена.
 ## 2026-11-07 — ПАКЕТ / SQWOZ BAB, свежий подбор перед пропуском (REQ-063, REQ-064)
 
 Сообщение пользователя относится к ветке, где список найденных кандидатов
@@ -210,7 +230,7 @@ Option<u64> сериализует отсутствие как null. Исклю�
 Исправление de48727, branch codex/continuous-playback-20261107:
 Candidate views/durationSeconds теперь явно number|null|undefined; null-safe guards
 в обеих карточках и duration. Нет hardcoded video binding/ослабления matching.
-Rust live Absence probe и native ENCORE_TRACK_MATCH_PROBE добавлены. Последний
+Rust live Absence probe и native YCORE_TRACK_MATCH_PROBE добавлены. Последний
 теперь проходит оба user fixtures через настоящий UI и проверяет position>2,
 один player и nativeErrors.length0. До фикса этот же путь FAILED.
 
@@ -390,7 +410,7 @@ Clippy all-targets/yandex-probe -D warnings PASS. Установку на ПК �
 затем остановиться. Сайт и пульт исключены. Пользователь сообщил о близком лимите.
 Linux установщик пока НЕ готов и НЕ передан.
 
-Repo C:/Users/Skar/Documents/Encore main dirty — сохранить WIP. CI worktree:
+Repo C:/Users/Skar/Documents/YCoreMusic main dirty — сохранить WIP. CI worktree:
 C:/Users/Skar/Documents/YCoreMusic-ci-check, branch codex/stability-portability-20261106,
 HEAD исходников 97a80c25441c6b055790303bf9c1866f20a1ba51.
 
@@ -433,7 +453,7 @@ Private updater key C:/Users/Skar/.tauri/YCoreMusic-updater.key НЕ печат�
 Сайт и пульт исключены из текущей работы пользователем. REQ066 повторно
 подтверждён: кнопка проверки/обновления для доработок после релиза.
 
-Windows ENCORE_WAVE_SOAK_MINUTES=30 PASS: неускоренный скрытый запуск, 6 natural
+Windows YCORE_WAVE_SOAK_MINUTES=30 PASS: неускоренный скрытый запуск, 6 natural
 переходов,357playing/2waiting samples, maxobservedgap5сек при polling5сек,
 maxcontrolleriframes0/maxhostiframes1. Затем mini/topmost/instance PASS.
 Артефакт .tools/wave-soak-result.json. Это реальный Яндекс/YouTube без ручного
@@ -472,7 +492,7 @@ REQ049/056/059/067: добавлены native platform.rs + UI platform.ts; wind
 Сохранённый выбор Spectrum не теряется при временном fallback к Video.
 Это подготовка переносимости, не завершённый порт. План/границы — docs19.
 
-Native ENCORE_STABILITY_SMOKE=1 дважды PASS: шесть simulated hotplug VIDEO/Particles,
+Native YCORE_STABILITY_SMOKE=1 дважды PASS: шесть simulated hotplug VIDEO/Particles,
 настройки FPS/quality и monitor ID сохранены; timeline идёт, engine не заменяется.
 Off во время detach не восстанавливается. Outage в main и source WebView,
 Pause→reconnect остаётся паузой, explicit Play возобновляет один engine. Общие
@@ -484,7 +504,7 @@ Renderer122PASS/1skip/1 failed: единственный отказ — matcher 
 Обычный debug exe обновлён. Текущую ревизию Linux/macOS здесь не запускали.
 Исправлен wave soak: проверяется iframe count native host и отсутствие iframe
 в coordinator; во время загрузки допустим ноль, но никогда два. Счётчик host
-пишется отдельно от controllerFrames. ENCORE_LIVE_WAVE=1 после этой правки PASS:
+пишется отдельно от controllerFrames. YCORE_LIVE_WAVE=1 после этой правки PASS:
 настоящая волна, два автоматических natural-END перехода, один native iframe,
 ни одного controller iframe, mini/topmost/instance. Длительный soak ещё предстоит.
 
@@ -503,7 +523,7 @@ REQ-067: замок рядом с громкостью, доступен и в m
 scene.css, host-player/scenes tests и native smoke. Frontend/debug build PASS;
 Rust72/9ignored, Clippy PASS; полный renderer119PASS/1skip до новых проверок,
 затем 4 targeted PASS (guard, external snapshot, compact layouts).
-Native ENCORE_PLAYBACK_GUARD_SMOKE=1 PASS на actual YouTube: ручные действия
+Native YCORE_PLAYBACK_GUARD_SMOKE=1 PASS на actual YouTube: ручные действия
 не заменяют engine, pause/resume работают, unlock в mini возвращает seek.
 Общие startup/history/mini/topmost/instance проверки этого прогона также PASS.
 Реальное физическое нажатие SMTC и длительный просмотр отдельно не проверялись.
@@ -523,7 +543,7 @@ main.rs/main.ts/style.css, host-player tests и native smoke. Защита уп�
 
 Rust72PASS/9ignored, Clippy/frontend/native/debugbuildPASS. Renderer host/recovery
 16PASS, затем исправлена проверка async статуса и timer targetedPASS.
-Native ENCORE_SLEEP_TIMER_SMOKE=1 PASS: реальный1сек deadline (без ускорения
+Native YCORE_SLEEP_TIMER_SMOKE=1 PASS: реальный1сек deadline (без ускорения
 часов) → actualYouTube state2 в трее → explicitPlay без повторнойпаузы → cancel;
 одинengine/epochнеизменён, mini/topmost/instancePASS. Screenshot просмотрен.
 Полный30мин/12часовой отсчёт и физический sleep отдельно не прогонялись.
@@ -602,7 +622,7 @@ Checkpoint не содержит токенов/старых radio session; sche
 
 Проверено: Rust70 PASS/9 ignored, Clippy/frontend/debug build PASS;
 полный renderer112 PASS/1opt-in skip, затем4 targeted PASS после уточнения.
-Native ENCORE_CRASH_RECOVERY_SMOKE=1 PASS дважды: аварийно завершён только
+Native YCORE_CRASH_RECOVERY_SMOKE=1 PASS дважды: аварийно завершён только
 изолированный process по подтверждённому PID/testMode → новое окно без autoplay
 → explicit Resume → настоящий YouTube с37с/одинplayer → реальный checkpoint
 → normal Quit/restart без recovery prompt. Снимок native-crash-recovery.png
@@ -707,7 +727,7 @@ GPU RTX4070Ti/D3D11. В данном сценарии сильный лаг не
 сообщённого пользователем сильного зависания пока не подтверждена. Запрошены
 условия (полосы или весь UI/звук, тот же или другой монитор).
 11 профильных renderer tests PASS; frontend/native/обычный debug build PASS.
-ENCORE_SPECTRUM_PERF=1 добавляет opt-in native замер. Результаты rAF/draws
+YCORE_SPECTRUM_PERF=1 добавляет opt-in native замер. Результаты rAF/draws
 не являются замером фактического scanout монитора.
 
 ## Spectrum в основном окне — 2026-11-06
@@ -780,15 +800,15 @@ REQ-056 реализован на Windows: единственный YouTube engi
 
 ## Переименование — 2026-11-05
 
-Актуальный продукт **YCore Music**, коротко **YCore**. Repo [BjornSkarsgard/YCoreMusic](https://github.com/BjornSkarsgard/YCoreMusic), Windows binary **YCoreMusic.exe**. UI, tray, SMTC, package/build/CI metadata обновлены, хранилища прежнего Encore сохранены. Rename проверки и сборка PASS (ADR034). Новое Premium Neon Dark оформление — следующий текущий запрос пользователя; расположение блоков и playback/sync/audio logic не менять. Single-player-host WIP в отдельном stash до завершения визуальной задачи.
+Актуальный продукт **YCore Music**, коротко **YCore**. Repo [BjornSkarsgard/YCoreMusic](https://github.com/BjornSkarsgard/YCoreMusic), Windows binary **YCoreMusic.exe**. UI, tray, SMTC, package/build/CI metadata обновлены, хранилища прежнего YCore Music сохранены. Rename проверки и сборка PASS (ADR034). Новое Premium Neon Dark оформление — следующий текущий запрос пользователя; расположение блоков и playback/sync/audio logic не менять. Single-player-host WIP в отдельном stash до завершения визуальной задачи.
 
 ## Последнее изменение направления — 2026-11-05, REQ056
 
-Несколько YouTube iframe отменены пользователем: нужен один настоящий плеер, дополнительные картинки — локальные зеркала. Windows DWM spike подтвердил живые кадры при alpha0/clickthrough источнике:90 разных кадров/90samples за32.353с, timeline+33с; destination может содержать локальный WebView без второго YouTube. Нативный hide, напротив, замораживает зеркало. Это ещё не замена плеера в продукте и не полная приёмка hidden/lock/performance/platforms. Следующий шаг — единственный отдельный player host, видимые зеркала и обычное управляющее окно (ADR033). Новое имя приложения выбирает пользователь: Encore занято; до выбора ничего не переименовывать.
+Несколько YouTube iframe отменены пользователем: нужен один настоящий плеер, дополнительные картинки — локальные зеркала. Windows DWM spike подтвердил живые кадры при alpha0/clickthrough источнике:90 разных кадров/90samples за32.353с, timeline+33с; destination может содержать локальный WebView без второго YouTube. Нативный hide, напротив, замораживает зеркало. Это ещё не замена плеера в продукте и не полная приёмка hidden/lock/performance/platforms. Следующий шаг — единственный отдельный player host, видимые зеркала и обычное управляющее окно (ADR033). Новое имя приложения выбирает пользователь: YCore Music занято; до выбора ничего не переименовывать.
 
 ## Актуальная сводка — 2026-11-05
 
-Рабочий single-window prototype: Wave/жанры/поиск/медиатека/чарт/реакции/outbox/Smart History/favourites/history/mini/fullscreen/tray/recovery/autostart/диагностика, встроенный OAuth-вход, выбор трека очереди и её автоподгрузка. Пользователь подтвердил вход, отправку событий Wave и лайк Encore→Яндекс. Добавлен режим «Только управление» (REQ053): каталог и очередь одновременно, transport внизу; настоящий YouTube продолжает timeline при смене вида на Windows. Linux/macOS runtime, обратная ручная синхронизация реакций, physical sleep/lock, multi-monitor/visualizer/remote и clean install остаются открытыми. Последние CI mac jobs могут не стартовать из-за hosted runner capacity; это не успешная platform приёмка.
+Рабочий single-window prototype: Wave/жанры/поиск/медиатека/чарт/реакции/outbox/Smart History/favourites/history/mini/fullscreen/tray/recovery/autostart/диагностика, встроенный OAuth-вход, выбор трека очереди и её автоподгрузка. Пользователь подтвердил вход, отправку событий Wave и лайк YCore Music→Яндекс. Добавлен режим «Только управление» (REQ053): каталог и очередь одновременно, transport внизу; настоящий YouTube продолжает timeline при смене вида на Windows. Linux/macOS runtime, обратная ручная синхронизация реакций, physical sleep/lock, multi-monitor/visualizer/remote и clean install остаются открытыми. Последние CI mac jobs могут не стартовать из-за hosted runner capacity; это не успешная platform приёмка.
 
 Далее идёт хронологический журнал. Ранние записи описывают прошлое состояние и не отменяют более поздние решения (в частности, выбор audioendpoint отменён пользователем).
 
@@ -834,7 +854,7 @@ PASS: TypeScript strict check, тест trusted YouTube URL/ID (включая �
 
 ### Windows native build
 
-PASS: `npx tauri build --debug --no-bundle`, Rust 1.99.1, Tauri 2.12.5. Создан `apps/desktop/src-tauri/target/debug/encore.exe`.
+PASS: `npx tauri build --debug --no-bundle`, Rust 1.99.1, Tauri 2.12.5. Создан `apps/desktop/src-tauri/target/debug/YCoreMusic.exe`.
 PASS (только process smoke): приложение не завершилось в первые 5 секунд, после проверки закрыто. Отрисовка окна, реальный embed и звук не проверены. S3 остаётся НЕ ПРОВЕРЕНО до ручного сценария.
 
 Установка Visual Studio Build Tools (MSVC + Windows SDK) завершилась успешно. Требуется новый терминал, чтобы обновлённый PATH Rust подхватился автоматически.
@@ -843,7 +863,7 @@ PASS (только process smoke): приложение не завершило�
 
 PASS в Chrome на текущей Windows: реальный YouTube API, video ID M7lc1UVf-VE, cue без autoplay, явный Play при громкости 0, Pause и seek +5 с с проверкой фактической позиции. Исправлена гонка: Play доступен после CUED, а не только onReady.
 
-Добавлен таймлайн (время видео, drag seek). Проверка реального API включается явно переменной ENCORE_LIVE_YOUTUBE=1; в обычном CI пропускается. Слышимость аудио не проверена. Chrome не заменяет WebView2/WKWebView/WebKitGTK: S3 native остаётся открытым.
+Добавлен таймлайн (время видео, drag seek). Проверка реального API включается явно переменной YCORE_LIVE_YOUTUBE=1; в обычном CI пропускается. Слышимость аудио не проверена. Chrome не заменяет WebView2/WKWebView/WebKitGTK: S3 native остаётся открытым.
 
 CI коммита c0c7e9: native build + UI smoke прошли на macOS и Ubuntu; Windows ещё выполняется на момент записи. Это сборочные проверки, не аппаратная приёмка.
 
@@ -951,7 +971,7 @@ CI eff15db выявил macOS link failure _IOPSRelease в power-monitor 0.1.0. 
 
 Сделано: finite queue repeat с догрузкой коллекции перед возвратом в начало, сохранением pause при ручном Next через конец; Wave ограничен off/one, при новом Wave сбрасывается queue-repeat. Локальные Space и стрелки +/-5 с пропускают поля ввода и интерактивные controls. PASS 21 renderer smoke + 1 opt-in skipped, 6 TS unit. Native Windows PASS: history queue из одного элемента оборачивается paused без autoplay; WebDriver keyboard Space запускает/ставит паузу настоящий IFrame на volume=0. Остальные tray/power/history/catalogue/mini проверки также PASS.
 
-Native smoke теперь запускает отдельный Cargo native-test executable, debug-only test identifier, отдельный WebView profile и isolated SQLite. Проверен рядом с уже работающим пользовательским Encore: пользовательский PID сохранился, тестовый процесс завершился. User-facing debug executable может оставаться заблокирован открытым экземпляром; новая сборка готова в native-test output.
+Native smoke теперь запускает отдельный Cargo native-test executable, debug-only test identifier, отдельный WebView profile и isolated SQLite. Проверен рядом с уже работающим пользовательским YCore Music: пользовательский PID сохранился, тестовый процесс завершился. User-facing debug executable может оставаться заблокирован открытым экземпляром; новая сборка готова в native-test output.
 
 CI 0339af0: Ubuntu, macOS Intel и macOS Apple Silicon PASS, включая native link после vendor patch. Windows job ещё выполнялся при записи. Это сборка/автотесты, не доказательство аппаратного runtime на Linux/macOS. Новые repeat/local-key/test-isolation изменения ожидают следующего CI.
 
@@ -990,7 +1010,7 @@ PASS native: открытие/скрытие YouTube controls сохраняет
 
 Добавлены локальные Up/Down ±5% с clamp/persistence и F11 для того же fullscreen workspace. Поля ввода, кнопки, select, диалоги и modified keys не перехватываются; музыка от shortcuts настройки не запускается. Целевой renderer test PASS: границы 0–100, persistence, два F11 без пересоздания iframe, editing guard/no autoplay.
 
-Добавлен опциональный ENCORE_WAVE_SOAK_MINUTES (до 120) и отдельная ENCORE_NATIVE_TEST_DATA_DIR. Идёт 20-минутный настоящий неускоренный прогон, hidden+volume0, с периодическим JSON прогрессом в .tools. Результат на момент записи ещё не получен. Native-test бинарник занят прогоном: не пересобирать этот профиль до завершения. Следующий срез — REQ-014 несколько избранных клипов/random/no-repeat.
+Добавлен опциональный YCORE_WAVE_SOAK_MINUTES (до 120) и отдельная YCORE_NATIVE_TEST_DATA_DIR. Идёт 20-минутный настоящий неускоренный прогон, hidden+volume0, с периодическим JSON прогрессом в .tools. Результат на момент записи ещё не получен. Native-test бинарник занят прогоном: не пересобирать этот профиль до завершения. Следующий срез — REQ-014 несколько избранных клипов/random/no-repeat.
 
 ## 2026-11-04: REQ-014 и длительный Wave прогон
 
@@ -1004,7 +1024,7 @@ PASS native: открытие/скрытие YouTube controls сохраняет
 
 При явно открытой панели качества YouTube собственный HUD остаётся доступен: cross-origin iframe перехватывает движения мыши. После скрытия панели возвращается обычный idle timeout. Поздний fullscreenchange больше не отменяет уже произошедшее движение мыши. Regression имитирует задержанный event и проверяет видимость; обычное скрытие также проверено.
 
-Renderer36 PASS+1opt-in skipped, точечные fullscreen/manual сценарии PASS; Windows native: реальная interactive quality panel в fullscreen после hover/idle оставляет наши кнопки доступными, затем закрытие/остальные smoke PASS. Заголовок окна — Encore; standalone manual clip сразу обновляет title/source. Native runner получает PID из desktop_status после testMode verification, а не из browser capabilities, поэтому cleanup относится к подтверждённому своему приложению. History queue assertion учитывает обёртку отдельно играющего manual clip.
+Renderer36 PASS+1opt-in skipped, точечные fullscreen/manual сценарии PASS; Windows native: реальная interactive quality panel в fullscreen после hover/idle оставляет наши кнопки доступными, затем закрытие/остальные smoke PASS. Заголовок окна — YCore Music; standalone manual clip сразу обновляет title/source. Native runner получает PID из desktop_status после testMode verification, а не из browser capabilities, поэтому cleanup относится к подтверждённому своему приложению. History queue assertion учитывает обёртку отдельно играющего manual clip.
 
 CI d306f82: Windows/Linux/macOS ARM PASS; macOS Intel остановился на renderer таймауте Wave/fullscreen recovery. Следующий push включает защиту позднего fullscreenchange и её regression; окончательный результат CI ещё ожидается.
 
@@ -1026,7 +1046,7 @@ Quick-skip threshold и listened-duration classification пока не реал�
 
 Кнопка очистки возвращает фокус в запрос, сбрасывает результаты, фильтры и пагинацию, отменяет pending responses. Пока новый запрос ожидает debounce/ответ, предыдущая выдача и фильтры inert, кнопка дозагрузки отключена. Ошибка объясняет, что остались предыдущие результаты. Убраны лабораторные подписи заголовка и пустого плеера; выбор жанра подписан «Жанр музыки».
 
-TypeScript/build PASS; renderer 45 PASS +1 opt-in skipped, включая stale playback/clear/late response/reuse и стабильную высоту обзора. CI предыдущего Smart History среза целиком PASS. Пользовательский Encore открыт; обычная сборка блокируется Windows. Свежий embedded binary собран в native-test (testMode включается только окружением), скопирован в .tools/search-update-20261104. Hidden updater ждёт выхода обоих обычных executable paths, проверяет исходный/целевой hash, отменяет устаревшее обновление, не запускает/не закрывает приложение. Статус в локальном status.json; установка ещё ожидается.
+TypeScript/build PASS; renderer 45 PASS +1 opt-in skipped, включая stale playback/clear/late response/reuse и стабильную высоту обзора. CI предыдущего Smart History среза целиком PASS. Пользовательский YCore Music открыт; обычная сборка блокируется Windows. Свежий embedded binary собран в native-test (testMode включается только окружением), скопирован в .tools/search-update-20261104. Hidden updater ждёт выхода обоих обычных executable paths, проверяет исходный/целевой hash, отменяет устаревшее обновление, не запускает/не закрывает приложение. Статус в локальном status.json; установка ещё ожидается.
 
 Дополнение поиска: после неудачного нового запроса нельзя догружать страницы по чужому query/page. Предыдущая выдача явно подписана; повторный успешный поиск возвращает пагинацию. Дополнительный regression PASS, обе search проверки PASS, TypeScript/build/embedded native profile PASS. Подготовленное обновление пересобрано; helper ожидает выхода, hash manifest обновлён.
 
@@ -1034,7 +1054,7 @@ TypeScript/build PASS; renderer 45 PASS +1 opt-in skipped, включая stale 
 
 Нативный beforeId cursor (совместим с прежним history API) открывает записи старше100, сохраняя реальные повторы и порядок при новых событиях. Отдельный history-ui владеет только просмотром, очередь по-прежнему в coordinator. Поиск отменяет pending callbacks немедленно, дозагрузка повторяется после ошибки; clear защищён от двойного нажатия и late response, ошибка видна в диалоге. Подписи трека/исполнителя/даты читаются отдельно. ADR-021, без миграции БД.
 
-Проверки: TypeScript/build PASS; полный renderer48PASS+1opt-in skipped, затем3целевых historyPASS (включая добавленный failure/retry);9TSunitPASS;Rust29app+5probePASS,9ignored;ClippyPASS. Настоящий Windows native:105исторических событий, новый event между страницами, cursor/порядок/очистка/no-autoplay PASS; полный настоящий YouTube/история now-next-append/repeat/fullscreen/CC/tray/media/mini/topmost PASS. Только testMode база. Стандартный debug/encore.exe успешно пересобран после выхода пользователя. Старый hidden search updater оказался blocked и ничего не установил; новая стандартная сборка заменяет его, ожидающего обновления больше не требуется. Не запускать старые apply.ps1.
+Проверки: TypeScript/build PASS; полный renderer48PASS+1opt-in skipped, затем3целевых historyPASS (включая добавленный failure/retry);9TSunitPASS;Rust29app+5probePASS,9ignored;ClippyPASS. Настоящий Windows native:105исторических событий, новый event между страницами, cursor/порядок/очистка/no-autoplay PASS; полный настоящий YouTube/история now-next-append/repeat/fullscreen/CC/tray/media/mini/topmost PASS. Только testMode база. Стандартный debug/YCoreMusic.exe успешно пересобран после выхода пользователя. Старый hidden search updater оказался blocked и ничего не установил; новая стандартная сборка заменяет его, ожидающего обновления больше не требуется. Не запускать старые apply.ps1.
 
 ## 2026-11-04: REQ-046 renderer recovery
 
@@ -1044,9 +1064,9 @@ TypeScript/build PASS; renderer 45 PASS +1 opt-in skipped, включая stale 
 
 ## 2026-11-04: REQ-043 автозапуск — реализация, native проверка ожидается
 
-В настройках checkbox реального OSautostart, по умолчанию ничего не регистрируется. Официальный plugin2.7.0, нативные main-only commands, отдельный --encore-autostart путь hidden+paused, tray-failure fallback, повторный background instance не крадёт фокус. Native testMode запрещает OS mutations. Rust31app+5probePASS,9ignored;ClippyPASS;2целевыхautostart rendererPASS; полный renderer прогон повторяется после исправления проверки немедленного rollback checkbox.
+В настройках checkbox реального OSautostart, по умолчанию ничего не регистрируется. Официальный plugin2.7.0, нативные main-only commands, отдельный --ycore-autostart путь hidden+paused, tray-failure fallback, повторный background instance не крадёт фокус. Native testMode запрещает OS mutations. Rust31app+5probePASS,9ignored;ClippyPASS;2целевыхautostart rendererPASS; полный renderer прогон повторяется после исправления проверки немедленного rollback checkbox.
 
-Подготовлен дополнительный native сценарий CDP outage только собственного WebView, без изменения системной сети. Он ещё не запускался; не объявлять PASS. Native profile занят60минWave baseline025ab78. После завершения пересобрать с новым recovery/autostart, выполнить ENCORE_AUTOSTART_SMOKE/ENCORE_LIVE_RECOVERY и обычный native YouTube smoke. Autostart enable/disable текущего пользователя и настоящий login не выполнялись.
+Подготовлен дополнительный native сценарий CDP outage только собственного WebView, без изменения системной сети. Он ещё не запускался; не объявлять PASS. Native profile занят60минWave baseline025ab78. После завершения пересобрать с новым recovery/autostart, выполнить YCORE_AUTOSTART_SMOKE/YCORE_LIVE_RECOVERY и обычный native YouTube smoke. Autostart enable/disable текущего пользователя и настоящий login не выполнялись.
 
 Повторный полный renderer для autostart:58PASS+1opt-in skipped; TypeScript/buildPASS. Native runtime всё ещё ожидается после часового прогона.
 
@@ -1060,7 +1080,7 @@ TypeScript/build PASS; renderer 45 PASS +1 opt-in skipped, включая stale 
 
 Последняя команда пользователя возобновила работу. Завершён refactor реакций: network вне cache lock, отдельная последовательная доставка, generation guards, overlay всех pending (проверено60), доступные известные кнопки во время refresh, rollback ошибки. ADR-024. Полный renderer60PASS+1opt-in skipped; Rust35app+5probePASS,9ignored;Clippy иfrontendbuildPASS.
 
-Native свежей сборки: запуск --encore-autostart в tray/без autoplay/Open PASS; OS setting read +testMode mutationguard PASS без записи startup; реальные personal library/chart/feedbackGET snapshot PASS. WebView CDP outage запустился, сохраняет track/history и уважает Pause, но проверка восстановленной позиции FAILED; расследуется, не объявлять этот recovery nativePASS. Системная сеть не менялась. CIecfe73c Windows/LinuxPASS, macIntel/macARMCANCELLED: annotations сообщают отсутствие hosted runner/capacity, failedsteps отсутствуют.
+Native свежей сборки: запуск --ycore-autostart в tray/без autoplay/Open PASS; OS setting read +testMode mutationguard PASS без записи startup; реальные personal library/chart/feedbackGET snapshot PASS. WebView CDP outage запустился, сохраняет track/history и уважает Pause, но проверка восстановленной позиции FAILED; расследуется, не объявлять этот recovery nativePASS. Системная сеть не менялась. CIecfe73c Windows/LinuxPASS, macIntel/macARMCANCELLED: annotations сообщают отсутствие hosted runner/capacity, failedsteps отсутствуют.
 
 ## 2026-11-04: native recovery/autostart подтверждены; диагностика
 
@@ -1076,7 +1096,7 @@ Native свежей сборки: запуск --encore-autostart в tray/без
 
 ## 2026-11-04: Windows release пакет и актуализация документации
 
-Локальная оптимизированная Windows release сборка и NSIS завершились успешно:target/release/bundle/nsis/Encore_0.0.1_x64-setup.exe,3.28MiB. SHA256/signature записаны в .tools/windows-package-result.json, пакет не установлен и не опубликован, подписи нет. Во frontend/пакет не добавлены пользовательские credentials илиSQLite. Ручной packageworkflow появился в GitHub после задержки регистрации; Linux dispatch запрошен для проверки DEB/AppImage, итог ещё ожидается.
+Локальная оптимизированная Windows release сборка и NSIS завершились успешно:target/release/bundle/nsis/YCore Music_0.0.1_x64-setup.exe,3.28MiB. SHA256/signature записаны в .tools/windows-package-result.json, пакет не установлен и не опубликован, подписи нет. Во frontend/пакет не добавлены пользовательские credentials илиSQLite. Ручной packageworkflow появился в GitHub после задержки регистрации; Linux dispatch запрошен для проверки DEB/AppImage, итог ещё ожидается.
 
 README приведён к текущему single-window prototype: удалены противоречащие актуальной реализации старые утверждения про отсутствие Wave/нескольких favourites/автообхода. docs00 теперь явно Windows/Linux/macOS и видеопоток Wave; начало журнала статуса маркирует ранние записи историческими. Готовность UIlogin, real preference writes,physical lifecycle,platformruntime не завышена.
 
@@ -1112,9 +1132,9 @@ LinuxNative41873691768: startup/autostart/health/SQLite/historyPASS, topmost п�
 
 ## Вход из настроек — 2026-11-05
 
-Добавлены native auth.rs и auth-ui.ts: вход в отдельном окне Яндекса, отмена/таймаут/ошибки, readonly проверка доступа перед OS-store save, подтверждённый локальный disconnect. Token/identity не передаются в интерфейс. Успех обновляет Encore без autoplay. Feedback cache инвалидируется с generation, outbox прежнего аккаунта сохраняется. Подробнее ADR025.
+Добавлены native auth.rs и auth-ui.ts: вход в отдельном окне Яндекса, отмена/таймаут/ошибки, readonly проверка доступа перед OS-store save, подтверждённый локальный disconnect. Token/identity не передаются в интерфейс. Успех обновляет YCore Music без autoplay. Feedback cache инвалидируется с generation, outbox прежнего аккаунта сохраняется. Подробнее ADR025.
 
-PASS:40app+5probe Rust/9ignored;Clippy;TS/build;полный renderer67PASS+1opt-in skipped, после добавления сценария success/reload ещё5authPASS;9TSunit. Windows native auth popup open/cancel/actual destroy/noautoplay/testMode credential guard, затем autostart read/diagnostics/history dates/mini/topmost/maximized/single instance PASS. Обычный debugexe обновлён. Пользовательский release Encore не закрывался. Реальный вход после согласия пользователя НЕ ПРОВЕРЕН; проверка запрошена отдельно, работу по следующему пункту не блокирует. Linux/macOS отложены по новому приоритету пользователя.
+PASS:40app+5probe Rust/9ignored;Clippy;TS/build;полный renderer67PASS+1opt-in skipped, после добавления сценария success/reload ещё5authPASS;9TSunit. Windows native auth popup open/cancel/actual destroy/noautoplay/testMode credential guard, затем autostart read/diagnostics/history dates/mini/topmost/maximized/single instance PASS. Обычный debugexe обновлён. Пользовательский release YCore Music не закрывался. Реальный вход после согласия пользователя НЕ ПРОВЕРЕН; проверка запрошена отдельно, работу по следующему пункту не блокирует. Linux/macOS отложены по новому приоритету пользователя.
 
 ### Исправление живого OAuth callback — 2026-11-05
 
@@ -1128,7 +1148,7 @@ PASS:40app+5probe Rust/9ignored;Clippy;TS/build;полный renderer67PASS+1opt
 
 ## Исправление волны после выхода — 2026-11-05
 
-Пользователь подтвердил disconnect именно в Encore. Нативная readonly диагностика OS-store показала missing; секрет не выводился и не изменялся проверкой. Найден sourceFetch catch, который одинаково включал Smart History при network и auth errors. Убрана автоматическая подстановка локальной истории при auth error. Свежая неавторизованная Wave очищает старый буфер, показывает «Моя волна · нужен вход» и путь Settings→Яндекс Музыка. Явная история без аккаунта и fallback при network failure сохранены.
+Пользователь подтвердил disconnect именно в YCore Music. Нативная readonly диагностика OS-store показала missing; секрет не выводился и не изменялся проверкой. Найден sourceFetch catch, который одинаково включал Smart History при network и auth errors. Убрана автоматическая подстановка локальной истории при auth error. Свежая неавторизованная Wave очищает старый буфер, показывает «Моя волна · нужен вход» и путь Settings→Яндекс Музыка. Явная история без аккаунта и fallback при network failure сохранены.
 
 PASS:3targetedrenderer (подтверждённый logout из играющей волны с reload/noiframe/emptyqueue/noautomaticSmartHistory, ручная история, orderednetworkfallback/offlinestart), TS/build, Windowsnative basic. Обычный debugexe успешно обновлён. Учётная запись тестами не отключалась: настоящий credential уже отсутствовал после действия пользователя; сценарий удаления в renderer использует фикстуру.
 
@@ -1150,13 +1170,13 @@ PASS:3targetedrenderer (подтверждённый logout из играюще�
 
 Native WaveRefregistry привязывает каждую позицию, включаяповторы, к account/session/batch; новыйsession не переименовывает старыйбуфер. SourceIPC выдаёт opaque waveRef, UID/session/batch не выдаются. SQLitev5: отдельнаяперсистентная очередьWaveevents; radioStarted/trackStarted/trackFinished/явныйskip; фактические listenedseconds безперемотки/паузы. Технические окончания не отправляются какnegative skip/dislike; libraryreactionsотдельно. Локальнаядедупликация/сохранённыеACK, UIDфильтр, credentialcheckпередкаждойотправкой, TTL24ч/8attempts/backoff, testModeвнешниезаписиблокирует. GlobalhistoryWriter +clear barrier сохраняютпорядок и не восстанавливаюточистку. NativeExit сохраняетпозитивнонаблюдённыйlastwatermark. ADR028.
 
-PASS:51app+6probeRust/10ignored,Clippy,11TSunit;renderer77PASS+1opt-in skipped. Native readonly настоящиеWavebatchrefsPASS, и новая/следующаяпорции безлоговUID/session. NativetestModewaveguard/source/history/metrics/clear/mini/topmost/maximized/instance/normalExitPASS. Ordinarydebugexe успешнообновлён после подтверждённоговыхода. Пользователь включилWave и подтвердил положительныйstatusбезошибки; readonlyагрегаты личнойSQLite (только schema/count/status/eventtype) показали schema5, sent radioStarted2/trackStarted5/skip3/trackFinished1, pending0. Рекомендации тестами не менялись: это реальные пользовательские действия. Пользователь подтвердил «ставлюлайквEncore→появляетсявприложенииЯндекса». Обратная ручнаясинхронизация и realdislike/Undo ещё не подтверждены, Q06 не согласован.
+PASS:51app+6probeRust/10ignored,Clippy,11TSunit;renderer77PASS+1opt-in skipped. Native readonly настоящиеWavebatchrefsPASS, и новая/следующаяпорции безлоговUID/session. NativetestModewaveguard/source/history/metrics/clear/mini/topmost/maximized/instance/normalExitPASS. Ordinarydebugexe успешнообновлён после подтверждённоговыхода. Пользователь включилWave и подтвердил положительныйstatusбезошибки; readonlyагрегаты личнойSQLite (только schema/count/status/eventtype) показали schema5, sent radioStarted2/trackStarted5/skip3/trackFinished1, pending0. Рекомендации тестами не менялись: это реальные пользовательские действия. Пользователь подтвердил «ставлюлайквYCore Music→появляетсявприложенииЯндекса». Обратная ручнаясинхронизация и realdislike/Undo ещё не подтверждены, Q06 не согласован.
 
 ## Интерактивная очередь и подгрузка — 2026-11-05
 
 Реализованы REQ054/055: кнопки в строках, ordinal/generation selection, текущая/предыдущие/следующие позиции, согласованное продолжение после выбранной, защита от поздних matching/Next/порций. Queue-scroll загружает следующую Waveпорцию у нижнего края, не запускает музыку и не смещает current/scroll; coalescing/retry/около500futurebuffer. Ранее существовавший rollingpast50 сохранён, render выполняется после trim. Debounced focus-read реакций обновляет внешний like/unlike без Set.
 
-PASS:12TSunit,82renderer+1opt-in skipped,check/build;последний маленький переносrenderпослеtrim дополнительно4queuePASS и новыйbuildPASS. Native basic/metrics/storage/mini/topmost/maximized/instancePASS. ENCORE_QUEUE_SMOKE native click→выбраннаяпозиция→ручнойNext→назад→1cuediframePASS. Два прогона настоящего stream/END на M7lc1UVf-VE не завершились из-за buffering/recovery, JSerrorsпусты; НЕ считать native END-next проверенным. END-next и поздниеответы проверены renderer, настоящийYT/listening былPASS в предыдущемсрезе. После userexit normaldebugexe успешно обновлён. Native-testбинарник до последнего переносаrender, перед новымnativeсобрать заново. Usercredentials/предпочтения тестами не менялись.
+PASS:12TSunit,82renderer+1opt-in skipped,check/build;последний маленький переносrenderпослеtrim дополнительно4queuePASS и новыйbuildPASS. Native basic/metrics/storage/mini/topmost/maximized/instancePASS. YCORE_QUEUE_SMOKE native click→выбраннаяпозиция→ручнойNext→назад→1cuediframePASS. Два прогона настоящего stream/END на M7lc1UVf-VE не завершились из-за buffering/recovery, JSerrorsпусты; НЕ считать native END-next проверенным. END-next и поздниеответы проверены renderer, настоящийYT/listening былPASS в предыдущемсрезе. После userexit normaldebugexe успешно обновлён. Native-testбинарник до последнего переносаrender, перед новымnativeсобрать заново. Usercredentials/предпочтения тестами не менялись.
 
 
 

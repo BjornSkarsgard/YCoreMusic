@@ -1,6 +1,6 @@
 use zeroize::Zeroizing;
 fn entry() -> Result<keyring::Entry, &'static str> {
-    keyring::Entry::new("io.encore.desktop", "yandex-oauth")
+    keyring::Entry::new("io.ycore.desktop", "yandex-oauth")
         .map_err(|_| "Credential store unavailable")
 }
 pub fn load() -> Result<Zeroizing<String>, &'static str> {
@@ -37,7 +37,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         );
-        let entry = keyring::Entry::new("io.encore.test", &name).unwrap();
+        let entry = keyring::Entry::new("io.ycore.test", &name).unwrap();
         entry.set_password("synthetic-test-value").unwrap();
         let result = entry.get_password();
         let deleted = entry.delete_credential();

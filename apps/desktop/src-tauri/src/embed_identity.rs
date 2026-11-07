@@ -25,7 +25,7 @@ pub fn embed_identity_status(window: WebviewWindow) -> Result<serde_json::Value,
 #[cfg(target_os = "linux")]
 pub fn isolated_profile(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
     if cfg!(debug_assertions) && app.state::<crate::storage::StorageState>().test_mode {
-        std::env::var_os("ENCORE_TEST_DATA_DIR")
+        std::env::var_os("YCORE_TEST_DATA_DIR")
             .map(|root| std::path::PathBuf::from(root).join("webview"))
     } else {
         None
@@ -56,7 +56,7 @@ pub fn defer_main(
 #[cfg(all(target_os = "linux", feature = "linux-embed-referrer"))]
 pub fn extension_directory(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     let directory = if app.state::<crate::storage::StorageState>().test_mode {
-        std::env::var_os("ENCORE_TEST_DATA_DIR").map(std::path::PathBuf::from)
+        std::env::var_os("YCORE_TEST_DATA_DIR").map(std::path::PathBuf::from)
     } else {
         app.path().app_cache_dir().ok()
     }

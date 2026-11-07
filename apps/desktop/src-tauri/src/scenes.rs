@@ -416,7 +416,7 @@ pub fn scene_control(window: WebviewWindow, action: Control) -> Result<Status, S
                 _ => "previous",
             };
             window
-                .emit_to("main", "encore-control", command)
+                .emit_to("main", "ycore-control", command)
                 .map_err(|_| "Cannot deliver control")?;
         }
         Control::Seek { position } => {
@@ -426,7 +426,7 @@ pub fn scene_control(window: WebviewWindow, action: Control) -> Result<Status, S
             window
                 .emit_to(
                     "main",
-                    "encore-media",
+                    "ycore-media",
                     serde_json::json!({"action":"position","value":position}),
                 )
                 .map_err(|_| "Cannot deliver seek")?;

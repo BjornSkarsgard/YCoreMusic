@@ -41,7 +41,7 @@ export async function verifyLinuxScenes({request,session,execute,nativeInvoke,sl
   await until('return document.getElementById("status").textContent==="Воспроизведение"',35000);
   const epoch=(await nativeInvoke('player_host_status')).epoch;
   const media=await nativeInvoke('media_status');assert(media?.available,'Linux MPRIS must be available');
-  const mpris=method=>execFileSync('gdbus',['call','--session','--dest','org.mpris.MediaPlayer2.encore_test','--object-path','/org/mpris/MediaPlayer2','--method','org.mpris.MediaPlayer2.Player.'+method],{stdio:'pipe'});
+  const mpris=method=>execFileSync('gdbus',['call','--session','--dest','org.mpris.MediaPlayer2.ycore_test','--object-path','/org/mpris/MediaPlayer2','--method','org.mpris.MediaPlayer2.Player.'+method],{stdio:'pipe'});
   mpris('Pause');await until('return document.getElementById("status").textContent==="Пауза"');
   mpris('Play');await until('return document.getElementById("status").textContent==="Воспроизведение"');
   console.log('Native Linux MPRIS Play/Pause control the sole real YouTube player: PASS');

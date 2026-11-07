@@ -1,7 +1,7 @@
 import {showPanel} from './shell';
 import {platformCapabilities} from './platform';
 
-const preference='encore.mainLayout.v1';
+const preference='ycore.mainLayout.v1';
 export type MainLayout='video'|'controls'|'spectrum';
 /** Reuses the mounted controls and lists; never creates a playback session or player. */
 export function mountWindowLayout(){

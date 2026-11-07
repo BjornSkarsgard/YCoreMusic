@@ -11,7 +11,7 @@ cleanup() {
 trap cleanup EXIT
 # A private null output makes real WebKit/GStreamer playback testable without
 # sound hardware. Only the hosted runner's child processes use this socket.
-if [ "${GITHUB_ACTIONS:-}" = true ] && [ "${ENCORE_BASE_PLAYBACK_SMOKE:-}" = 1 ]; then
+if [ "${GITHUB_ACTIONS:-}" = true ] && [ "${YCORE_BASE_PLAYBACK_SMOKE:-}" = 1 ]; then
   pulse_dir=$(mktemp -d "$PWD/.tools/pulse.XXXXXX")
   pulseaudio -n --daemonize=no --use-pid-file=no --exit-idle-time=-1 \
     --log-target="file:$PWD/.tools/pulseaudio.log" \
@@ -33,8 +33,8 @@ for attempt in $(seq 1 50); do
 done
 kill -0 "$wm_pid"
 xprop -root _NET_SUPPORTING_WM_CHECK
-if [ "${ENCORE_LINUX_FEATURES_SMOKE:-}" = 1 ]; then
-  test "${ENCORE_PRIVATE_X11:-}" = 1
+if [ "${YCORE_LINUX_FEATURES_SMOKE:-}" = 1 ]; then
+  test "${YCORE_PRIVATE_X11:-}" = 1
   cc scripts/linux-display-fixture.c -o .tools/linux-display-fixture -lX11 -lXrandr
   .tools/linux-display-fixture
 fi

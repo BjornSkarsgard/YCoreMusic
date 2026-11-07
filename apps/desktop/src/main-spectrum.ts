@@ -3,7 +3,7 @@ import {listen} from '@tauri-apps/api/event';
 import {mountSpectrum,type AnalysisFrame,type VisualOptions} from './spectrum';
 import type {MainLayout} from './window-layout';
 
-const key='encore.mainSpectrum.v1';
+const key='ycore.mainSpectrum.v1';
 const allowedFps=new Set([0,30,60,90,120,144,165,180,240]);
 const qualities=new Set<VisualOptions['quality']>(['low','medium','high','ultra']);
 type Saved=Pick<VisualOptions,'fps'|'quality'|'preset'>;

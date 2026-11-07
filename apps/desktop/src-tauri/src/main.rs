@@ -161,9 +161,9 @@ fn main() {
             window.visible = false;
         }
     }
-    if cfg!(debug_assertions) && std::env::var_os("ENCORE_TEST_DATA_DIR").is_some() {
+    if cfg!(debug_assertions) && std::env::var_os("YCORE_TEST_DATA_DIR").is_some() {
         // Separate instance lock and WebView profile; never attach to the user's player.
-        context.config_mut().identifier = "io.encore.desktop.test".into();
+        context.config_mut().identifier = "io.ycore.desktop.test".into();
         if let Some(window) = context.config_mut().app.windows.first_mut() {
             window.title = "YCore Music · нативная проверка".into();
         }
@@ -189,7 +189,7 @@ fn main() {
             #[cfg(feature = "remote-probe")]
             app.manage(remote::Remote::default());
             let test_directory = if cfg!(debug_assertions) {
-                std::env::var_os("ENCORE_TEST_DATA_DIR")
+                std::env::var_os("YCORE_TEST_DATA_DIR")
             } else {
                 None
             };
@@ -208,7 +208,7 @@ fn main() {
             let store = directory.and_then(|directory| {
                 std::fs::create_dir_all(&directory)
                     .map_err(|_| "Cannot create application data directory")?;
-                storage::Store::open(&directory.join("encore.sqlite"))
+                storage::Store::open(&directory.join("ycore.sqlite"))
             });
             app.manage(storage::StorageState { store, test_mode });
             app.manage(crash_recovery::Recovery::open(recovery_path));

@@ -4,17 +4,17 @@ import { resolve } from 'node:path';
 import {existsSync,writeFileSync,readFileSync} from 'node:fs';
 import assert from 'node:assert/strict';
 const root=process.cwd();
-const driverPort=Number(process.env.ENCORE_NATIVE_PORT??4444);
+const driverPort=Number(process.env.YCORE_NATIVE_PORT??4444);
 assert(Number.isInteger(driverPort)&&driverPort>=1024&&driverPort<65535,'Invalid native driver port');
-const backgroundSmoke=process.env.ENCORE_AUTOSTART_SMOKE==='1';
-const nativeApp=process.env.ENCORE_NATIVE_APP??resolve(root,'apps/desktop/src-tauri/target/native-test/'+(process.platform==='win32'?'YCoreMusic.exe':'YCoreMusic'));
-const nativeDriver=process.env.ENCORE_NATIVE_DRIVER??(process.platform==='win32'?(process.env.ENCORE_EDGE_DRIVER??resolve(root,'.tools/edgedriver/msedgedriver.exe')):'/usr/bin/WebKitWebDriver');
+const backgroundSmoke=process.env.YCORE_AUTOSTART_SMOKE==='1';
+const nativeApp=process.env.YCORE_NATIVE_APP??resolve(root,'apps/desktop/src-tauri/target/native-test/'+(process.platform==='win32'?'YCoreMusic.exe':'YCoreMusic'));
+const nativeDriver=process.env.YCORE_NATIVE_DRIVER??(process.platform==='win32'?(process.env.YCORE_EDGE_DRIVER??resolve(root,'.tools/edgedriver/msedgedriver.exe')):'/usr/bin/WebKitWebDriver');
 assert(existsSync(nativeApp),'Build the native-test profile first; see README native smoke instructions.');
-const nativeEnvironment={...process.env,ENCORE_TEST_DATA_DIR:process.env.ENCORE_NATIVE_TEST_DATA_DIR??resolve(root,'.tools/native-test-data')};
-const remoteSmoke=process.env.ENCORE_REMOTE_SMOKE==='1'?await import('./native-remote-smoke.mjs'):null;
-const remoteFixture=remoteSmoke?await remoteSmoke.launchRelay(root,nativeEnvironment.ENCORE_TEST_DATA_DIR):null;
-if(remoteFixture)nativeEnvironment.ENCORE_REMOTE_TEST_ORIGIN=remoteFixture.origin;
-const driver=spawn(process.env.ENCORE_TAURI_DRIVER ?? 'tauri-driver',[
+const nativeEnvironment={...process.env,YCORE_TEST_DATA_DIR:process.env.YCORE_NATIVE_TEST_DATA_DIR??resolve(root,'.tools/native-test-data')};
+const remoteSmoke=process.env.YCORE_REMOTE_SMOKE==='1'?await import('./native-remote-smoke.mjs'):null;
+const remoteFixture=remoteSmoke?await remoteSmoke.launchRelay(root,nativeEnvironment.YCORE_TEST_DATA_DIR):null;
+if(remoteFixture)nativeEnvironment.YCORE_REMOTE_TEST_ORIGIN=remoteFixture.origin;
+const driver=spawn(process.env.YCORE_TAURI_DRIVER ?? 'tauri-driver',[
   '--port',String(driverPort),'--native-port',String(driverPort+1),'--native-driver',nativeDriver
 ],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
 let session,appPid,isolated=false,networkEmulated=false;
@@ -52,12 +52,12 @@ async function playbackTopology(requireReady=true){
 try {
   driver.on('error',()=>{});
   for(let attempt=0;attempt<40;attempt++){try{await request('/status');break;}catch{await sleep(250);}}
-  const created=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:nativeApp,args:backgroundSmoke?['--encore-autostart']:[]}}}});
+  const created=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:nativeApp,args:backgroundSmoke?['--ycore-autostart']:[]}}}});
   session=created.sessionId;
   await until('return !!document.getElementById("play")');
   await execute('window.nativeErrors=[];window.addEventListener("error",event=>window.nativeErrors.push(event.message));');
   assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
-  originalVolume=await execute('return localStorage.getItem("encore.volume.v1")');volumeCaptured=true;
+  originalVolume=await execute('return localStorage.getItem("ycore.volume.v1")');volumeCaptured=true;
   console.log('Native startup without autoplay: PASS');
   const store=async(requestBody)=>request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("storage_command",{request:arguments[0]}).then(done).catch(()=>done({testError:true}));',args:[requestBody]});
   const storageStatus=await store({type:'status'});
@@ -68,7 +68,7 @@ try {
     await execute('if(document.getElementById("account-welcome")?.open)document.getElementById("account-welcome-later").click();');
     await remoteSmoke.verifyRemote({root,execute,nativeInvoke,until,sleep,fixture:remoteFixture});
   }
-  const expectedInstallation=process.env.ENCORE_EXPECT_INSTALLATION_SENTINEL;
+  const expectedInstallation=process.env.YCORE_EXPECT_INSTALLATION_SENTINEL;
   if(expectedInstallation){
     assert.equal(await execute('return localStorage.getItem("ycore.installation-probe")'),expectedInstallation,'Update must preserve UI preferences');
     const history=await store({type:'history',query:'Installation preservation fixture'});
@@ -78,7 +78,7 @@ try {
   await execute('if(document.getElementById("account-welcome")?.open)document.getElementById("account-welcome-later").click();');
   appPid=(await nativeInvoke('desktop_status')).process_id;
   assert(Number.isInteger(appPid),'Native test process identity unavailable');
-  if(process.env.ENCORE_AUTH_SMOKE==='1'){
+  if(process.env.YCORE_AUTH_SMOKE==='1'){
     const handles=await nativeInvoke('desktop_test_windows');assert(Array.isArray(handles));
     const loginStarted=await request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("auth_command",{action:"begin"}).then(done).catch(error=>done({loginError:String(error)}));',args:[]});
     assert.equal(loginStarted,'waiting',JSON.stringify(loginStarted));
@@ -103,11 +103,11 @@ try {
   console.log('Native autostart read and isolated mutation guard: PASS (no OS setting written)');
   const diagnostics=await nativeInvoke('diagnostics_status',{checkYandex:false});assert.equal(diagnostics.storageAvailable,true);assert.equal(typeof diagnostics.version,'string');
   assert.deepEqual(Object.keys(diagnostics).sort(),['architecture','platform','storageAvailable','version','yandex']);
-  if(process.env.ENCORE_LIVE_LIBRARY==='1')assert.equal((await nativeInvoke('diagnostics_status',{checkYandex:true})).yandex,'connected');
+  if(process.env.YCORE_LIVE_LIBRARY==='1')assert.equal((await nativeInvoke('diagnostics_status',{checkYandex:true})).yandex,'connected');
   console.log('Native diagnostics health and identity-free response: PASS');
-  if(process.env.ENCORE_LIVE_WAVE_REFS==='if-connected'&&diagnostics.yandex==='missing'){
+  if(process.env.YCORE_LIVE_WAVE_REFS==='if-connected'&&diagnostics.yandex==='missing'){
     console.log('Native readonly Wave batch references: SKIPPED (account not connected)');
-  }else if(['1','if-connected'].includes(process.env.ENCORE_LIVE_WAVE_REFS)){
+  }else if(['1','if-connected'].includes(process.env.YCORE_LIVE_WAVE_REFS)){
     assert.notEqual(diagnostics.yandex,'missing','Wave metadata probe requires an existing saved account; never supply a token in arguments');
     const first=await nativeInvoke('source_fetch',{fresh:true,station:'user:onyourwave'});assert(Array.isArray(first)&&first.length);
     for(const track of first){assert.deepEqual(Object.keys(track).sort(),['artist','id','title','waveRef']);assert.match(track.waveRef,/^[0-9a-f]{32}$/);}
@@ -115,7 +115,7 @@ try {
     assert.equal(new Set([...first,...next].map(track=>track.waveRef)).size,first.length+next.length);
     console.log('Native readonly Wave batch references: PASS (session/account identifiers withheld; no feedback sent)');
   }
-  if(process.env.ENCORE_LIVE_GUEST==='1'){
+  if(process.env.YCORE_LIVE_GUEST==='1'){
     assert.equal(diagnostics.yandex,'missing','Guest test requires an already signed-out account; never delete user credentials for a test');
     const result=await nativeInvoke('catalogue_search',{query:'Rammstein',page:0});
     assert(result?.tracks.length&&result?.artists.length&&result?.albums.length&&result?.playlists.length);
@@ -179,7 +179,7 @@ try {
   await execute('document.getElementById("history-query").value="";document.getElementById("history-query").dispatchEvent(new Event("input"));');
   await click('history-period-clear');
   console.log('Native history cursor pagination, inclusive local date period, concurrent new play and confirmed clear: PASS');
-  if(process.env.ENCORE_UPDATES_SIGNATURE_SMOKE==='1'){
+  if(process.env.YCORE_UPDATES_SIGNATURE_SMOKE==='1'){
     const signed=JSON.parse(readFileSync(resolve(root,'apps/desktop/tests/fixtures/update-signature.json'),'utf8'));
     assert.equal(await nativeInvoke('updates_verify_probe',signed),true,'Valid signed fixture must verify');
     assert.equal(await nativeInvoke('updates_verify_probe',{...signed,bytes:[...signed.bytes,0]}),false,'Tampered bytes must fail');
@@ -188,7 +188,7 @@ try {
     assert.equal(await nativeInvoke('updates_command',{action:'install'}).then(value=>value.phase),'disabled','Isolated profile must never install');
     console.log('Native updater signature: valid fixture accepted; tamper, version mismatch and downgrade rejected; test installation blocked: PASS');
   }
-  if(process.env.ENCORE_TRACK_MATCH_PROBE==='1'){
+  if(process.env.YCORE_TRACK_MATCH_PROBE==='1'){
     for(const fixture of [{title:'Absence',artist:'Xalv'},{title:'What I Need',artist:'Catch-22 NZ'},{title:'ПАКЕТ',artist:'SQWOZ BAB'}]){
       await execute('window.nativeMatchFixture=arguments[0];document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("catalogue-query").value=arguments[0].title+" "+arguments[0].artist;document.getElementById("catalogue-search").requestSubmit();',[fixture]);
       await until('return [...document.querySelectorAll("#catalogue-results .catalogue-track")].some(row=>row.textContent.includes(window.nativeMatchFixture.title)&&row.textContent.includes(window.nativeMatchFixture.artist))',45000);
@@ -200,13 +200,13 @@ try {
       console.log('Native numeric Yandex track -> favorites -> metadata -> actual playback: '+fixture.title+' PASS');
     }
   }
-  if(process.env.ENCORE_BASE_PLAYBACK_SMOKE==='1'){
-    const smokeVideo=process.env.ENCORE_BASE_VIDEO_ID??'aqz-KE-bpKQ';
+  if(process.env.YCORE_BASE_PLAYBACK_SMOKE==='1'){
+    const smokeVideo=process.env.YCORE_BASE_VIDEO_ID??'aqz-KE-bpKQ';
     assert(/^[A-Za-z0-9_-]{11}$/.test(smokeVideo),'Native playback fixture must be a YouTube video ID');
     const press=async id=>{const element=await request('/session/'+session+'/element',{using:'css selector',value:'#'+id});await request('/session/'+session+'/element/'+element['element-6066-11e4-a52e-4f735466cecf']+'/click',{});};
     await execute('const layout=document.getElementById("window-layout");layout.value="video";layout.dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value=arguments[0];document.getElementById("load").requestSubmit();',[smokeVideo]);
     await until('return !document.getElementById("play").disabled',45000);
-    if(process.env.ENCORE_CUE_BRAND_SMOKE==='1'&&(await nativeInvoke('player_host_status'))?.supported){
+    if(process.env.YCORE_CUE_BRAND_SMOKE==='1'&&(await nativeInvoke('player_host_status'))?.supported){
       const main=await request('/session/'+session+'/window'),handles=await request('/session/'+session+'/window/handles');
       let source;
       for(const handle of handles){await request('/session/'+session+'/window',{handle});if(await execute('return window.__TAURI_INTERNALS__?.metadata.currentWindow.label')==='player-host'){source=handle;break;}}
@@ -221,16 +221,16 @@ try {
     await press('play');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',45000);
     await until('return Number(document.getElementById("seek").value)>1',30000);await playbackTopology();
-    if(process.env.ENCORE_MEDIA_KEYS_SMOKE==='1'){
+    if(process.env.YCORE_MEDIA_KEYS_SMOKE==='1'){
       await mediaUntil('playing');
-      await nativeInvoke('plugin:event|emit',{event:'encore-media',payload:{action:'pause',value:0}});await mediaUntil('paused');
+      await nativeInvoke('plugin:event|emit',{event:'ycore-media',payload:{action:'pause',value:0}});await mediaUntil('paused');
       await nativeInvoke('desktop_close');assert.equal((await nativeInvoke('desktop_status')).visible,false);
-      await nativeInvoke('plugin:event|emit',{event:'encore-media',payload:{action:'toggle',value:0}});await mediaUntil('playing');
+      await nativeInvoke('plugin:event|emit',{event:'ycore-media',payload:{action:'toggle',value:0}});await mediaUntil('playing');
       assert.equal((await nativeInvoke('desktop_status')).visible,false,'Media commands must not raise the hidden window');
       await nativeInvoke('desktop_action',{action:'open'});
       console.log('Native SMTC available; media event delivery pauses and resumes hidden playback without focus: PASS (physical keyboard not simulated)');
     }
-    if(process.platform==='linux'&&process.env.ENCORE_LINUX_FEATURES_SMOKE==='1')await (await import('./native-linux-features.mjs')).verifyLinuxVideo({execute,nativeInvoke,sleep,request,session,until});
+    if(process.platform==='linux'&&process.env.YCORE_LINUX_FEATURES_SMOKE==='1')await (await import('./native-linux-features.mjs')).verifyLinuxVideo({execute,nativeInvoke,sleep,request,session,until});
     await press('pause');await until('return document.getElementById("status").textContent==="Пауза"');
     const paused=Number(await execute('return document.getElementById("seek").value'));await sleep(1500);assert(Math.abs(Number(await execute('return document.getElementById("seek").value'))-paused)<1.5);
     const target=paused+30;await execute('const input=document.getElementById("seek");input.value=String(arguments[0]);input.dispatchEvent(new Event("input"));input.dispatchEvent(new Event("change"));',[target]);await press('play');
@@ -242,16 +242,16 @@ try {
     await nativeInvoke('desktop_action',{action:'open'});await click('pause');await playbackTopology();
     writeFileSync(resolve(root,'.tools/native-basic-playback-'+process.platform+'.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
     console.log('Native actual YouTube: one player, advancing media position, Pause/seek/resume, controls-only and hidden background playback: PASS');
-    if(process.platform==='linux'&&process.env.ENCORE_LINUX_FEATURES_SMOKE==='1')await (await import('./native-linux-features.mjs')).verifyLinuxScenes({request,session,execute,nativeInvoke,sleep,until});
+    if(process.platform==='linux'&&process.env.YCORE_LINUX_FEATURES_SMOKE==='1')await (await import('./native-linux-features.mjs')).verifyLinuxScenes({request,session,execute,nativeInvoke,sleep,until});
   }
-  if(process.env.ENCORE_LIVE_YANDEX==='1') {
+  if(process.env.YCORE_LIVE_YANDEX==='1') {
     await until('return document.querySelectorAll("#queue-list li").length>0');
     const count=await execute('return document.querySelectorAll("#queue-list li").length');
     await click('source-more');
     await until('return document.querySelectorAll("#queue-list li").length>'+count);
     console.log('Native source session + next batch via OS credential store: PASS (counts only)');
   }
-  if(process.env.ENCORE_LIVE_CATALOGUE==='1') {
+  if(process.env.YCORE_LIVE_CATALOGUE==='1') {
     await until('return document.querySelectorAll("#queue-list li").length>0');
     const before=await execute('return document.getElementById("track-title").textContent');
     await execute('document.getElementById("catalogue-query").value="рамштайн";document.getElementById("catalogue-search").requestSubmit();');
@@ -272,7 +272,7 @@ try {
     assert(await execute('return document.querySelectorAll("#queue-list li").length>0'));
     console.log('Native catalogue: Cyrillic query, four sections, artist/album/playlist lists and selection: PASS');
   }
-  if(process.env.ENCORE_LIVE_LIBRARY==='1') {
+  if(process.env.YCORE_LIVE_LIBRARY==='1') {
     await until('return document.querySelectorAll("#queue-list li").length>0');
     const before=await execute('return document.getElementById("track-title").textContent');
     await execute('document.querySelector("[data-panel=library]").click()');
@@ -290,7 +290,7 @@ try {
     writeFileSync(resolve(root,'.tools/native-discovery.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
     console.log('Native personal library, likes metadata and current chart browsing: PASS; live feedback writes blocked');
   }
-  if(process.env.ENCORE_LIVE_ALTERNATIVES==='1'||process.env.ENCORE_LIVE_FAVORITES==='1') {
+  if(process.env.YCORE_LIVE_ALTERNATIVES==='1'||process.env.YCORE_LIVE_FAVORITES==='1') {
     const results=await nativeInvoke('catalogue_search',{query:'Oasis Wonderwall',page:0});
     const track=results.tracks.find(track=>track.artist.includes('Oasis')&&track.title.toLowerCase().includes('wonderwall'));
     assert(track,'Known real alternative-video fixture not found');
@@ -307,7 +307,7 @@ try {
     await click('pause');
     writeFileSync(resolve(root,'.tools/native-alternatives.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
     console.log('Native real alternative video switch: preview, same track, one IFrame, explicit play preserved, muted: PASS');
-    if(process.env.ENCORE_LIVE_FAVORITES==='1'){
+    if(process.env.YCORE_LIVE_FAVORITES==='1'){
       const candidates=await nativeInvoke('search_videos',{title:track.title,artist:track.artist});
       assert(candidates.length>1);for(const candidate of candidates.slice(0,2))await store({type:'save_video',trackId:track.id,videoId:candidate.id});
       await execute('document.querySelector(".alternative-video[aria-pressed=true]").click()');
@@ -327,13 +327,13 @@ try {
       console.log('Native two saved clips: repeat-one alternates at real END; removing a favorite keeps playback: PASS');
     }
   }
-  if(process.env.ENCORE_LIVE_MATCHING==='1') {
+  if(process.env.YCORE_LIVE_MATCHING==='1') {
     await until('return !document.getElementById("play").disabled || /Уверенного|недоступен|недоступны/.test(document.getElementById("status").textContent)',40000);
     const matched=await execute('return !document.getElementById("play").disabled');
     assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
     console.log(matched?'Native Yandex metadata -> automatic match -> IFrame cue without autoplay: PASS':'Native matching: PARTIAL (current track requires manual selection)');
   }
-  if(process.env.ENCORE_LIVE_MATCHING==='1') {
+  if(process.env.YCORE_LIVE_MATCHING==='1') {
     const candidates=await request('/session/'+session+'/execute/async',{script:'const done=arguments[arguments.length-1];window.__TAURI_INTERNALS__.invoke("search_videos",{title:"Wonderwall",artist:"Oasis"}).then(done).catch(()=>done(null));',args:[]});
     assert(Array.isArray(candidates) && candidates.length>0,'Known search fixture has no candidate');
     await execute('document.getElementById("url").value=arguments[0];document.getElementById("load").requestSubmit();',[candidates[0].id]);
@@ -341,7 +341,7 @@ try {
     assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
     console.log('Native known search fixture -> matching candidate -> real IFrame cue: PASS');
   }
-  if(process.env.ENCORE_LIVE_SMART_HISTORY==='1'){
+  if(process.env.YCORE_LIVE_SMART_HISTORY==='1'){
     await store({type:'clear_history'});
     await store({type:'record',event:{playbackId:'native-smart-seed',trackId:'manual:M7lc1UVf-VE',title:'Native history fixture',artist:'',videoId:'M7lc1UVf-VE'}});
     const pool=await nativeInvoke('smart_history_fetch');assert(pool.length>0&&pool.every(track=>track.weight>0));
@@ -352,10 +352,10 @@ try {
     assert.equal(await execute('return document.getElementById("source-name").textContent'),'Умная история');assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);await click('pause');
     console.log('Native local Smart History: known clip, explicit Play, real END continuation, one IFrame and sticky source: PASS');
   }
-  if(process.env.ENCORE_CRASH_RECOVERY_SMOKE==='1'){
+  if(process.env.YCORE_CRASH_RECOVERY_SMOKE==='1'){
     const checkpoint={trackId:'123',title:'Native recovery clip',artist:'Test',videoId:'aqz-KE-bpKQ',position:37};
     await nativeInvoke('crash_recovery',{request:{type:'save',snapshot:checkpoint}});
-    assert.equal(JSON.parse(readFileSync(resolve(nativeEnvironment.ENCORE_TEST_DATA_DIR,'playback-recovery.json'),'utf8')).clean,false);
+    assert.equal(JSON.parse(readFileSync(resolve(nativeEnvironment.YCORE_TEST_DATA_DIR,'playback-recovery.json'),'utf8')).clean,false);
     assert(isolated&&Number.isInteger(appPid),'Only the isolated process may be interrupted');
     process.kill(appPid,'SIGKILL');await request('/session/'+session,undefined,'DELETE').catch(()=>{});
     const restarted=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:nativeApp}}}});session=restarted.sessionId;
@@ -366,7 +366,7 @@ try {
     writeFileSync(resolve(root,'.tools/native-crash-recovery.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
     await click('crash-recovery-resume');await until('return document.getElementById("status").textContent==="Воспроизведение" && Number(document.getElementById("seek").value)>=37',45000);
     await click('pause');await sleep(700);assert.equal((await nativeInvoke('player_host_status')).players,1);
-    const savedRecovery=JSON.parse(readFileSync(resolve(nativeEnvironment.ENCORE_TEST_DATA_DIR,'playback-recovery.json'),'utf8'));assert.equal(savedRecovery.clean,false);assert(savedRecovery.snapshot.position>=37);assert.equal(savedRecovery.snapshot.videoId,checkpoint.videoId);
+    const savedRecovery=JSON.parse(readFileSync(resolve(nativeEnvironment.YCORE_TEST_DATA_DIR,'playback-recovery.json'),'utf8'));assert.equal(savedRecovery.clean,false);assert(savedRecovery.snapshot.position>=37);assert.equal(savedRecovery.snapshot.videoId,checkpoint.videoId);
     assert.equal((await nativeInvoke('crash_recovery',{request:{type:'read'}})),null);
     await nativeInvoke('desktop_action',{action:'quit'}).catch(()=>null);await request('/session/'+session,undefined,'DELETE').catch(()=>{});
     const normal=await request('/session',{capabilities:{alwaysMatch:{'tauri:options':{application:nativeApp}}}});session=normal.sessionId;
@@ -376,7 +376,7 @@ try {
     await execute('if(document.getElementById("account-welcome")?.open)document.getElementById("account-welcome-later").click();');
     console.log('Native abrupt isolated exit → explicit restore at37sec with real YouTube; clean Quit → no restore prompt: PASS');
   }
-  if(process.env.ENCORE_VISUALIZERS_SMOKE==='1'){
+  if(process.env.YCORE_VISUALIZERS_SMOKE==='1'){
     const main=await request('/session/'+session+'/window');
     const switchWindow=handle=>request('/session/'+session+'/window',{handle});
     await execute('document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
@@ -409,7 +409,7 @@ try {
     }finally{await switchWindow(main);await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("pause").click();document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));');await nativeInvoke('scene_window',{action:'off',monitorId:display.id});}
     console.log('Native all four visualizers in main and independent external window, one unchanged YouTube engine: PASS');
   }
-  if(process.env.ENCORE_SLEEP_TIMER_SMOKE==='1'){
+  if(process.env.YCORE_SLEEP_TIMER_SMOKE==='1'){
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
     await until('return !document.getElementById("play").disabled',35000);await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"',35000);
     const main=await request('/session/'+session+'/window'),epoch=(await nativeInvoke('player_host_status')).epoch;
@@ -427,7 +427,7 @@ try {
     await click('sleep-timer-open');writeFileSync(resolve(root,'.tools/native-sleep-timer.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));await click('sleep-timer-close');await click('pause');
     console.log('Native sleep timer: actual YouTube pause while '+(tray?'in tray':'visible')+', no engine reload, explicit resume and cancellation: PASS');
   }
-  if(process.env.ENCORE_PLAYBACK_GUARD_SMOKE==='1'){
+  if(process.env.YCORE_PLAYBACK_GUARD_SMOKE==='1'){
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
     await until('return !document.getElementById("play").disabled',35000);await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"',35000);
     const epoch=(await nativeInvoke('player_host_status')).epoch;
@@ -440,7 +440,7 @@ try {
     const before=Number(await execute('return document.getElementById("seek").value'));await click('forward');await until(`return Number(document.getElementById("seek").value)>=${before+4}`);
     await click('pause');console.log('Native playback guard: navigation/seek/source/video blocked, pause/resume allowed, unlock accessible in mini, no engine replacement: PASS');
   }
-  if(process.env.ENCORE_STABILITY_SMOKE==='1'){
+  if(process.env.YCORE_STABILITY_SMOKE==='1'){
     assert.equal((await nativeInvoke('player_host_status')).supported,true);
     assert.deepEqual(await nativeInvoke('platform_capabilities'),{videoMirrors:true,audioAnalysis:true});
     const displays=await nativeInvoke('monitor_list');const target=displays.find(display=>!display.primary&&display.stable)??displays.find(display=>display.stable);assert(target,'A stable display is required');
@@ -482,7 +482,7 @@ try {
     await playbackTopology();
     await click('pause');console.log('Native stability: outage in main and sole engine, Pause survives reconnect, explicit Play resumes one engine: PASS');
   }
-  if(process.env.ENCORE_THEME_DPI==='1'){
+  if(process.env.YCORE_THEME_DPI==='1'){
     const displays=await nativeInvoke('monitor_list');const scales=[];
     for(let index=0;index<displays.length;index++){
       const display=displays[index];await nativeInvoke('window_test_monitor',{monitorId:display.id});
@@ -498,7 +498,7 @@ try {
     await sleep(500);
     console.log('Native theme across '+displays.length+' connected monitors, actual Windows DPI scales '+JSON.stringify(scales)+': PASS');
   }
-  if(process.env.ENCORE_SINGLE_HOST_SMOKE==='1') {
+  if(process.env.YCORE_SINGLE_HOST_SMOKE==='1') {
     assert.equal((await nativeInvoke('player_host_status')).supported,true,'Build with --features single-player-host');
     const verificationDisplays=await nativeInvoke('monitor_list');const verificationDisplay=verificationDisplays.find(display=>!display.primary)??verificationDisplays[0];
     if(verificationDisplay)await nativeInvoke('window_test_monitor',{monitorId:verificationDisplay.id});
@@ -520,7 +520,7 @@ try {
     assert.equal(await execute('return document.querySelector(".cue-brand").hidden'),true);
     await until('return Number(document.getElementById("seek").value)>1',20000);
     assert.equal((await nativeInvoke('player_host_status')).players,1);
-    if(process.env.ENCORE_AUDIO_PROBE==='1'){
+    if(process.env.YCORE_AUDIO_PROBE==='1'){
       assert.equal(await readEngine('return document.getElementById("movie_player").getVolume()'),0,'The audio experiment must remain silent');
       const audio=await nativeInvoke('audio_probe');assert(audio&&audio.scope==='own_process_tree'&&audio.filesWritten===false);
       writeFileSync(resolve(root,'.tools/audio-probe-volume0.json'),JSON.stringify(audio,null,2));
@@ -602,7 +602,7 @@ try {
     await switchTo(sceneHandle);await until('return !!document.getElementById("scene-title")');assert.equal(await execute('return document.querySelectorAll("iframe").length'),0,'Video window must only mirror the engine');
     await switchTo(mainHandle);
     const firstScenes=await nativeInvoke('scene_windows');assert.equal(firstScenes.length,1);assert.equal(firstScenes[0].screenId,sceneDisplay.id);
-    if(process.env.ENCORE_SPECTRUM_SMOKE==='1'){
+    if(process.env.YCORE_SPECTRUM_SMOKE==='1'){
       const visualOptions={content:'visualizer',fps:30,quality:'medium'};
       const updated=await nativeInvoke('scene_window',{action:'open',monitorId:sceneDisplay.id,options:visualOptions});assert.deepEqual(updated?.options,visualOptions);
       await switchTo(sceneHandle);await until('return document.getElementById("scene").classList.contains("visualizer")');
@@ -614,7 +614,7 @@ try {
         const stats=await execute('return {stats:window.spectrumStats,renderer:document.querySelector(".spectrum-canvas").dataset.renderer,iframes:document.querySelectorAll("iframe").length}');assert.equal(stats.iframes,0);assert(['webgl','canvas2d'].includes(stats.renderer));
         writeFileSync(resolve(root,'.tools/native-spectrum.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
         console.log('Native Spectrum with real own-process audio and one YouTube engine: '+JSON.stringify(stats));
-        if(process.env.ENCORE_SPECTRUM_PERF==='1'){
+        if(process.env.YCORE_SPECTRUM_PERF==='1'){
           await execute('window.spectrumDrawTimes=[];window.spectrumAudioTimes=[];const cb=window.__TAURI_INTERNALS__.transformCallback(()=>window.spectrumAudioTimes.push(performance.now()));window.__TAURI_INTERNALS__.invoke("plugin:event|listen",{event:"audio-analysis",target:{kind:"Any"},handler:cb});const gl=document.querySelector(".spectrum-canvas").getContext("webgl");const draw=gl.drawArrays.bind(gl);gl.drawArrays=(...args)=>{window.spectrumDrawTimes.push(performance.now());return draw(...args);};');
           await switchTo(mainHandle);await nativeInvoke('desktop_action',{action:'open'});await sleep(4000);await switchTo(sceneHandle);
           console.log('Native external Spectrum frame intervals: '+JSON.stringify(await execute('const t=window.spectrumDrawTimes,d=t.slice(1).map((v,i)=>v-t[i]).sort((a,b)=>a-b);return {frames:t.length,median:d[Math.floor(d.length*.5)],p95:d[Math.floor(d.length*.95)],max:d.at(-1)}')));
@@ -651,15 +651,15 @@ try {
       for(let attempt=0;attempt<20;attempt++){await sleep(200);extraSecond=await nativeInvoke('mirror_probe',{action:'capture_scene',targetLabel:extra.label,crop:extraCrop});if(extraFirst&&extraSecond&&extraFirst.frameHash!==extraSecond.frameHash)break;}
       assert(extraFirst&&extraSecond&&Math.max(extraFirst.nonBlackRatio,extraSecond.nonBlackRatio)>.02&&extraFirst.frameHash!==extraSecond.frameHash,'A second monitor must show changing real local video');
       assert.equal((await nativeInvoke('player_host_status')).players,1);assert.equal((await nativeInvoke('player_host_status')).epoch,mirrorEpoch);
-      if(process.env.ENCORE_SCENE_LAYOUT_SMOKE==='1'){
-        if(process.env.ENCORE_SPECTRUM_SMOKE==='1'){
+      if(process.env.YCORE_SCENE_LAYOUT_SMOKE==='1'){
+        if(process.env.YCORE_SPECTRUM_SMOKE==='1'){
           await nativeInvoke('scene_window',{action:'open',monitorId:extraDisplay.id,options:{content:'visualizer',fps:30,quality:'low'}});
           await nativeInvoke('scene_window',{action:'open',monitorId:sceneDisplay.id,options:{content:'video',fps:0,quality:'high'}});
         }
         await sleep(1200);
-        const layoutPath=resolve(nativeEnvironment.ENCORE_TEST_DATA_DIR,'scene-layouts.json');
+        const layoutPath=resolve(nativeEnvironment.YCORE_TEST_DATA_DIR,'scene-layouts.json');
         const saved=JSON.parse(readFileSync(layoutPath,'utf8'));assert.equal(saved.version,1);assert(saved.scenes[extraDisplay.id]&&saved.scenes[sceneDisplay.id]);
-        if(process.env.ENCORE_SPECTRUM_SMOKE==='1'){
+        if(process.env.YCORE_SPECTRUM_SMOKE==='1'){
           assert.deepEqual(saved.scenes[extraDisplay.id].options,{content:'visualizer',fps:30,quality:'low'});
           assert.deepEqual(saved.scenes[sceneDisplay.id].options,{content:'video',fps:0,quality:'high'});
         }
@@ -670,10 +670,10 @@ try {
         await nativeInvoke('scene_test_connected',{ids:null});let restored;
         for(let attempt=0;attempt<40;attempt++){restored=(await nativeInvoke('scene_windows')).find(value=>value.screenId===extraDisplay.id);if(restored?.visible&&!restored.detached)break;await sleep(100);}
         assert(restored?.visible&&!restored.detached);assert.equal(restored.monitorId,extraDisplay.id);assert.equal(restored.label,extra.label);assert.equal((await nativeInvoke('player_host_status')).epoch,mirrorEpoch);
-        if(process.env.ENCORE_SPECTRUM_SMOKE==='1')assert.deepEqual(restored.options,{content:'visualizer',fps:30,quality:'low'});
+        if(process.env.YCORE_SPECTRUM_SMOKE==='1')assert.deepEqual(restored.options,{content:'visualizer',fps:30,quality:'low'});
         console.log('Native saved scene layouts and simulated display disconnect/reconnect without OS changes or engine restart: PASS');
       }
-      if(process.env.ENCORE_SPECTRUM_SMOKE==='1'){
+      if(process.env.YCORE_SPECTRUM_SMOKE==='1'){
         await switchTo(sceneHandle);
         await execute('window.ownSceneEvents={hidden:0,invisible:0,videoOptions:0};const target={kind:"WebviewWindow",label:arguments[0]};for(const event of ["scene-hidden","scene-snapshot","scene-options"]){const handler=window.__TAURI_INTERNALS__.transformCallback(e=>{if(event==="scene-hidden")window.ownSceneEvents.hidden++;if(event==="scene-snapshot"&&!e.payload.visible)window.ownSceneEvents.invisible++;if(event==="scene-options"&&e.payload.content==="video")window.ownSceneEvents.videoOptions++;});window.__TAURI_INTERNALS__.invoke("plugin:event|listen",{event,target,handler});}',[firstScenes[0].label]);
         await switchTo(mainHandle);await nativeInvoke('scene_window',{action:'open',monitorId:sceneDisplay.id,options:{content:'visualizer',fps:0,quality:'high'}});
@@ -693,8 +693,8 @@ try {
     if((await nativeInvoke('desktop_status')).tray_available){const before=await execute('return Number(document.getElementById("seek").value)');await nativeInvoke('desktop_close');await sleep(3500);assert((await execute('return Number(document.getElementById("seek").value)'))>=before+2,'Hiding controller must not stop the sole engine');await nativeInvoke('desktop_action',{action:'open'});}
     assert.equal((await nativeInvoke('player_host_status')).epoch,mirrorEpoch,'Layout and mirrors must not recreate the engine');
     await switchTo(sceneHandle);await nativeInvoke('scene_control',{action:{type:'toggle'}});await switchTo(mainHandle);await until('return document.getElementById("status").textContent==="Пауза"');
-    if(process.env.ENCORE_SCENE_LAYOUT_SMOKE==='1'){
-      if(process.env.ENCORE_SPECTRUM_SMOKE==='1'){
+    if(process.env.YCORE_SCENE_LAYOUT_SMOKE==='1'){
+      if(process.env.YCORE_SPECTRUM_SMOKE==='1'){
         await nativeInvoke('scene_window',{action:'open',monitorId:sceneDisplay.id,options:{content:'visualizer',fps:30,quality:'medium'}});
         await sleep(1200);
       }
@@ -705,7 +705,7 @@ try {
       await execute('if(document.getElementById("account-welcome")?.open)document.getElementById("account-welcome-later").click();');
       let restored;for(let attempt=0;attempt<60;attempt++){restored=(await nativeInvoke('scene_windows')).find(value=>value.screenId===sceneDisplay.id);if(restored?.visible&&!restored.detached)break;await sleep(100);}
       assert(restored?.visible&&!restored.detached);assert.equal(restored.monitorId,sceneDisplay.id);
-      if(process.env.ENCORE_SPECTRUM_SMOKE==='1'){
+      if(process.env.YCORE_SPECTRUM_SMOKE==='1'){
         assert.deepEqual(restored.options,{content:'visualizer',fps:30,quality:'medium'});
         const restoredHandles=await request('/session/'+session+'/window/handles');const restoredSceneHandle=restoredHandles.find(handle=>handle!==mainHandle);
         await switchTo(restoredSceneHandle);await until('return document.getElementById("scene")?.classList.contains("visualizer") && !document.querySelector(".spectrum-canvas").hidden');
@@ -721,7 +721,7 @@ try {
     await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
     console.log('Native sole YouTube engine: noautoplay, one iframe, main/video mirrors, IPC guards, play/pause/seek, controls/tray continuity and shared pause: PASS (volume0)');
   }
-  if(process.env.ENCORE_CONTROLS_SMOKE==='1') {
+  if(process.env.YCORE_CONTROLS_SMOKE==='1') {
     await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="aqz-KE-bpKQ";document.getElementById("load").requestSubmit();');
     await until('return !document.getElementById("play").disabled',30000);await click('play');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',30000);
@@ -741,7 +741,7 @@ try {
     assert.equal((await store({type:'history',query:''})).length,rowsBefore,'Layout switch duplicated listening history');
     console.log('Native real YouTube controls layout: continued timeline, same single player/history, pause and return: PASS (muted test; physical sound not asserted)');
   }
-  if(process.env.ENCORE_MIRROR_PROBE==='1') {
+  if(process.env.YCORE_MIRROR_PROBE==='1') {
     assert.equal(process.platform,'win32','DWM probe is Windows only');
     const outcome={oneYoutubePlayer:true,webviews:0,calibration:false,visible:null,hidden:null,transparent:null,controls:null};
     const crop=()=>execute('const rect=document.querySelector(".screen").getBoundingClientRect();return {x:rect.x,y:rect.y,width:rect.width,height:rect.height}');
@@ -749,13 +749,13 @@ try {
     const frames=async(count=6,interval=250)=>{const result=[],started=Date.now();for(let i=0;i<count;i++){const frame=await capture(false);assert(frame?.frameHash,'Mirror capture unavailable');result.push(frame);await sleep(interval);}return {samples:count,sampledMs:Date.now()-started,uniqueFrames:new Set(result.map(value=>value.frameHash)).size,nonBlackRatio:result.reduce((sum,value)=>sum+value.nonBlackRatio,0)/result.length};};
     try{
       await execute('document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));window.mirrorOriginalPlayer=document.getElementById("player");const pattern=document.createElement("div");pattern.id="mirror-calibration";pattern.style="position:absolute;inset:0;background:rgb(255,0,0);z-index:20";document.querySelector(".screen").append(pattern);');
-      const withSurface=process.env.ENCORE_MIRROR_WEBVIEW==='1';
+      const withSurface=process.env.YCORE_MIRROR_WEBVIEW==='1';
       const opened=await nativeInvoke('mirror_probe',{action:withSurface?'open_surface':'open',crop:await crop()});assert(opened,'Mirror probe did not open; build with --features mirror-probe');
       assert.equal(opened.webviews,withSurface?2:1,'Only the explicitly requested local UI surface may add a WebView');assert.equal(opened.windows,2);outcome.webviews=opened.webviews;
       await sleep(800);const red=await capture(false);assert(red?.centerRgb?.[0]>220&&red.centerRgb[2]<30,'DWM must reflect the owned red calibration surface');
       await execute('document.getElementById("mirror-calibration").style.background="rgb(0,0,255)"');await sleep(600);const blue=await capture(false);assert(blue?.centerRgb?.[2]>220&&blue.centerRgb[0]<30,'DWM must reflect the updated blue calibration surface');
       outcome.calibration=true;await execute('document.getElementById("mirror-calibration").remove()');
-      if(process.env.ENCORE_CONTROLS_SMOKE==='1'){
+      if(process.env.YCORE_CONTROLS_SMOKE==='1'){
         await click('play');await until('return document.getElementById("status").textContent==="Воспроизведение"');await sleep(800);
         outcome.visible=await frames(10);assert(outcome.visible.nonBlackRatio>.02&&outcome.visible.uniqueFrames>2,'Visible YouTube mirror must contain changing video');await capture(true);
         if((await nativeInvoke('desktop_status')).tray_available){
@@ -765,7 +765,7 @@ try {
         }
         const transparent=await nativeInvoke('mirror_probe',{action:'conceal'});assert(transparent?.sourceAlpha===0&&transparent.mousePassthrough&&transparent.hitTestPassed,'Transparent source must have alpha0 and pass hit testing through');
         const beforeTransparent=await execute('return Number(document.getElementById("seek").value)');
-        await sleep(600);outcome.transparent={alpha:transparent.sourceAlpha,mousePassthrough:transparent.mousePassthrough,hitTestPassed:transparent.hitTestPassed,...await frames(process.env.ENCORE_MIRROR_STRESS==='1'?90:10,process.env.ENCORE_MIRROR_STRESS==='1'?333:250)};
+        await sleep(600);outcome.transparent={alpha:transparent.sourceAlpha,mousePassthrough:transparent.mousePassthrough,hitTestPassed:transparent.hitTestPassed,...await frames(process.env.YCORE_MIRROR_STRESS==='1'?90:10,process.env.YCORE_MIRROR_STRESS==='1'?333:250)};
         outcome.transparent.timelineAdvanced=(await execute('return Number(document.getElementById("seek").value)'))-beforeTransparent;
         const restored=await nativeInvoke('mirror_probe',{action:'reveal'});assert.equal(restored.sourceAlpha,opened.sourceAlpha);assert.equal(restored.mousePassthrough,opened.mousePassthrough);await sleep(400);
         await execute('document.getElementById("window-layout").value="controls";document.getElementById("window-layout").dispatchEvent(new Event("change"));');
@@ -778,7 +778,7 @@ try {
       writeFileSync(resolve(root,'.tools/dwm-mirror-probe.json'),JSON.stringify(outcome,null,2));console.log('DWM single-WebView mirror probe results: '+JSON.stringify(outcome));
     }finally{await execute('document.getElementById("mirror-calibration")?.remove();document.getElementById("window-layout").value="video";document.getElementById("window-layout").dispatchEvent(new Event("change"));').catch(()=>{});await nativeInvoke('desktop_action',{action:'open'}).catch(()=>{});await nativeInvoke('mirror_probe',{action:'close'}).catch(()=>{});}
   }
-  if(process.env.ENCORE_SCENE_SMOKE==='1') {
+  if(process.env.YCORE_SCENE_SMOKE==='1') {
     const mainHandle=await request('/session/'+session+'/window');
     const beforeHandles=await request('/session/'+session+'/window/handles');
     const displays=await nativeInvoke('monitor_list');assert(displays.length>0);assert(displays.every(display=>display.width>0&&display.height>0&&display.scaleFactor>0));
@@ -824,7 +824,7 @@ try {
     assert.equal((await request('/session/'+session+'/window/handles')).length,beforeHandles.length);
     console.log('Native isolated scene create/fullscreen/topmost/off and main/storage command guards: PASS');
   }
-  if(process.env.ENCORE_LIVE_YOUTUBE==='1') {
+  if(process.env.YCORE_LIVE_YOUTUBE==='1') {
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value="M7lc1UVf-VE";document.getElementById("load").requestSubmit();');
     await until('return !document.getElementById("play").disabled',30000);
     assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
@@ -969,12 +969,12 @@ try {
     assert.notEqual(await execute('return document.getElementById("status").textContent'),'Воспроизведение');
     console.log('Native finite queue repeat via Next wraps while paused without autoplay: PASS');
     await execute('document.body.tabIndex=-1;document.body.focus()');
-    const press=async(value)=>request('/session/'+session+'/actions',{actions:[{type:'key',id:'encore-local',actions:[{type:'keyDown',value},{type:'keyUp',value}]}]});
+    const press=async(value)=>request('/session/'+session+'/actions',{actions:[{type:'key',id:'ycore-local',actions:[{type:'keyDown',value},{type:'keyUp',value}]}]});
     await press(' ');await until('return document.getElementById("status").textContent==="Воспроизведение"');
     await press(' ');await until('return document.getElementById("status").textContent==="Пауза"');
     console.log('Native local Space Play/Pause through WebDriver keyboard input: PASS');
   }
-  if(process.env.ENCORE_LIVE_RECOVERY==='1'){
+  if(process.env.YCORE_LIVE_RECOVERY==='1'){
     await store({type:'record',event:{playbackId:fixture+'-recovery',trackId:'manual:M7lc1UVf-VE',title:'Native recovery fixture',artist:'',videoId:'M7lc1UVf-VE'}});
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.querySelector("[data-panel=history]").click();document.getElementById("history-query").value="Native recovery fixture";document.getElementById("history-refresh").click()');
     await until('return document.querySelectorAll("#history-list li").length>0');
@@ -986,7 +986,7 @@ try {
     await network(true);await until('return navigator.onLine===false');
     await execute('const seek=document.getElementById("seek");window.recoveryTarget=Math.floor(Number(seek.max)*0.7);seek.value=String(window.recoveryTarget);seek.dispatchEvent(new Event("change"));');
     await until('return document.getElementById("status").textContent.includes("Нет сети")',45000);
-    const seconds=Number(process.env.ENCORE_OUTAGE_SECONDS??20);assert(Number.isFinite(seconds)&&seconds>=10&&seconds<=900,'Outage must be between10 and900 seconds');
+    const seconds=Number(process.env.YCORE_OUTAGE_SECONDS??20);assert(Number.isFinite(seconds)&&seconds>=10&&seconds<=900,'Outage must be between10 and900 seconds');
     for(let waited=0;waited<seconds;waited+=5){await sleep(Math.min(5,seconds-waited)*1000);assert.equal(await execute('return document.getElementById("track-title").textContent'),beforeTitle);}
     const heldPosition=await execute('return Number(document.getElementById("seek").value)');
     await click('pause');await network(false);await until('return navigator.onLine===true');await sleep(2000);
@@ -1002,8 +1002,8 @@ try {
     assert(Math.abs(positionTrace.after-heldPosition)<12,'Recovery lost the last buffered position');
     await click('pause');console.log('Native actual WebView network outage, stable track/position/history, reconnect after Pause: PASS ('+seconds+'s; OS network unchanged)');
   }
-  const soakMinutes=Number(process.env.ENCORE_WAVE_SOAK_MINUTES??0);
-  if(process.env.ENCORE_LIVE_WAVE==='1'||soakMinutes>0) {
+  const soakMinutes=Number(process.env.YCORE_WAVE_SOAK_MINUTES??0);
+  if(process.env.YCORE_LIVE_WAVE==='1'||soakMinutes>0) {
     await until('return !document.getElementById("source-start").disabled',30000);
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.querySelector("[data-panel=wave]").click();document.getElementById("station-select").value="user:onyourwave";document.getElementById("source-start").click();');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',120000);
@@ -1072,7 +1072,7 @@ try {
   const backgrounded=async()=>{const value=await nativeInvoke('desktop_status');return value.minimized||!value.visible;};
   for(let count=0;count<40&&!await backgrounded();count++)await sleep(100);
   assert(await backgrounded(),'The window must be in the background before the duplicate launch');
-  const automaticExtra=spawn(nativeApp,['--encore-autostart'],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
+  const automaticExtra=spawn(nativeApp,['--ycore-autostart'],{windowsHide:true,stdio:'ignore',env:nativeEnvironment});
   const automaticExited=await new Promise(resolve=>{const timeout=setTimeout(()=>{automaticExtra.kill();resolve(false);},5000);automaticExtra.on('close',()=>{clearTimeout(timeout);resolve(true);});});
   assert(automaticExited,'Second autostart instance did not exit');
   assert(await backgrounded(),'Autostart duplicate must not steal focus');
@@ -1083,7 +1083,7 @@ try {
   await execute('return document.title');
   await desktopUntil('visible',true);await desktopUntil('minimized',false);
   console.log('Native single instance guard restores the existing background window: PASS');
-  if(process.env.ENCORE_QUEUE_SMOKE==='1'){
+  if(process.env.YCORE_QUEUE_SMOKE==='1'){
     await execute('document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));');
     for(let index=1;index<=3;index++)await store({type:'record',event:{...event,playbackId:fixture+'-queue-'+index,trackId:String(123456780+index),title:fixture+'-queue-'+index}});
     await execute('document.querySelector("[data-panel=history]").click();document.getElementById("history-query").value=arguments[0];document.getElementById("history-query").dispatchEvent(new Event("input"));',[fixture+'-queue-']);
@@ -1103,25 +1103,25 @@ try {
     assert.equal(await execute('return document.querySelectorAll("iframe").length'),1);
     console.log('Native queue jump/manual Next/back to earlier entry/one cued player: PASS (stream playback not asserted)');
   }
-  if(process.env.ENCORE_SAVE_INSTALLATION_SENTINEL){
-    const marker=process.env.ENCORE_SAVE_INSTALLATION_SENTINEL;assert(/^[a-f0-9-]{36}$/.test(marker));
+  if(process.env.YCORE_SAVE_INSTALLATION_SENTINEL){
+    const marker=process.env.YCORE_SAVE_INSTALLATION_SENTINEL;assert(/^[a-f0-9-]{36}$/.test(marker));
     await execute('localStorage.setItem("ycore.installation-probe",arguments[0])',[marker]);
     await store({type:'record',event:{playbackId:'installation-'+marker,trackId:'manual:aqz-KE-bpKQ',title:'Installation preservation fixture '+marker,artist:'Fixture',videoId:'aqz-KE-bpKQ'}});
     console.log('Native installation persistence fixture saved: PASS');
   }
-  if(process.env.ENCORE_LISTENING_EXIT==='1'){
+  if(process.env.YCORE_LISTENING_EXIT==='1'){
     const exitId=fixture+'-shutdown';
     await store({type:'record',event:{...event,playbackId:exitId}});
     await store({type:'progress',event:{playbackId:exitId,source:'manual',listenedMs:1000,durationMs:null,endReason:null}});
     const quitting=nativeInvoke('desktop_action',{action:'quit'}).catch(()=>null);
     let stopped=false;for(let attempt=0;attempt<50;attempt++){try{process.kill(appPid,0);}catch{stopped=true;break;}await sleep(100);}
     assert(stopped,'Normal native Quit did not exit the isolated application');await quitting;
-    const {DatabaseSync}=await import('node:sqlite');const db=new DatabaseSync(resolve(nativeEnvironment.ENCORE_TEST_DATA_DIR,'encore.sqlite'),{readOnly:true});
+    const {DatabaseSync}=await import('node:sqlite');const db=new DatabaseSync(resolve(nativeEnvironment.YCORE_TEST_DATA_DIR,'ycore.sqlite'),{readOnly:true});
     try{const finished=db.prepare('SELECT listened_ms,end_reason,ended_at FROM play_metrics WHERE playback_id=?').get(exitId);assert.equal(finished.listened_ms,1000);assert.equal(finished.end_reason,'shutdown');assert(finished.ended_at);}finally{db.close();}
     console.log('Native normal Quit finalizes persisted listening before process exit: PASS');
   }
  } catch(error) {
-  if(isolated&&session&&process.env.ENCORE_BASE_PLAYBACK_SMOKE==='1'){
+  if(isolated&&session&&process.env.YCORE_BASE_PLAYBACK_SMOKE==='1'){
     console.log('Native embedded client identity status: '+JSON.stringify(await nativeInvoke('embed_identity_status').catch(()=>null)));
     const diagnostic=await execute('return {origin:location.origin,href:location.href,playingIntent:document.body.classList.contains("is-playing"),duration:document.getElementById("seek")?.max,position:document.getElementById("seek")?.value,status:document.getElementById("status")?.textContent,frame:document.getElementById("player")?.src}').catch(()=>null);
     if(diagnostic&&process.platform==='linux'){
@@ -1135,7 +1135,7 @@ try {
     writeFileSync(resolve(root,'.tools/native-basic-playback-diagnostic.json'),JSON.stringify(diagnostic,null,2));console.log('Native playback state: '+JSON.stringify(diagnostic));
     const screenshot=await request('/session/'+session+'/screenshot').catch(()=>null);if(screenshot)writeFileSync(resolve(root,'.tools/native-basic-playback-failure.png'),Buffer.from(screenshot,'base64'));
   }
-  if(isolated&&session&&process.env.ENCORE_SINGLE_HOST_SMOKE==='1'){
+  if(isolated&&session&&process.env.YCORE_SINGLE_HOST_SMOKE==='1'){
     const diagnostic=await execute('const e=document.getElementById("fullscreen"),r=e?.getBoundingClientRect();return {fullscreen:!!document.fullscreenElement,rect:r?.toJSON(),viewport:{width:innerWidth,height:innerHeight},hit:r?document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.outerHTML?.slice(0,300):null,mirrorFailure:document.body.dataset.videoMirrorFailure};').catch(()=>null);
     console.log('Owned native host verification state: '+JSON.stringify(diagnostic));
     const screenshot=await request('/session/'+session+'/screenshot').catch(()=>null);if(screenshot)writeFileSync(resolve(root,'.tools/player-host-failure.png'),Buffer.from(screenshot,'base64'));
@@ -1160,7 +1160,7 @@ try {
 } finally {
   remoteFixture?.stop();
   if(isolated&&session&&networkEmulated)await network(false).catch(()=>{});
-  if(isolated && session && volumeCaptured) await execute('if(arguments[0]===null)localStorage.removeItem("encore.volume.v1");else localStorage.setItem("encore.volume.v1",arguments[0]);',[originalVolume]).catch(()=>{});
+  if(isolated && session && volumeCaptured) await execute('if(arguments[0]===null)localStorage.removeItem("ycore.volume.v1");else localStorage.setItem("ycore.volume.v1",arguments[0]);',[originalVolume]).catch(()=>{});
   if(isolated && session) await nativeInvoke('desktop_action',{action:'quit'}).catch(()=>{});
   if(isolated && session) await request('/session/'+session,undefined,'DELETE').catch(()=>{});
   if(isolated&&Number.isInteger(appPid)){

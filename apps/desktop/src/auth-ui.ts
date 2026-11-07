@@ -43,7 +43,7 @@ export function mountAuth(onChanged:()=>void){
  const prompt=document.createElement('dialog');prompt.id='account-welcome';prompt.setAttribute('aria-labelledby','account-welcome-title');
  prompt.innerHTML='<h2 id="account-welcome-title">Подключить Яндекс Музыку?</h2><p>Войди, чтобы слушать «Мою волну», открывать свои плейлисты и любимые треки, ставить лайки и дизлайки. Поиск, чарт и публичные плейлисты доступны без входа. YCore Music подбирает к музыке видеоклипы.</p><p>Можно войти позже: <strong>Настройки → Яндекс Музыка → Войти в Яндекс</strong>.</p><label class="setting-toggle"><input id="account-welcome-dismiss" type="checkbox">Больше не предлагать</label><p id="account-welcome-notice" role="status"></p><div class="dialog-actions"><button id="account-welcome-later">Позже</button><button id="account-welcome-login">Войти в Яндекс</button></div>';
  document.body.append(prompt);
- const dismissedKey='encore.loginPrompt.dismissed.v1';let consideredPrompt=false;
+ const dismissedKey='ycore.loginPrompt.dismissed.v1';let consideredPrompt=false;
  const suppress=prompt.querySelector<HTMLInputElement>('#account-welcome-dismiss')!;
  suppress.onchange=()=>{try{if(suppress.checked)localStorage.setItem(dismissedKey,'1');else localStorage.removeItem(dismissedKey);}catch{prompt.querySelector('#account-welcome-notice')!.textContent='Не удалось сохранить выбор. При следующем запуске предложение может появиться снова.';}};
  prompt.querySelector<HTMLButtonElement>('#account-welcome-later')!.onclick=()=>prompt.close();

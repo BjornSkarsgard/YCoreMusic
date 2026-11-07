@@ -434,7 +434,7 @@ mod tests {
     #[test]
     fn outbox_survives_failure_coalesces_actions_and_does_not_acknowledge_a_newer_click() {
         let path = std::env::temp_dir().join(format!(
-            "encore-feedback-{}-{}.sqlite",
+            "ycore-feedback-{}-{}.sqlite",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap()
         ));

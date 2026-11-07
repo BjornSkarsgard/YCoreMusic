@@ -122,9 +122,12 @@ YouTube подтверждает отсутствие смены engine, pause/r
 
 # ADR-034 — Переименование в YCore Music с сохранением пользовательских данных
 
-2026-11-05. Пользователь утвердил YCore Music / YCore / «Юкор Мьюзик», слоган `Your Music. Your Core, Your World.`, executable `YCoreMusic.exe` и repo `YCoreMusic`. Обновлены productName/mainBinaryName, Cargo package/default target, frontend package, UI/window/tray/SMTC copy, CI artifacts/build commands, README и branding14. GitHub repo переименован BjornSkarsgard/encore→BjornSkarsgard/YCoreMusic, origin обновлён; старый URL остаётся историческим.
+2026-11-05. Пользователь утвердил YCore Music / YCore / «Юкор Мьюзик», слоган `Your Music. Your Core, Your World.`, executable `YCoreMusic.exe` и repo `YCoreMusic`. Обновлены productName/mainBinaryName, Cargo package/default target, frontend package, UI/window/tray/SMTC copy, CI artifacts/build commands, README и branding14. GitHub repo переименован BjornSkarsgard/ycore→BjornSkarsgard/YCoreMusic, origin обновлён; старый URL остаётся историческим.
 
-Стабильные identifier `io.encore.desktop`, keyring service/account, SQLite filename и localStorage keys не переименовываются: это не пользовательское отображение, а доступ к прежним данным без извлечения токена. Тестовые ENV и IPC topics тоже совместимы. Autostart использует новый brand и --ycore-autostart, прежний аргумент принимается; запись OS не создавалась/не изменялась (legacy Encore Run entry отсутствовала). Running старый пользовательский Encore не закрывается автоматом. Single-player-host рефакторинг сохранён отдельным git stash и не смешан с rename.
+При первоначальном переименовании внутренние идентификаторы сохранялись для
+совместимости с пользовательскими данными. Это исключение отменено новым
+решением пользователя 2026-11-07; актуальное решение — ADR-057 и branding14.
+Автозапуск не включался автоматически; системные настройки не менялись.
 
 Проверки:54 Rustapp PASS/9 optin ignored, Clippy -Dwarnings PASS,12 targeted renderer PASS, native isolated startup/storage/metrics/history/mini/topmost/singleinstance PASS. Windows debug YCoreMusic.exe собран; PE FileDescription/ProductName=YCore Music. Это rename срез, не заявление готовности нового player host или нового Premium Neon Dark оформления.
 
@@ -206,7 +209,7 @@ S10 реализован небольшим Rust adapter по наблюдаем
 
 Сохраняем одну ручную video-привязку на трек и историю фактических стартов в нативном SQLite (rusqlite bundled), без нового sidecar. DB path задаётся через Tauri app_data_dir, данные отдельно от credential store. Полная история listened duration, source/reason, несколько избранных/random/no-repeat и действия Play Next/Append из истории ещё не реализованы. Это не завершение REQ-006/014 целиком.
 
-playback_id идемпотентен на pause/resume. UI использует immutable metadata текущей загрузки, поздний результат запуска source не заменяет выбранную историю. Unknown/newer schema fail-closed без удаления. Тесты native UI запускаются с ENCORE_TEST_DATA_DIR только в debug-сборке, status.testMode проверяется перед записью/очисткой fixture. Личную БД тесты не меняют. Реальный пользовательский startup всегда создаёт новую My Wave-сессию без autoplay, история автоматически не возобновляется.
+playback_id идемпотентен на pause/resume. UI использует immutable metadata текущей загрузки, поздний результат запуска source не заменяет выбранную историю. Unknown/newer schema fail-closed без удаления. Тесты native UI запускаются с YCORE_TEST_DATA_DIR только в debug-сборке, status.testMode проверяется перед записью/очисткой fixture. Личную БД тесты не меняют. Реальный пользовательский startup всегда создаёт новую My Wave-сессию без autoplay, история автоматически не возобновляется.
 
 ## ADR-009 — Канал не равен исполнителю; популярность подходящих кандидатов
 
@@ -220,7 +223,7 @@ Native catalogue adapter повторно использует защищённ�
 
 У Previous монотонные часы performance.now и отдельный gesture state (3 секунды). Сейчас движение назад ограничено текущей очередью; cross-source playback stack ещё отсутствует. Repeat-one пересоздаёт цикл того же клипа, пишет отдельный history event после фактического Play. Несколько favourite-вариантов/random/no-repeat и repeat-queue ещё не реализованы.
 
-Volume/mute — JSON под ключом encore.volume.v1 в origin-localStorage WebView. Это UI-предпочтения без credentials; OAuth туда не попадает. Некорректные/недоступные preferences не препятствуют запуску, ошибка записи видима. Default 50%, full launch не запускает музыку независимо от сохранённых настроек. Native smoke сохраняет/восстанавливает исходную volume preference, чтобы временный volume=0 не оставался у пользователя.
+Volume/mute — JSON под ключом ycore.volume.v1 в origin-localStorage WebView. Это UI-предпочтения без credentials; OAuth туда не попадает. Некорректные/недоступные preferences не препятствуют запуску, ошибка записи видима. Default 50%, full launch не запускает музыку независимо от сохранённых настроек. Native smoke сохраняет/восстанавливает исходную volume preference, чтобы временный volume=0 не оставался у пользователя.
 
 
 ## ADR-012 — Трей, системные media controls и sleep/wake
@@ -244,14 +247,14 @@ History Next/Append добавляют сохранённый video ID, не м�
 
 ## ADR-014 — Локальная macOS-поправка power-monitor 0.1.0
 
-CI выявил native link failure _IOPSRelease в зависимости. Минимальный vendor patch сохраняет upstream 0.1.0 и лицензии, удаляет отсутствующую FFI-функцию и использует CFType create-rule RAII для CFRelease snapshot. [Apple указывает CFRelease для результата IOPSCopyPowerSourcesInfo](https://developer.apple.com/documentation/iokit/1523839-iopscopypowersourcesinfo). Cargo patch лежит в src-tauri/Cargo.toml; происхождение и условие удаления описаны в vendor/tauri-plugin-power-monitor/ENCORE-PATCH.md. Это не отключение sleep/wake на macOS.
+CI выявил native link failure _IOPSRelease в зависимости. Минимальный vendor patch сохраняет upstream 0.1.0 и лицензии, удаляет отсутствующую FFI-функцию и использует CFType create-rule RAII для CFRelease snapshot. [Apple указывает CFRelease для результата IOPSCopyPowerSourcesInfo](https://developer.apple.com/documentation/iokit/1523839-iopscopypowersourcesinfo). Cargo patch лежит в src-tauri/Cargo.toml; происхождение и условие удаления описаны в vendor/tauri-plugin-power-monitor/YCORE-PATCH.md. Это не отключение sleep/wake на macOS.
 
 
 ## ADR-015 — Repeat queue и изолированный native профиль
 
 Repeat queue разрешён только finiteSource. Повтор начинается после последней загруженной страницы коллекции, использует ту же очередь/клип и новый play-event при фактическом старте; paused Next через конец остаётся paused. Новая Wave-сессия сбрасывает queue-repeat в off. Локальные Space и стрелки действуют в текущем WebView, пропускают editable/button/link/dialog targets и модификаторы; global keyboard hook отсутствует.
 
-Профиль Cargo native-test наследует dev и собирается в отдельный output, поэтому работающий пользовательский encore.exe больше не блокирует native smoke. Только debug + ENCORE_TEST_DATA_DIR заменяет config identifier на io.encore.desktop.test до создания приложения. Изолированы single-instance lock и WebView preferences; OS credential service остаётся прежним для разрешённых read-only live probes. Вторая тестовая копия получает тот же test env. Обычный пользовательский запуск и release не меняют identity. Native smoke рядом с работающим пользовательским PID прошёл, тестовый экземпляр завершился сам.
+Профиль Cargo native-test наследует dev и собирается в отдельный output, поэтому работающий пользовательский YCoreMusic.exe больше не блокирует native smoke. Только debug + YCORE_TEST_DATA_DIR заменяет config identifier на io.ycore.desktop.test до создания приложения. Изолированы single-instance lock и WebView preferences; OS credential service остаётся прежним для разрешённых read-only live probes. Вторая тестовая копия получает тот же test env. Обычный пользовательский запуск и release не меняют identity. Native smoke рядом с работающим пользовательским PID прошёл, тестовый экземпляр завершился сам.
 
 
 ## ADR-016 — Своя панель и отсутствие hover UI
@@ -318,9 +321,9 @@ navigator.onLine не доказывает доступность конкрет
 
 REQ-043 реализуется официальным tauri-plugin-autostart2.7.0 (https://v2.tauri.app/plugin/autostart/), только через собственные main-window commands. Плагину не выданы guest permissions: remote iframe не может менять автозапуск. Инициализация ничего не регистрирует; enable/disable вызывается только checkbox пользователя. Состояние читается и подтверждается ОС, в localStorage не дублируется. При ошибке UI предлагает перечитать, не утверждает, что изменение точно отменено.
 
-Системная запись передаёт только --encore-autostart. Такой полный запуск скрывает окно до его показа, создаёт новую Wave сессию без autoplay. Если трей не создался, окно показывается, чтобы приложение не потерялось. Повторный фоновый запуск не фокусирует существующий экземпляр; обычный второй запуск восстанавливает окно. Mac Launcher выбирается только в cfgmacos, Linux/Windows используют собственный механизм плагина.
+Системная запись передаёт только --ycore-autostart. Такой полный запуск скрывает окно до его показа, создаёт новую Wave сессию без autoplay. Если трей не создался, окно показывается, чтобы приложение не потерялось. Повторный фоновый запуск не фокусирует существующий экземпляр; обычный второй запуск восстанавливает окно. Mac Launcher выбирается только в cfgmacos, Linux/Windows используют собственный механизм плагина.
 
-Test profile использует имя Encore Native Test и запрещает системные enable/disable в native command. Native smoke читает состояние и проверяет отказ мутации; запуск аргументом можно проверять без регистрации через ENCORE_AUTOSTART_SMOKE=1. Это не заменяет проверку настоящего входа в ОС или регистрации пользователем. Сборка/renderer/unit проверки ниже, runtime приёмка ещё ожидается до завершения часового Wave прогона.
+Test profile использует имя YCore Music Native Test и запрещает системные enable/disable в native command. Native smoke читает состояние и проверяет отказ мутации; запуск аргументом можно проверять без регистрации через YCORE_AUTOSTART_SMOKE=1. Это не заменяет проверку настоящего входа в ОС или регистрации пользователем. Сборка/renderer/unit проверки ниже, runtime приёмка ещё ожидается до завершения часового Wave прогона.
 
 ## ADR-024 — Сохранение реакций не ждёт сети
 
@@ -364,7 +367,7 @@ Outbox account-scoped, session/batch сохраняются native. Event keys �
 
 Общий frontend historyWriter сохраняет порядок окончания старого и начала новогоevent. Clear дожидается текущих локальных записей, транзакционно удаляет Waveevents с историей, а worker проверяет наличие следующей pendingстроки после сетевого ответа. In-flight запрос уже нельзя отозвать. При normalExit native добавляет окончание по последнему сохранённому watermark, затем закрываетmetrics; аварийное восстановление не выдумывает новый start. В testMode wave_sync возвращает disabled до чтения credentials/любых внешних writes.
 
-Реальная проверка: пользователь сообщил успешную отправку, readonlyагрегат normalAppData v5 показал sent radioStarted2/trackStarted5/skip3/trackFinished1 и0pending. Личность/track/session/token не извлекались в вывод. Все события — обычные действия пользователя, не тестовые проигрывания. Пользователь дополнительно подтвердил реальный like Encore→приложениеЯндекса. Обратное ручное изменение лайка и realdislike/Undo вЯндексе остаются отдельнойприёмкой, не объявлены завершёнными.
+Реальная проверка: пользователь сообщил успешную отправку, readonlyагрегат normalAppData v5 показал sent radioStarted2/trackStarted5/skip3/trackFinished1 и0pending. Личность/track/session/token не извлекались в вывод. Все события — обычные действия пользователя, не тестовые проигрывания. Пользователь дополнительно подтвердил реальный like YCore Music→приложениеЯндекса. Обратное ручное изменение лайка и realdislike/Undo вЯндексе остаются отдельнойприёмкой, не объявлены завершёнными.
 
 ## ADR-029 — Выбор стабильной позиции очереди и подгрузка метаданных
 
@@ -427,7 +430,7 @@ Binding в WeakMap, DOM меняется только при смене сост
 ## ADR-040 — Явное восстановление после аварии
 
 REQ065: playback-recovery.json v1 в существующем app data directory (testMode —
-только ENCORE_TEST_DATA_DIR). Атомарный checkpoint раз5с после фактического старта:
+только YCORE_TEST_DATA_DIR). Атомарный checkpoint раз5с после фактического старта:
 trackId/title/artist/videoId/position; нет credentials/waveRef/session/batch/очереди.
 Native normal Exit ставит clean; dirty checkpoint следующего полного запуска
 предлагается модальным диалогом после остальных диалогов, только в видимом main.
@@ -550,3 +553,19 @@ SQLite backups; включён daily timer. Ограничения и воспр
 счётчик и отзывы загружаются через существующие API. Это позволяет роботам
 читать содержимое из первого HTTP-ответа и оставляет VPS без новых зависимостей
 в рантайме. Снимок статического содержимого обновляется при каждой сборке.
+
+## ADR-057 — Единое имя во всех исходных файлах и идентификаторах
+
+2026-11-07. По прямому запросу пользователя удалены упоминания прежнего имени
+из текущих исходников, документации, сценариев, тестов и имён ресурсов.
+Исключение ADR-034 для служебных идентификаторов отменено. Используются
+io.ycore.desktop, ycore.sqlite, ycore.* и YCORE_*. Аргумент автозапуска один:
+--ycore-autostart. IPC-темы и производители/подписчики переименованы совместно.
+Локальную папку проекта пользователь переименует сам. История Git и уже
+опубликованные пакеты не переписываются; новый релиз этой задачей не публикуется.
+
+Смена namespace создаёт отдельный профиль ОС. Личные базы, WebView-профили,
+ключи аккаунта и привязки пульта не удалялись и не изменялись. Автоматического
+чтения прежних ключей больше нет. До нового публичного выпуска требуется
+отдельная приёмка переноса данных из установленных версий: нельзя считать
+прохождение тестов на чистом профиле проверкой совместимости обновления.

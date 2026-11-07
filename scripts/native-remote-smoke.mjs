@@ -9,13 +9,13 @@ import {createRequire} from 'node:module';
 import {resolve} from 'node:path';
 
 export async function launchRelay(root,dir) {
-  if(process.env.ENCORE_REMOTE_PUBLIC_SMOKE==='1'){
+  if(process.env.YCORE_REMOTE_PUBLIC_SMOKE==='1'){
     return {origin:'https://www.ycore-music.ru',stop:()=>{}};
   }
   mkdirSync(dir,{recursive:true});
   const cert=resolve(dir,'relay-test.pem'),key=resolve(dir,'key.pem'),config=resolve(dir,'openssl.cnf');
   writeFileSync(config,'[req]\ndistinguished_name=dn\n[dn]\n[ext]\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,digitalSignature,keyEncipherment,keyCertSign\nextendedKeyUsage=serverAuth\nsubjectAltName=IP:127.0.0.1\n');
-  execFileSync(process.env.ENCORE_TEST_OPENSSL??'openssl',[
+  execFileSync(process.env.YCORE_TEST_OPENSSL??'openssl',[
     'req','-new','-newkey','rsa:2048','-nodes','-x509','-days','1','-subj','/CN=YCore loopback test',
     '-config',config,'-extensions','ext','-keyout',key,'-out',cert,
   ],{windowsHide:true,stdio:'ignore',timeout:20000});
@@ -132,7 +132,7 @@ export async function verifyRemote({root,execute,nativeInvoke,until,sleep,fixtur
     await page.locator('#repeat').click();
     await page.waitForFunction(()=>document.querySelector('#repeat').getAttribute('aria-label')==='Повтор трека');
     assert((await context.cookies(base.href))[0].expires>beforeIdle,'A phone command extends the lease');
-    const clip=process.env.ENCORE_BASE_VIDEO_ID??'aqz-KE-bpKQ';
+    const clip=process.env.YCORE_BASE_VIDEO_ID??'aqz-KE-bpKQ';
     await nativeInvoke('storage_command',{request:{type:'record',event:{
       playbackId:'remote-history-fixture',trackId:'123456780',title:'Remote history fixture',artist:'Test fixture',videoId:clip,
     }}});
@@ -196,7 +196,7 @@ export async function verifyRemote({root,execute,nativeInvoke,until,sleep,fixtur
     await other.setOffline(false);
     await otherPage.waitForFunction(()=>document.querySelector('#connection').textContent==='Компьютер подключён');
 
-    if(process.env.ENCORE_REMOTE_SEARCH_SMOKE==='1'){
+    if(process.env.YCORE_REMOTE_SEARCH_SMOKE==='1'){
       await page.locator('#query').fill('Rammstein Sonne');
       await page.locator('#query').press('Enter');
       await page.locator('#results').getByRole('button',{name:/Sonne.*Rammstein/}).first().waitFor({timeout:15000});
@@ -216,7 +216,7 @@ export async function verifyRemote({root,execute,nativeInvoke,until,sleep,fixtur
       await until('return /Rammstein/i.test(document.getElementById("source-name").textContent)');
       await page.waitForFunction(()=>document.querySelectorAll('#queue li').length>1);
       assert.equal(await page.locator('#browse').isVisible(),false);
-      if(process.env.ENCORE_SITE_SCREENSHOTS==='1'){
+      if(process.env.YCORE_SITE_SCREENSHOTS==='1'){
         await page.waitForFunction(()=>document.querySelector('#title').textContent==='Sonne',{},{timeout:35000});
         await page.screenshot({path:resolve(root,'sites/ycore-music/public/images/remote-queue.png')});
         await page.locator('#query').fill('Rammstein Sonne');
@@ -242,7 +242,7 @@ export async function verifyRemote({root,execute,nativeInvoke,until,sleep,fixtur
       }
       await page.locator('#close-panel').click();
       console.log('Native remote Yandex search, artist queue, chart and library access: PASS ('+library.status()+')');
-      if (process.env.ENCORE_REMOTE_MUSIC_ACTIONS_SMOKE==='1' && library.ok()) {
+      if (process.env.YCORE_REMOTE_MUSIC_ACTIONS_SMOKE==='1' && library.ok()) {
         await page.locator('#menu-toggle').click();
         const station=await page.locator('#station').evaluate(select=>
           Array.from(select.options).find(option=>option.value.startsWith('genre:'))?.value);
@@ -293,7 +293,7 @@ export async function verifyRemote({root,execute,nativeInvoke,until,sleep,fixtur
     assert.equal(await page.locator('#install').isVisible(),false);
     await otherPage.waitForFunction(()=>document.querySelector('#connection').textContent==='Компьютер подключён');
     assert.equal((await desktop({type:'read'})).devices.length,2);
-    const deviceFile=resolve(process.env.ENCORE_NATIVE_TEST_DATA_DIR,'remote-devices.json');
+    const deviceFile=resolve(process.env.YCORE_NATIVE_TEST_DATA_DIR,'remote-devices.json');
     assert(!readFileSync(deviceFile,'utf8').includes(deviceCookie.value),'Never persist the plaintext device token');
     await desktop({type:'revoke',id:firstDevice.id});
     assert.equal((await http('/api/command',{body:action,headers})).status,401);
@@ -303,7 +303,7 @@ export async function verifyRemote({root,execute,nativeInvoke,until,sleep,fixtur
     assert.equal((await desktop({type:'read'})).devices.length,1);
     console.log('Native remote HTTPS: one-click QR, zero input, secure cookie, origin guard, dedup, two-device sync, reconnect and selective revocation: PASS');
 
-    if(process.env.ENCORE_REMOTE_PLAYBACK_SMOKE==='1'){
+    if(process.env.YCORE_REMOTE_PLAYBACK_SMOKE==='1'){
       await otherPage.locator('#menu-toggle').click();
       await otherPage.locator('#history').click();
       await otherPage.locator('#results').getByRole('button',{name:/Remote history fixture.*Test fixture/}).first().click();
@@ -336,7 +336,7 @@ export async function verifyRemote({root,execute,nativeInvoke,until,sleep,fixtur
     const installedPath = new URL(otherPage.url()).pathname;
     await stopFromSettings();
     const {randomBytes} = await import('node:crypto');
-    writeFileSync(resolve(process.env.ENCORE_NATIVE_TEST_DATA_DIR,'remote-relay-key'),randomBytes(32).toString('hex'));
+    writeFileSync(resolve(process.env.YCORE_NATIVE_TEST_DATA_DIR,'remote-relay-key'),randomBytes(32).toString('hex'));
     const replacement = new URL(await openQr());
     assert.notEqual(replacement.pathname,installedPath,'The replacement PC has a new identity');
     const svg = await execute('return document.querySelector("#remote-qr svg").outerHTML');

@@ -15,7 +15,7 @@ test('Premium Neon Dark tokens and focus/selected/disabled states stay consisten
 
 test('search, library, history, settings and dialogs keep working at desktop and minimum sizes',async({page})=>{
  await page.addInitScript(()=>{
-  const w=window as any;w.isTauri=true;localStorage.setItem('encore.loginPrompt.dismissed.v1','1');
+  const w=window as any;w.isTauri=true;localStorage.setItem('ycore.loginPrompt.dismissed.v1','1');
   const tracks=Array.from({length:24},(_,i)=>({id:String(i+1),title:['Sonne','Du hast','Deutschland'][i%3],artist:'Rammstein'}));
   w.__TAURI_INTERNALS__={invoke:async(command:string,args:any)=>{
    if(command==='source_fetch')return tracks;

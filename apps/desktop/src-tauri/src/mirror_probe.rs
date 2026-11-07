@@ -529,7 +529,7 @@ mod imp {
             report.non_black_ratio =
                 Some(non_black as f64 / (f64::from(width) * f64::from(height)));
             if save {
-                let directory = std::env::var_os("ENCORE_TEST_DATA_DIR")
+                let directory = std::env::var_os("YCORE_TEST_DATA_DIR")
                     .map(std::path::PathBuf::from)
                     .ok_or("Isolated probe directory missing")?;
                 std::fs::write(

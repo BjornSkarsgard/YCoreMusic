@@ -93,7 +93,7 @@ node scripts/build-update-manifest.mjs --entry 'windows-x86_64=apps/desktop/src-
 
 Rust74PASS/9ignored, Clippy/fmt/build PASS. Renderer125PASS/1skip перед revision
 guard, затем4 targeted PASS (updates/error/defer/signature UI/stale/lock).
-Native ENCORE_UPDATES_SIGNATURE_SMOKE=1 PASS: настоящая подпись принимается,
+Native YCORE_UPDATES_SIGNATURE_SMOKE=1 PASS: настоящая подпись принимается,
 изменённые байты, другая объявленная версия и downgrade отклоняются;
 install в testMode отключён. Общие SQLite/mini/topmost/instance PASS.
 Нет имитации успешной установки на пользовательский компьютер.

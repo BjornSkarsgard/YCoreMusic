@@ -8,15 +8,13 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<std::ffi::OsStr>,
 {
-    args.into_iter().any(|argument| {
-        argument.as_ref() == std::ffi::OsStr::new(ARGUMENT)
-            || argument.as_ref() == std::ffi::OsStr::new("--encore-autostart")
-    })
+    args.into_iter()
+        .any(|argument| argument.as_ref() == std::ffi::OsStr::new(ARGUMENT))
 }
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let builder = tauri_plugin_autostart::Builder::new()
         .app_name(
-            if cfg!(debug_assertions) && std::env::var_os("ENCORE_TEST_DATA_DIR").is_some() {
+            if cfg!(debug_assertions) && std::env::var_os("YCORE_TEST_DATA_DIR").is_some() {
                 "YCore Music Native Test"
             } else {
                 "YCore Music"
@@ -100,12 +98,12 @@ mod tests {
     fn ordinary_launch_is_visible_and_only_the_exact_autostart_argument_requests_tray() {
         assert!(!requested(Vec::<String>::new()));
         assert!(!requested([
-            "--encore-autostart=false",
+            "--ycore-autostart=false",
             "--autostart",
-            "encore-autostart"
+            "ycore-autostart"
         ]));
         assert!(requested(["--other", ARGUMENT]));
-        assert!(requested(["--encore-autostart"]));
+        assert!(requested(["--ycore-autostart"]));
         assert!(requested([std::ffi::OsString::from(ARGUMENT)]));
     }
     #[test]

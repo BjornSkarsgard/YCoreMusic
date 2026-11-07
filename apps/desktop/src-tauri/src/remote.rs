@@ -861,7 +861,7 @@ pub async fn remote_command(window: WebviewWindow, action: Action) -> Result<Vie
         }
         let test_mode = app.state::<crate::storage::StorageState>().test_mode;
         let directory = if test_mode {
-            std::env::var_os("ENCORE_TEST_DATA_DIR")
+            std::env::var_os("YCORE_TEST_DATA_DIR")
                 .map(PathBuf::from)
                 .ok_or("device_store_unavailable")?
         } else {

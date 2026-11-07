@@ -108,7 +108,7 @@ CREATE TABLE trusted_devices (
 
 ## Реализованный срез SQLite v1 (2026-11-03)
 
-Фактическая схема в src-tauri/src/storage.rs — минимальное подмножество предложений выше: manual_videos (одна ручная привязка на Yandex track ID), play_history (фактические старты). Данные в AppData/application data Encore, файл encore.sqlite. OAuth остаётся в OS credential store, не в БД.
+Фактическая схема в src-tauri/src/storage.rs — минимальное подмножество предложений выше: manual_videos (одна ручная привязка на Yandex track ID), play_history (фактические старты). Данные в AppData/application data YCore Music, файл ycore.sqlite. OAuth остаётся в OS credential store, не в БД.
 
 PRAGMA user_version=1, создание пустой схемы транзакционно. Неизвестная непустая/более новая схема отклоняется без удаления; существующие данные не сбрасываются. Будущие миграции с данными требуют отдельной backup/restore проверки, сейчас таких переходов нет. Параметризованные запросы, SQLite доступ сериализован mutex и вынесен в native workers. History search хранит нормализованную копию title/artist для кириллицы; возвращает до 100 последних совпадений.
 
@@ -116,7 +116,7 @@ playback_id создаётся на загрузку видео; несколь�
 
 ## Реализованный срез v2 (2026-11-04)
 
-Перед переходом с v1 Store::open создаёт SQLite snapshot через VACUUM INTO в encore.v1-backup-<timestamp>.sqlite рядом с исходной базой. В транзакции добавляется track_feedback(account_id,track_id,state,revision,pending,updated_at), ключ account_id+track_id; история и ручные ссылки сохраняются. Pending=1 и индекс feedback_outbox представляют постоянную очередь последнего желаемого состояния; ACK зависит от revision. Чужие аккаунты не смешиваются. Метаданные аккаунта и OAuth в UI не передаются; token остаётся в OS store. Тест миграции подтверждает v1 backup и сохранение данных, тест outbox — restart/failure/coalescing/account isolation/late ACK. Реальные запросы записи в тестовом режиме запрещены. ADR-017 описывает границы проверки внешнего API.
+Перед переходом с v1 Store::open создаёт SQLite snapshot через VACUUM INTO в ycore.v1-backup-<timestamp>.sqlite рядом с исходной базой. В транзакции добавляется track_feedback(account_id,track_id,state,revision,pending,updated_at), ключ account_id+track_id; история и ручные ссылки сохраняются. Pending=1 и индекс feedback_outbox представляют постоянную очередь последнего желаемого состояния; ACK зависит от revision. Чужие аккаунты не смешиваются. Метаданные аккаунта и OAuth в UI не передаются; token остаётся в OS store. Тест миграции подтверждает v1 backup и сохранение данных, тест outbox — restart/failure/coalescing/account isolation/late ACK. Реальные запросы записи в тестовом режиме запрещены. ADR-017 описывает границы проверки внешнего API.
 
 ## SQLite v3 — избранные видеоклипы
 

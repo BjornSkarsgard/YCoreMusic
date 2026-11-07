@@ -33,7 +33,7 @@ Windows native проверка выполнена на Windows 10 build 19045, 
 ```powershell
 npm.cmd run build --prefix apps/desktop
 cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol,mirror-probe --bin YCoreMusic
-$env:ENCORE_SINGLE_HOST_SMOKE='1'
+$env:YCORE_SINGLE_HOST_SMOKE='1'
 node scripts/native-smoke.mjs
 ```
 

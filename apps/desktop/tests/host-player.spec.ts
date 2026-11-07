@@ -135,7 +135,7 @@ test('playback guard blocks manual navigation, seek and clip changes while pause
  await page.locator('#queue-next').click();await page.locator('#previous').click();await page.locator('#forward').click();
  await page.locator('#queue-list li').nth(1).locator('.queue-play').evaluate((button:HTMLButtonElement)=>button.click());
  await page.locator('#source-start').evaluate((button:HTMLButtonElement)=>button.click());
- await page.evaluate(()=>{const w=window as any;w.handlers['encore-control']?.({payload:'next'});w.handlers['encore-media']?.({payload:{action:'position',value:50}});const seek=document.getElementById('seek') as HTMLInputElement;seek.value='50';seek.dispatchEvent(new Event('input'));seek.dispatchEvent(new Event('change'));const button=document.getElementById('dislike') as HTMLButtonElement;button.disabled=false;button.addEventListener('click',()=>w.dislikeActivated=true);button.click();(document.getElementById('url') as HTMLInputElement).value='Ccccccccccc';(document.getElementById('load') as HTMLFormElement).requestSubmit();});
+ await page.evaluate(()=>{const w=window as any;w.handlers['ycore-control']?.({payload:'next'});w.handlers['ycore-media']?.({payload:{action:'position',value:50}});const seek=document.getElementById('seek') as HTMLInputElement;seek.value='50';seek.dispatchEvent(new Event('input'));seek.dispatchEvent(new Event('change'));const button=document.getElementById('dislike') as HTMLButtonElement;button.disabled=false;button.addEventListener('click',()=>w.dislikeActivated=true);button.click();(document.getElementById('url') as HTMLInputElement).value='Ccccccccccc';(document.getElementById('load') as HTMLFormElement).requestSubmit();});
  await page.locator('#youtube-settings').click();await expect(page.locator('#track-title')).toHaveText('First');
  expect(await page.evaluate(()=>(window as any).loads.length)).toBe(loads);expect(await page.evaluate(()=>(window as any).commands.some((x:any)=>x.command.type==='seek'))).toBe(false);expect(await page.evaluate(()=>(window as any).dislikeActivated)).toBeUndefined();
  await page.locator('#pause').click();await expect(page.locator('#status')).toHaveText('Пауза');await page.locator('#play').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
@@ -174,7 +174,7 @@ test('main Spectrum uses the shared analysis, persists its own settings, and nev
  await page.waitForTimeout(160);expect((await canvas.screenshot()).equals(silent)).toBe(false);await page.evaluate(()=>clearInterval((window as any).spectrumTimer));
  const loads=await page.evaluate(()=>(window as any).loads.length);
  await page.locator('#main-spectrum-fps').selectOption('30');await page.locator('#main-spectrum-quality').selectOption('low');
- expect(await page.evaluate(()=>localStorage.getItem('encore.mainSpectrum.v1'))).toBe('{"fps":30,"quality":"low"}');
+ expect(await page.evaluate(()=>localStorage.getItem('ycore.mainSpectrum.v1'))).toBe('{"fps":30,"quality":"low"}');
  expect(await page.evaluate(()=>(window as any).loads.length)).toBe(loads);
  await page.locator('#window-layout').selectOption('video');await expect(canvas).toBeHidden();await expect(page.locator('#main-spectrum-options')).toBeHidden();
  await expect.poll(()=>page.evaluate(()=>(window as any).analysisWatches.at(-1))).toBe(false);
@@ -224,7 +224,7 @@ test('native host bridge keeps the controller iframe-free and forwards the exist
 });
 
 test('system media Play/Pause, Next and Previous control the sole engine and preserve pause',async({page})=>{
- const media=async(action:string)=>page.evaluate(action=>(window as any).handlers['encore-media']({payload:{action,value:0}}),action);
+ const media=async(action:string)=>page.evaluate(action=>(window as any).handlers['ycore-media']({payload:{action,value:0}}),action);
  await media('play');await expect(page.locator('#status')).toHaveText('Воспроизведение');
  await expect(page.locator('#track-title')).toHaveText('First');
  await media('toggle');await expect(page.locator('#status')).toHaveText('Пауза');

@@ -232,7 +232,7 @@ async fn ensure(main: &WebviewWindow) -> Result<WebviewWindow, String> {
     let dpi = main.scale_factor().map_err(|_| "Cannot read engine DPI")?;
     let directory =
         if cfg!(debug_assertions) && app.state::<crate::storage::StorageState>().test_mode {
-            std::env::var_os("ENCORE_TEST_DATA_DIR").map(std::path::PathBuf::from)
+            std::env::var_os("YCORE_TEST_DATA_DIR").map(std::path::PathBuf::from)
         } else {
             app.path().app_cache_dir().ok()
         }

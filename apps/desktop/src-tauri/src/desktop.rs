@@ -144,7 +144,7 @@ pub fn action(app: &AppHandle, action: Action) -> Result<(), String> {
     match action {
         Action::Open => open(app),
         Action::Toggle => app
-            .emit_to("main", "encore-control", "toggle")
+            .emit_to("main", "ycore-control", "toggle")
             .map_err(|_| "Cannot deliver playback command".into()),
         Action::Quit => {
             app.state::<DesktopState>()
@@ -166,7 +166,7 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, "toggle", "Воспроизвести / пауза", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Выйти из YCore Music", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&open_item, &toggle, &quit])?;
-    let mut builder = TrayIconBuilder::with_id("encore")
+    let mut builder = TrayIconBuilder::with_id("ycore")
         .tooltip("YCore Music")
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -217,7 +217,7 @@ pub fn closing(window: &tauri::Window, event: &tauri::WindowEvent) {
         if state.available.load(Ordering::Acquire) && !state.quitting.load(Ordering::Acquire) {
             api.prevent_close();
             if window.hide().is_err() {
-                let _ = window.emit("encore-lifecycle-error", "Не удалось скрыть окно.");
+                let _ = window.emit("ycore-lifecycle-error", "Не удалось скрыть окно.");
             }
         }
     }

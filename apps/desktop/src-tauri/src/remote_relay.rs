@@ -43,7 +43,7 @@ impl Relay {
             .connect_timeout(Duration::from_secs(6))
             .timeout(Duration::from_secs(30));
         if test_mode {
-            origin = std::env::var("ENCORE_REMOTE_TEST_ORIGIN").map_err(|_| "relay_unavailable")?;
+            origin = std::env::var("YCORE_REMOTE_TEST_ORIGIN").map_err(|_| "relay_unavailable")?;
         }
         if origin != ORIGIN {
             let url = url::Url::parse(&origin).map_err(|_| "relay_unavailable")?;

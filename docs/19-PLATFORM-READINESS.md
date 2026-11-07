@@ -66,7 +66,7 @@ macOS Intel и Apple Silicon. Это четыре сборочные цели, �
 
 ## Проверенный текущий срез
 
-Windows native `ENCORE_STABILITY_SMOKE=1` дважды PASS: шесть disconnect/reconnect
+Windows native `YCORE_STABILITY_SMOKE=1` дважды PASS: шесть disconnect/reconnect
 через test-only фильтр manager; VIDEO и Particles/FPS30/low восстановлены на том
 же ID, timeline продолжался, engine epoch не менялся. Off отсутствующего экрана
 не воскресает. Отключение сети только в тестовых main и source WebView: Pause
@@ -79,7 +79,7 @@ native run42207934319 SUCCESS после X11 topmost fix и проверки bac
 restore. LiveYouTube/LinuxAudio/Wayland ещё не проверены. Текущие новые updates
 требуют отдельной новой cross-platform проверки. Физический HDMI остаётся отдельно.
 
-После правки topology-проверки ENCORE_LIVE_WAVE=1 PASS: настоящий Яндекс/YouTube,
+После правки topology-проверки YCORE_LIVE_WAVE=1 PASS: настоящий Яндекс/YouTube,
 два автоматических перехода по реальному END (seek близко к концу для ускорения),
 один native iframe и ноль iframe в controller. Не выдавать за 30-минутный soak.
 

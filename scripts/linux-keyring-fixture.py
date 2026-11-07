@@ -1,6 +1,6 @@
 """Test a real Secret Service on a private D-Bus and throwaway encrypted vault.
 
-Run via dbus-run-session with ENCORE_PRIVATE_DBUS=1. The remaining arguments are
+Run via dbus-run-session with YCORE_PRIVATE_DBUS=1. The remaining arguments are
 an isolated test command. No user vault or OAuth token is read or modified.
 """
 import os
@@ -10,7 +10,7 @@ import sys
 import tempfile
 import time
 
-if os.environ.get("ENCORE_PRIVATE_DBUS") != "1" or len(sys.argv) < 2:
+if os.environ.get("YCORE_PRIVATE_DBUS") != "1" or len(sys.argv) < 2:
     raise SystemExit("Requires private dbus-run-session and a test command")
 with tempfile.TemporaryDirectory(prefix="ycore-secret-service-") as directory:
     root = Path(directory)

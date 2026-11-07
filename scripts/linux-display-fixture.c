@@ -5,7 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 int main(void) {
-    const char *private_server=getenv("ENCORE_PRIVATE_X11");
+    const char *private_server=getenv("YCORE_PRIVATE_X11");
     if(!private_server || strcmp(private_server,"1"))return 2;
     Display *display=XOpenDisplay(NULL);if(!display)return 3;
     XRRScreenResources *resources=XRRGetScreenResourcesCurrent(display,DefaultRootWindow(display));

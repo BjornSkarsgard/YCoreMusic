@@ -486,7 +486,7 @@ pub fn install(app: &tauri::AppHandle, background: bool) {
     }
     let directory =
         if cfg!(debug_assertions) && app.state::<crate::storage::StorageState>().test_mode {
-            std::env::var_os("ENCORE_TEST_DATA_DIR").map(PathBuf::from)
+            std::env::var_os("YCORE_TEST_DATA_DIR").map(PathBuf::from)
         } else {
             app.path().app_data_dir().ok()
         };

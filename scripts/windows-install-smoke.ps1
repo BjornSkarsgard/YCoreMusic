@@ -17,7 +17,7 @@ if ($taskVersion -notmatch '^(\d+)\.(\d+)\.(\d+)$') { throw 'Expected a stable d
 $taskNext = "$($Matches[1]).$($Matches[2]).$([int]$Matches[3]+1)"
 $taskMarker = [Guid]::NewGuid().ToString()
 $taskData = Join-Path $taskRoot '.tools/installation-data'
-$taskSentinelRoot = Join-Path $env:LOCALAPPDATA 'io.encore.desktop'
+$taskSentinelRoot = Join-Path $env:LOCALAPPDATA 'io.ycore.desktop'
 $taskSentinel = Join-Path $taskSentinelRoot 'installation-preservation.txt'
 if (Test-Path -LiteralPath $taskSentinelRoot) { throw 'Refusing to seed an existing app-data directory.' }
 New-Item -ItemType Directory -Force -Path (Join-Path $taskRoot '.tools') | Out-Null
@@ -37,13 +37,13 @@ function Run-Installer([string]$File, [string[]]$Arguments) {
 function Assert-File([string]$Path) { if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Expected file missing: $Path" } }
 function Assert-Sentinel { Assert-File $taskSentinel; if ((Get-Content -LiteralPath $taskSentinel -Raw) -ne $taskMarker) { throw 'Application data was changed by installer' } }
 function Native-Installed([bool]$Expect) {
-    $env:ENCORE_NATIVE_APP = Join-Path $taskInstall 'YCoreMusic.exe'
-    $env:ENCORE_NATIVE_TEST_DATA_DIR = $taskData
-    $env:ENCORE_UPDATES_SIGNATURE_SMOKE = '1'
-    $env:ENCORE_SAVE_INSTALLATION_SENTINEL = $taskMarker
+    $env:YCORE_NATIVE_APP = Join-Path $taskInstall 'YCoreMusic.exe'
+    $env:YCORE_NATIVE_TEST_DATA_DIR = $taskData
+    $env:YCORE_UPDATES_SIGNATURE_SMOKE = '1'
+    $env:YCORE_SAVE_INSTALLATION_SENTINEL = $taskMarker
     if ($Expect) {
-        $env:ENCORE_EXPECT_INSTALLATION_SENTINEL = $taskMarker
-    } else { Remove-Item Env:ENCORE_EXPECT_INSTALLATION_SENTINEL -ErrorAction SilentlyContinue }
+        $env:YCORE_EXPECT_INSTALLATION_SENTINEL = $taskMarker
+    } else { Remove-Item Env:YCORE_EXPECT_INSTALLATION_SENTINEL -ErrorAction SilentlyContinue }
     Push-Location $taskRoot
     try { node scripts/native-smoke.mjs; if ($LASTEXITCODE -ne 0) { throw 'Installed native application check failed' } }
     finally { Pop-Location }

@@ -36,18 +36,18 @@ jobs:
       - run: cargo install tauri-driver --version 2.1.0 --locked
       - name: Protected credential store on a disposable encrypted vault
         env:
-          ENCORE_PRIVATE_DBUS: '1'
+          YCORE_PRIVATE_DBUS: '1'
         run: dbus-run-session -- python3 scripts/linux-keyring-fixture.py cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --profile native-test --features tauri/custom-protocol --bin YCoreMusic credentials::tests::os_store_roundtrip -- --ignored --exact
       - name: Native GTK window, isolated storage, history, mini and instance lifecycle
         env:
           GDK_BACKEND: x11
           LIBGL_ALWAYS_SOFTWARE: '1'
           WEBKIT_DISABLE_DMABUF_RENDERER: '1'
-          ENCORE_NATIVE_DRIVER: /usr/bin/WebKitWebDriver
-          ENCORE_AUTOSTART_SMOKE: '1'
-          ENCORE_BASE_PLAYBACK_SMOKE: ${{ inputs.live_playback && '1' || '0' }}
-          ENCORE_LINUX_FEATURES_SMOKE: ${{ inputs.live_playback && '1' || '0' }}
-          ENCORE_PRIVATE_X11: '1'
+          YCORE_NATIVE_DRIVER: /usr/bin/WebKitWebDriver
+          YCORE_AUTOSTART_SMOKE: '1'
+          YCORE_BASE_PLAYBACK_SMOKE: ${{ inputs.live_playback && '1' || '0' }}
+          YCORE_LINUX_FEATURES_SMOKE: ${{ inputs.live_playback && '1' || '0' }}
+          YCORE_PRIVATE_X11: '1'
         run: xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- sh scripts/native-linux.sh
       - name: Window manager diagnostics
         if: always()

@@ -694,7 +694,7 @@ mod tests {
     #[test]
     fn v4_wave_upgrade_keeps_listening_and_creates_a_backup_without_fabricating_feedback() {
         let path = std::env::temp_dir().join(format!(
-            "encore-wave-upgrade-{}-{}.sqlite",
+            "ycore-wave-upgrade-{}-{}.sqlite",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -825,7 +825,7 @@ mod tests {
     #[test]
     fn v3_upgrade_preserves_history_and_backups_then_recovers_interrupted_listening() {
         let path = std::env::temp_dir().join(format!(
-            "encore-listening-{}-{}.sqlite",
+            "ycore-listening-{}-{}.sqlite",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -968,7 +968,7 @@ mod tests {
     #[test]
     fn v2_upgrade_keeps_pending_feedback_and_imports_the_old_manual_binding() {
         let path = std::env::temp_dir().join(format!(
-            "encore-v2-{}-{}.sqlite",
+            "ycore-v2-{}-{}.sqlite",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap()
         ));
@@ -1030,7 +1030,7 @@ mod tests {
     #[test]
     fn favorites_keep_multiple_links_unavailable_state_and_actual_last_play_across_restart() {
         let path = std::env::temp_dir().join(format!(
-            "encore-favorites-{}-{}.sqlite",
+            "ycore-favorites-{}-{}.sqlite",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap()
         ));
@@ -1075,7 +1075,7 @@ mod tests {
     #[test]
     fn migration_backs_up_v1_and_preserves_history_and_manual_overrides() {
         let path = std::env::temp_dir().join(format!(
-            "encore-migrate-{}-{}.sqlite",
+            "ycore-migrate-{}-{}.sqlite",
             std::process::id(),
             chrono::Utc::now().timestamp_nanos_opt().unwrap()
         ));
@@ -1400,7 +1400,7 @@ mod tests {
     #[test]
     fn manual_override_survives_reopen_and_rejects_invalid_values() {
         let path = std::env::temp_dir().join(format!(
-            "encore-store-{}-{}.sqlite",
+            "ycore-store-{}-{}.sqlite",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

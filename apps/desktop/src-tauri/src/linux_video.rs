@@ -87,7 +87,7 @@ async fn mirror_probe(
         .app_handle()
         .get_webview_window(label)
         .ok_or("Mirror window unavailable")?;
-    let output = std::env::var_os("ENCORE_TEST_DATA_DIR")
+    let output = std::env::var_os("YCORE_TEST_DATA_DIR")
         .map(std::path::PathBuf::from)
         .ok_or("Missing test directory")?
         .join(format!("linux-mirror-{label}.png"));

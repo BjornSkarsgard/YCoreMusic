@@ -9,7 +9,7 @@ Windows: account/status PASS; legacy rotor user:onyourwave вернул 5 тре
 В PowerShell:
 
 ```powershell
-& 'C:\Users\Skar\Documents\Encore\apps\desktop\src-tauri\target\debug\yandex-probe.exe'
+& 'C:\Users\Skar\Documents\YCoreMusic\apps\desktop\src-tauri\target\debug\yandex-probe.exe'
 ```
 
 Токен вводится только в локальный скрытый prompt. Не передавать через аргументы, чат, CI, файл или URL. Утилита не сохраняет credentials и не читает браузерные cookies. При новом запуске токен потребуется снова.
@@ -23,7 +23,7 @@ Windows: account/status PASS; legacy rotor user:onyourwave вернул 5 тре
 Сборка из исходников:
 
 ```powershell
-cd C:\Users\Skar\Documents\Encore\apps\desktop\src-tauri
+cd C:\Users\Skar\Documents\YCoreMusic\apps\desktop\src-tauri
 cargo build --features yandex-probe --bin yandex-probe
 ```
 

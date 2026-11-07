@@ -24,7 +24,7 @@ pub fn request(playing: bool) {
     let _ = playing;
 }
 pub fn plugin() -> TauriPlugin<tauri::Wry> {
-    Builder::new("encore-power")
+    Builder::new("ycore-power")
         .setup(|app, _| {
             for event in ["power-monitor://suspend", "power-monitor://resume"] {
                 let handle = app.clone();

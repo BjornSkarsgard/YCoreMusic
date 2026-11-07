@@ -52,10 +52,10 @@ HTTPS-соединению ПК. Телефон и ПК могут быть в �
 ## Сборка и проверка
 
 В `apps/desktop` выполнить `npx tauri build --debug --no-bundle --features remote-probe`.
-Нативный тест `scripts/native-smoke.mjs` при `ENCORE_REMOTE_SMOKE=1` запускает
+Нативный тест `scripts/native-smoke.mjs` при `YCORE_REMOTE_SMOKE=1` запускает
 изолированное приложение и HTTPS-сервис с тестовым сертификатом. Для проверки
 через опубликованный HTTPS вместо локального сервиса включите также
-`ENCORE_REMOTE_PUBLIC_SMOKE=1`. Физическая установка PWA на Android и iOS
+`YCORE_REMOTE_PUBLIC_SMOKE=1`. Физическая установка PWA на Android и iOS
 остаётся отдельной проверкой.
 
 Сервис `ycore-remote.service` слушает `127.0.0.1:5183` на VPS. Nginx принимает

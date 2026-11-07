@@ -101,7 +101,7 @@ fn dispatch(app: &AppHandle, event: Event) {
         }
         _ => return,
     };
-    let _ = app.emit_to("main", "encore-media", control);
+    let _ = app.emit_to("main", "ycore-media", control);
 }
 pub fn install(app: &AppHandle) -> Result<(), String> {
     #[cfg(target_os = "windows")]
@@ -116,9 +116,9 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
     let hwnd = None;
     let mut controls = MediaControls::new(PlatformConfig {
         dbus_name: if app.config().identifier.ends_with(".test") {
-            "encore_test"
+            "ycore_test"
         } else {
-            "encore"
+            "ycore"
         },
         display_name: "YCore Music",
         hwnd,

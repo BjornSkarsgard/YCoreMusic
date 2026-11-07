@@ -28,8 +28,8 @@ simulateddisconnect/reconnect и восстановление Spectrum посл�
 - Rust62 PASS/9 opt-in ignored; в том числе независимые настройки, targeted Off, атомарный roundtrip и сохранение файла при blocked/будущем формате.
 - Targeted renderer5 PASS: выбор экранов, поздний первоначальный ответ, независимые окна, отключённый сохранённый экран и ошибка сохранения без pageerror.
 - Полный renderer101 PASS/1 skipped, fmt/Clippy и обычная Windows debug сборка PASS.
-- Native single-host + `ENCORE_SCENE_LAYOUT_SMOKE=1` PASS: реальное видео/два зеркала, сохранение записей двух мониторов, имитация disconnect/reconnect без изменений ОС, tray Open не переносит отсутствующий экран, тот же engine epoch, настоящий полный Quit и новый запуск приложения с восстановлением окна на нужном экране без autoplay; Off удаляет сцену. Mini/topmost/maximized/singleinstance после перезапуска PASS.
+- Native single-host + `YCORE_SCENE_LAYOUT_SMOKE=1` PASS: реальное видео/два зеркала, сохранение записей двух мониторов, имитация disconnect/reconnect без изменений ОС, tray Open не переносит отсутствующий экран, тот же engine epoch, настоящий полный Quit и новый запуск приложения с восстановлением окна на нужном экране без autoplay; Off удаляет сцену. Mini/topmost/maximized/singleinstance после перезапуска PASS.
 
 Оборудование: Windows 10 build19045, три реальных подключённых монитора. **Физический unplug HDMI, сон/блокировка, Windows11 и большой парк мониторов ещё не проверены.** Не объявлять имитацию аппаратным PASS. На Linux/macOS дополнительные зеркала и их recovery пока недоступны, общий план поддержки платформ не изменён.
 
-Команда: сборка и запуск из docs16 с дополнительной переменной `$env:ENCORE_SCENE_LAYOUT_SMOKE='1'`. Тест использует изолированный `ENCORE_TEST_DATA_DIR`, читает только созданный им scene-layouts.json; личный токен/аккаунт/рекомендации не затрагивает.
+Команда: сборка и запуск из docs16 с дополнительной переменной `$env:YCORE_SCENE_LAYOUT_SMOKE='1'`. Тест использует изолированный `YCORE_TEST_DATA_DIR`, читает только созданный им scene-layouts.json; личный токен/аккаунт/рекомендации не затрагивает.
