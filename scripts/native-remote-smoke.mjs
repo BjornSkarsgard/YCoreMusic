@@ -216,6 +216,15 @@ export async function verifyRemote({root,execute,nativeInvoke,until,sleep,fixtur
       await until('return /Rammstein/i.test(document.getElementById("source-name").textContent)');
       await page.waitForFunction(()=>document.querySelectorAll('#queue li').length>1);
       assert.equal(await page.locator('#browse').isVisible(),false);
+      if(process.env.ENCORE_SITE_SCREENSHOTS==='1'){
+        await page.waitForFunction(()=>document.querySelector('#title').textContent==='Sonne',{},{timeout:35000});
+        await page.screenshot({path:resolve(root,'sites/ycore-music/public/images/remote-queue.png')});
+        await page.locator('#query').fill('Rammstein Sonne');
+        await page.locator('#query').press('Enter');
+        await page.locator('#results').getByRole('button',{name:/Sonne.*Rammstein/}).first().waitFor({timeout:15000});
+        await page.screenshot({path:resolve(root,'sites/ycore-music/public/images/remote-search.png')});
+        await page.locator('#close-panel').click();
+      }
       await page.locator('#menu-toggle').click();
       await page.locator('#chart').click();
       await page.getByRole('button',{name:'Включить чарт',exact:true}).waitFor({timeout:20000});

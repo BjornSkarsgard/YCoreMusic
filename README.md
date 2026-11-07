@@ -3,7 +3,12 @@
 **YCore** · Юкор Мьюзик  
 **Your Music. Your Core, Your World.**
 
-Актуальный выпуск — [YCore Music 0.0.3 для Windows x64 и Linux x86_64](https://github.com/BjornSkarsgard/YCoreMusic/releases/tag/v0.0.3). [Изменения и проверки](docs/releases/v0.0.3.md).
+Актуальный выпуск — [YCore Music 0.0.4 для Windows x64, Linux x86_64 и экспериментальный macOS Intel/Apple Silicon](https://github.com/BjornSkarsgard/YCoreMusic/releases/tag/v0.0.4). [Изменения](docs/releases/v0.0.4.md).
+
+Пульт для телефона подключается через «Настройки → Пульт» по QR-коду и может
+устанавливаться как PWA. [Подключение и скриншоты](https://ycore-music.ru/#remote),
+[история версий](https://ycore-music.ru/#changelog). Нативная приёмка macOS,
+Developer ID и нотариализация пока не выполнены.
 
 Прежнее имя проекта — Encore. Исполняемый файл Windows — `YCoreMusic.exe`, репозиторий — [BjornSkarsgard/YCoreMusic](https://github.com/BjornSkarsgard/YCoreMusic).
 
