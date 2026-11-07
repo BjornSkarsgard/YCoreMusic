@@ -156,6 +156,7 @@ const unavailableHistoryTracks=new Set<string>();
 let activeCollection:CollectionContext|undefined;
 interface Candidate {id:string;title:string;byline?:string;artist?:string;score:number;views?:number|null;durationSeconds?:number|null;reason:string;saved?:boolean;preferred?:boolean;historical?:boolean;needsReview?:boolean}
 const choices=new Map<string,{items:Candidate[];index:number;alternativesLoaded?:boolean;favoriteChosen?:boolean}>();
+const recheckedMatches=new Set<string>();
 const searching=new Set<string>();
 const bypassSaved=new Set<string>();
 let sourceRevision=0;
@@ -363,6 +364,7 @@ function renderQueue() {
   element('track-artist').textContent = queue.current?.artist ?? '';
   const epoch=queue.generation,snapshot=queue.snapshot,currentIndex=snapshot.findIndex(track=>track.ordinal===queue.current?.ordinal);
   const validKeys=new Set(snapshot.map(track=>epoch+':'+track.ordinal));for(const key of skipReasons.keys())if(!validKeys.has(key))skipReasons.delete(key);
+  for(const key of recheckedMatches)if(!validKeys.has(key))recheckedMatches.delete(key);
   const focused=(document.activeElement as HTMLElement|null)?.closest('#queue-list li')?.getAttribute('data-ordinal');
   element('queue-list').replaceChildren(...snapshot.map((track,index) => {
     const item=document.createElement('li');item.dataset.ordinal=String(track.ordinal);item.dataset.phase=index<currentIndex?'past':index===currentIndex?'current':'upcoming';
@@ -640,6 +642,10 @@ function prepareAhead(){
         renderCandidates(cached.items,epoch,track.ordinal);
         if(candidate.needsReview){element<HTMLButtonElement>('play').disabled=false;report('Исполнитель не подтверждён. В волне этот трек будет пропущен после Play.');}
         else void loadVideo(candidate.id,playIntent,true);
+      }else if(canSkip()&&!cached.items.some(item=>!item.needsReview)&&!recheckedMatches.has(key)){
+        // A partial prefetch response is not a lasting verdict. Recheck once
+        // when this track is actually selected, within its preparation deadline.
+        recheckedMatches.add(key);choices.delete(key);queueMicrotask(prepareAhead);
       }else skipUnavailable(cached.items.some(item=>item.needsReview)?'Не удалось уверенно сопоставить клип с треком.':'Подходящий клип не найден.');
       continue;
     }

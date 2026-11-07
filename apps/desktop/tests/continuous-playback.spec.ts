@@ -2,7 +2,7 @@ import {test,expect,type Page} from './fixtures';
 
 async function setup(page:Page,source:'wave'|'playlist',failure:string){
  await page.clock.install();
- await page.addInitScript(({failure})=>{
+ await page.addInitScript(({failure,source})=>{
   const w=window as any;w.isTauri=true;w.failure=failure;w.played=[];w.players=[];w.calls={};w.records=[];
   const tracks=['A','B','C','D','E'].map((title,index)=>({id:['alt-slots','null-metadata'].includes(failure)?String(index+1):title,title,artist:'Fixture'}));
   w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
@@ -22,6 +22,7 @@ async function setup(page:Page,source:'wave'|'playlist',failure:string){
     if(failure==='alt-slots'&&['A','B','C'].includes(args.title))return new Promise(()=>{});
     if(failure==='alt-slots'&&args.title==='D'&&w.calls.D===1)throw new Error('Temporary prefetch failure');
     if(args.title==='B'&&failure==='missing')return [];
+    if(args.title==='B'&&['uncertain-first','uncertain-always'].includes(failure)&&(w.calls.B<=(source==='playlist'?2:1)||failure==='uncertain-always'))return [{id:'Uuuuuuuuuuu',title:'B',score:40,needsReview:true}];
     if(args.title==='B'&&failure==='search-error')throw new Error('Temporary search failure');
     if(args.title==='B'&&failure==='search-hang')return new Promise(resolve=>w.releaseB=()=>resolve([{id:'Bbbbbbbbbbb',title:'B',score:100}]));
     if(failure==='null-metadata')return [{id:args.title+args.title.toLowerCase().repeat(10),title:args.title,score:220,reason:'Official recording',views:null,durationSeconds:null,needsReview:false}];
@@ -35,7 +36,7 @@ async function setup(page:Page,source:'wave'|'playlist',failure:string){
     }
    }
   }};
- },{failure});
+ },{failure,source});
  await page.route('https://www.youtube.com/iframe_api',route=>route.fulfill({contentType:'text/javascript',body:`
  window.YT={Player:class{
   constructor(id,options){this.el=document.getElementById(id);this.options=options;window.activePlayer=this;window.players.push(this);setTimeout(()=>options.events.onReady({target:this}),0);}
@@ -58,6 +59,18 @@ async function setup(page:Page,source:'wave'|'playlist',failure:string){
 }
 
 for(const source of ['wave','playlist'] as const){
+ for(const failure of ['uncertain-first','uncertain-always']){
+  test(`${source} rechecks ${failure} once before playing or skipping`,async({page})=>{
+   await setup(page,source,failure);
+   const prefetched=source==='playlist'?2:1;
+   await expect.poll(()=>page.evaluate(()=>(window as any).calls.B)).toBe(prefetched);
+   await page.evaluate(()=>(window as any).activePlayer.emit(0));
+   await expect(page.locator('#track-title')).toHaveText(failure==='uncertain-first'?'B':'C');
+   await expect(page.locator('#status')).toHaveText('Воспроизведение');
+   expect(await page.evaluate(()=>(window as any).calls.B)).toBe(prefetched+1);
+   expect(await page.evaluate(()=>(window as any).played)).toEqual(failure==='uncertain-first'?['Aaaaaaaaaaa','Bbbbbbbbbbb']:['Aaaaaaaaaaa','Ccccccccccc']);
+  });
+ }
  for(const failure of ['missing','embed','unready','blocked','search-error','search-hang','false-playing','heartbeat-stall']){
   test(`${source} automatically leaves ${failure} after a natural end without fullscreen or manual Next`,async({page})=>{
    await setup(page,source,failure);

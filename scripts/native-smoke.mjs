@@ -189,7 +189,7 @@ try {
     console.log('Native updater signature: valid fixture accepted; tamper, version mismatch and downgrade rejected; test installation blocked: PASS');
   }
   if(process.env.ENCORE_TRACK_MATCH_PROBE==='1'){
-    for(const fixture of [{title:'Absence',artist:'Xalv'},{title:'What I Need',artist:'Catch-22 NZ'}]){
+    for(const fixture of [{title:'Absence',artist:'Xalv'},{title:'What I Need',artist:'Catch-22 NZ'},{title:'ПАКЕТ',artist:'SQWOZ BAB'}]){
       await execute('window.nativeMatchFixture=arguments[0];document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("catalogue-query").value=arguments[0].title+" "+arguments[0].artist;document.getElementById("catalogue-search").requestSubmit();',[fixture]);
       await until('return [...document.querySelectorAll("#catalogue-results .catalogue-track")].some(row=>row.textContent.includes(window.nativeMatchFixture.title)&&row.textContent.includes(window.nativeMatchFixture.artist))',45000);
       await execute('[...document.querySelectorAll("#catalogue-results .catalogue-track")].find(row=>row.textContent.includes(window.nativeMatchFixture.title)&&row.textContent.includes(window.nativeMatchFixture.artist)&&!/sped|slowed|remix/i.test(row.textContent)).querySelector("button").click();');

@@ -1,0 +1,71 @@
+{
+  "musicResponsiveListItemRenderer": {
+    "playlistItemData": {
+      "videoId": "4P1s3MgIm1o"
+    },
+    "flexColumns": [
+      {
+        "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+            "runs": [
+              {
+                "text": "ПАКЕТ",
+                "navigationEndpoint": {
+                  "watchEndpoint": {
+                    "videoId": "4P1s3MgIm1o",
+                    "playerParams": "0gcJCTUC0OBS9m0t",
+                    "watchEndpointMusicSupportedConfigs": {
+                      "watchEndpointMusicConfig": {
+                        "musicVideoType": "MUSIC_VIDEO_TYPE_OMV"
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+        }
+      },
+      {
+        "musicResponsiveListItemFlexColumnRenderer": {
+          "text": {
+            "runs": [
+              {
+                "text": "SQWOZ BAB",
+                "navigationEndpoint": {
+                  "browseEndpoint": {
+                    "browseId": "UCp9Fe4ua2fjStOfvUCRHm1w",
+                    "browseEndpointContextSupportedConfigs": {
+                      "browseEndpointContextMusicConfig": {
+                        "pageType": "MUSIC_PAGE_TYPE_ARTIST"
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "text": " • "
+              },
+              {
+                "text": "561K views"
+              },
+              {
+                "text": " • "
+              },
+              {
+                "text": "3:29"
+              }
+            ],
+            "accessibility": {
+              "accessibilityData": {
+                "label": "SQWOZ BAB • 561 thousand views • 3 minutes, 29 seconds"
+              }
+            }
+          },
+          "displayPriority": "MUSIC_RESPONSIVE_LIST_ITEM_COLUMN_DISPLAY_PRIORITY_HIGH"
+        }
+      }
+    ]
+  }
+}

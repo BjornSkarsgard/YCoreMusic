@@ -463,12 +463,28 @@ pub fn search(
     if cache.len() >= 128 {
         cache.clear();
     }
-    cache.insert(key, (Instant::now(), results.clone()));
+    // Incomplete search responses must not mask a fresh request when a
+    // prefetched track becomes current. The coordinator bounds that retry.
+    if results.iter().any(|candidate| !candidate.needs_review) {
+        cache.insert(key, (Instant::now(), results.clone()));
+    }
     Ok(results)
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn paket_video_uses_performer_metadata_when_title_has_no_artist() {
+        let fixture: Value =
+            serde_json::from_str(include_str!("../tests/fixtures/youtube-sqwoz-paket.json"))
+                .unwrap();
+        let found = parse(&fixture, "ПАКЕТ", "SQWOZ BAB");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, "4P1s3MgIm1o");
+        assert!(!found[0].needs_review);
+        assert_eq!(found[0].duration_seconds, Some(209));
+        assert!(parse(&fixture, "ПАКЕТ", "Другой исполнитель").is_empty());
+    }
     #[test]
     fn real_collaboration_recording_is_not_discarded_by_video_type_or_spelling() {
         let fixture: Value =
@@ -769,10 +785,18 @@ mod tests {
         assert!(result.iter().any(|candidate| !candidate.needs_review));
     }
     #[test]
+    #[ignore = "Read-only user-reported SQWOZ BAB metadata probe"]
+    fn live_sqwoz_paket_regression() {
+        let result = search(&Matcher::default(), "ПАКЕТ", "SQWOZ BAB")
+            .expect("Public metadata request failed");
+        println!("SQWOZ BAB candidates: {result:?}");
+        assert!(result.iter().any(|candidate| !candidate.needs_review));
+    }
+    #[test]
     #[ignore = "Read-only user-reported Absence metadata probe"]
     fn live_absence_regression() {
-        let result = search(&Matcher::default(), "Absence", "Xalv")
-            .expect("Public metadata request failed");
+        let result =
+            search(&Matcher::default(), "Absence", "Xalv").expect("Public metadata request failed");
         println!("Absence candidates: {result:?}");
         assert!(result.iter().any(|candidate| !candidate.needs_review));
     }
