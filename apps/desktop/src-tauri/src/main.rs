@@ -28,6 +28,8 @@ mod linux_monitors;
 #[cfg(target_os = "linux")]
 mod linux_power;
 mod linux_video;
+#[cfg(target_os = "macos")]
+mod macos_monitors;
 #[cfg(all(target_os = "macos", feature = "macos-native-probe", debug_assertions))]
 mod macos_native_probe;
 mod matcher;

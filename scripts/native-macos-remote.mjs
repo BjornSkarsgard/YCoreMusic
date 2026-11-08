@@ -70,6 +70,9 @@ try {
     }
   });
   assert.ok(report.url, 'Mac settings did not produce a QR link');
+  if (report.displays) {
+    console.log('Mac displays discovered: ' + report.displays.total + ', stable UUID: ' + report.displays.stable);
+  }
   const base = new URL(report.url);
   assert.equal(base.origin, relay.origin);
   const code = new URLSearchParams(base.hash.slice(1)).get('pair');
@@ -99,6 +102,46 @@ try {
   await sleep(400);
   assert.equal((await send(api('pair'), {body: {code}})).status, 403);
   console.log('PASS: macOS WKWebView QR pairing, HTTPS command, controller volume round trip, no autoplay, replay rejected.');
+  if (process.env.YCORE_MACOS_TEST_CLIP === '1') {
+    const clip = async () => {
+      try {
+        return JSON.parse(await readFile(join(directory, 'clip.json'), 'utf8'));
+      } catch (error) {
+        if (error.code !== 'ENOENT') throw error;
+        return {};
+      }
+    };
+    let outcome;
+    try {
+      const ready = await waitFor(async () => {
+        const value = await clip();
+        return value.error || (value.ready && value.players === 1) ? value : null;
+      });
+      if (ready.error) outcome = 'YouTube error ' + ready.error;
+      else {
+        const control = async action => {
+          const response = await send(api('command'), {cookie, body:{id:randomUUID(), action}});
+          assert.equal(response.status, 204);
+        };
+        await control({type:'volume', level:0});
+        await waitFor(async () => (await state()).volume === 0);
+        await control({type:'play'});
+        const playback = await waitFor(async () => {
+          const value = await clip();
+          return value.error || (value.playing && value.position > 1 && value.players === 1) ? value : null;
+        }, 30000);
+        outcome = playback.error ? 'YouTube error ' + playback.error : 'PASS';
+        if (outcome === 'PASS') {
+          await control({type:'pause'});
+          await waitFor(async () => !(await state()).playing);
+          console.log('PASS: phone plays and pauses the single real YouTube iframe in WKWebView.');
+        }
+      }
+    } catch (error) {
+      outcome = error.message;
+    }
+    if (outcome !== 'PASS') console.log('Live YouTube playback was not confirmed: ' + outcome);
+  }
 } finally {
   if (app?.pid && app.exitCode === null) {
     app.kill();

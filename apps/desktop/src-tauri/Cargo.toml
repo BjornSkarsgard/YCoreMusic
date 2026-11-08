@@ -69,6 +69,10 @@ raw-window-handle = "0.6.2"
 x11rb = { version = "0.14.0", default-features = false, features = ["randr"] }
 webkit2gtk = { version = "=2.0.2", features = ["v2_40"], optional = true }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10.1"
+core-graphics = "0.25.0"
+
 [patch.crates-io]
 tauri-plugin-power-monitor = { path = "../../../vendor/tauri-plugin-power-monitor" }
 

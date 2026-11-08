@@ -29,3 +29,15 @@ jobs:
       - run: npx tauri build --debug --no-bundle --features macos-native-probe
         working-directory: apps/desktop
       - run: node scripts/native-macos-remote.mjs
+        env:
+          YCORE_MACOS_TEST_CLIP: '1'
+      - name: Package debug app for the manual media probe
+        working-directory: apps/desktop
+        run: |
+          npx tauri bundle --debug --config src-tauri/tauri.bundle.conf.json --bundles app
+          ditto -c -k --keepParent "src-tauri/target/debug/bundle/macos/YCore Music.app" "${RUNNER_TEMP}/ycore-mac-probe.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ycore-mac-probe-${{ matrix.os }}
+          path: ${{ runner.temp }}/ycore-mac-probe.zip
+          retention-days: 14

@@ -5923,6 +5923,8 @@ dependencies = [
  "axum",
  "cc",
  "chrono",
+ "core-foundation 0.10.1",
+ "core-graphics",
  "getrandom 0.4.3",
  "gtk",
  "keyring",

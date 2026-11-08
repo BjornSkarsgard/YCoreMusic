@@ -9,6 +9,15 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+static NSString *const PlaybackStateScript =
+    @"(() => { const play = document.getElementById('play');"
+    "const state = document.getElementById('status')?.textContent ?? '';"
+    "return { ready: !!play && !play.disabled,"
+    "playing: state === 'Воспроизведение',"
+    "error: state.match(/Ошибка YouTube ([0-9]+)/)?.[1] ?? '',"
+    "position: Number(document.getElementById('seek')?.value ?? 0),"
+    "players: document.querySelectorAll('iframe').length }; })()";
+
 static void writeReport(NSString *directory, NSString *file, NSDictionary *report) {
     NSData *json = [NSJSONSerialization dataWithJSONObject:report options:0 error:nil];
     [json writeToFile:[directory stringByAppendingPathComponent:file] atomically:YES];
@@ -27,9 +36,25 @@ API_AVAILABLE(macos(13.0))
 @property(nonatomic) float peak;
 @property(nonatomic) BOOL finished;
 - (void)start;
+- (void)waitForPlayback:(NSUInteger)remaining;
 @end
 
 @implementation YCoreMediaProbe
+- (void)waitForPlayback:(NSUInteger)remaining {
+    [self.webview evaluateJavaScript:PlaybackStateScript completionHandler:^(id value, NSError *error) {
+        NSDictionary *state = [value isKindOfClass:NSDictionary.class] ? value : @{};
+        if ([state[@"playing"] boolValue] && [state[@"players"] integerValue] == 1 &&
+            [state[@"position"] doubleValue] >= 1) {
+            [self start];
+        } else if (remaining == 0 || [state[@"error"] length] > 0) {
+            [self finish:@"real_clip_not_playing"];
+        } else {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC),
+                dispatch_get_main_queue(), ^{ [self waitForPlayback:remaining - 1]; });
+        }
+    }];
+}
+
 - (void)finish:(NSString *)status {
     if (self.finished) return;
     self.finished = YES;
@@ -190,14 +215,38 @@ API_AVAILABLE(macos(13.0))
 }
 @end
 
+static void pollClip(WKWebView *view, NSString *directory, NSUInteger remaining) {
+    [view evaluateJavaScript:PlaybackStateScript completionHandler:^(id value, NSError *error) {
+        if ([value isKindOfClass:NSDictionary.class]) writeReport(directory, @"clip.json", value);
+        if (remaining > 0) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2),
+                dispatch_get_main_queue(), ^{ pollClip(view, directory, remaining - 1); });
+        }
+    }];
+}
+
 static void pollPair(WKWebView *view, NSString *directory, NSUInteger remaining) {
     [view evaluateJavaScript:
         @"(() => { const button = document.getElementById('remote-pair');"
-        "if (button && !window.__ycoreProbePair) { window.__ycoreProbePair = true; button.click(); }"
-        "return document.getElementById('remote-qr')?.dataset.pairUrl ?? ''; })()"
+        "if (button && !window.__ycoreProbePair) {"
+        "  window.__ycoreProbePair = true; button.click();"
+        "  window.__TAURI_INTERNALS__.invoke('monitor_list').then(list => {"
+        "    window.__ycoreProbeDisplays = { total: list.length, stable: list.filter(d => d.stable).length };"
+        "  }).catch(() => { window.__ycoreProbeDisplays = null; });"
+        "}"
+        "return { url: document.getElementById('remote-qr')?.dataset.pairUrl ?? '',"
+        "displays: window.__ycoreProbeDisplays ?? null }; })()"
         completionHandler:^(id value, NSError *error) {
-        if ([value isKindOfClass:NSString.class] && [value length] > 0) {
-            writeReport(directory, @"pair.json", @{@"url": value});
+        NSDictionary *state = [value isKindOfClass:NSDictionary.class] ? value : @{};
+        if ([state[@"url"] length] > 0 && state[@"displays"] != nil) {
+            writeReport(directory, @"pair.json", state);
+            if ([NSProcessInfo.processInfo.environment[@"YCORE_MACOS_TEST_CLIP"] isEqual:@"1"]) {
+                [view evaluateJavaScript:
+                    @"document.getElementById('account-welcome-later')?.click();"
+                    "document.getElementById('url').value = 'aqz-KE-bpKQ';"
+                    "document.getElementById('load').requestSubmit();"
+                    completionHandler:^(id unused, NSError *clipError) { pollClip(view, directory, 160); }];
+            }
         } else if (remaining > 0) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 4),
                 dispatch_get_main_queue(), ^{ pollPair(view, directory, remaining - 1); });
@@ -216,8 +265,7 @@ void ycore_macos_native_probe(void *webview, const char *directory) {
             YCoreMediaProbe *probe = [YCoreMediaProbe new];
             probe.webview = view;
             probe.directory = path;
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 25 * NSEC_PER_SEC),
-                dispatch_get_main_queue(), ^{ [probe start]; });
+            [probe waitForPlayback:120];
         } else {
             writeReport(path, @"media.json", @{@"status": @"macos_13_required"});
         }

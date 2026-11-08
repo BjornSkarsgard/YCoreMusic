@@ -84,7 +84,7 @@ fn platform_identity(name: &str) -> Option<(String, String, Option<u32>)> {
     let (id, title) = devices.pop()?;
     Some((id, title, refresh))
 }
-#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+#[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn platform_identity(_name: &str) -> Option<(String, String, Option<u32>)> {
     None
 }
@@ -93,7 +93,9 @@ fn describe(monitor: tauri::Monitor, primary: bool) -> Display {
     let name = monitor.name().cloned().unwrap_or_else(|| "Экран".into());
     #[cfg(target_os = "linux")]
     let identity = crate::linux_monitors::identity(&monitor);
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(target_os = "macos")]
+    let identity = crate::macos_monitors::identity(&monitor);
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     let identity = platform_identity(&name);
     let (id, title, stable, refresh) = match identity {
         Some((identity, title, refresh)) => (key(&identity), title, true, refresh),
