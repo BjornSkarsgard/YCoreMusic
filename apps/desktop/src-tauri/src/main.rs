@@ -170,6 +170,13 @@ fn main() {
     if cfg!(debug_assertions) && std::env::var_os("YCORE_TEST_DATA_DIR").is_some() {
         // Separate instance lock and WebView profile; never attach to the user's player.
         context.config_mut().identifier = "io.ycore.desktop.test".into();
+        #[cfg(all(target_os = "macos", feature = "macos-native-probe", debug_assertions))]
+        if let Ok(instance) = std::env::var("YCORE_MACOS_PROBE_INSTANCE") {
+            if instance.len() == 32 && instance.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                context.config_mut().identifier.push('.');
+                context.config_mut().identifier.push_str(&instance);
+            }
+        }
         if let Some(window) = context.config_mut().app.windows.first_mut() {
             window.title = "YCore Music · нативная проверка".into();
         }

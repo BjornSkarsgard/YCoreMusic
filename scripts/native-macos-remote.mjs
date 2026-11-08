@@ -24,6 +24,7 @@ function startApp(extra = {}) {
       YCORE_TEST_DATA_DIR: directory,
       YCORE_REMOTE_TEST_ORIGIN: relay.origin,
       YCORE_MACOS_NATIVE_PROBE: '1',
+      YCORE_MACOS_PROBE_INSTANCE: randomUUID().replaceAll('-', ''),
       YCORE_MACOS_MEDIA_SPIKE: '0',
       ...extra,
     },
@@ -37,6 +38,10 @@ async function stopApp() {
   const exited = new Promise(done => app.once('exit', done));
   app.kill();
   await Promise.race([exited, sleep(1500)]);
+  if (app.exitCode === null && app.signalCode === null) {
+    app.kill('SIGKILL');
+    await Promise.race([exited, sleep(1500)]);
+  }
 }
 
 async function reportFrom(name) {
