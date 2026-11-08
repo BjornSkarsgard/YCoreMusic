@@ -1,4 +1,25 @@
 fn main() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos")
+        && std::env::var_os("CARGO_FEATURE_MACOS_NATIVE_PROBE").is_some()
+    {
+        let probe = "src/macos/native-probe.m";
+        println!("cargo:rerun-if-changed={probe}");
+        cc::Build::new()
+            .file(probe)
+            .flag("-fobjc-arc")
+            .compile("ycore_macos_native_probe");
+        for framework in [
+            "AppKit",
+            "AVFoundation",
+            "CoreGraphics",
+            "CoreMedia",
+            "CoreVideo",
+            "WebKit",
+        ] {
+            println!("cargo:rustc-link-lib=framework={framework}");
+        }
+        println!("cargo:rustc-link-arg=-Wl,-weak_framework,ScreenCaptureKit");
+    }
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("linux") {
         let protocol = "src/linux/protocols/xdg-output.xml";
         println!("cargo:rerun-if-changed={protocol}");

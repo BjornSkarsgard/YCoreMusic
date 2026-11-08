@@ -42,6 +42,7 @@ default = ["single-player-host", "audio-analysis", "linux-player-host", "remote-
 remote-probe = ["dep:axum", "dep:qrcode", "dep:sha2", "dep:subtle", "dep:tokio", "dep:tower"]
 yandex-probe = []
 mirror-probe = ["tauri/unstable"]
+macos-native-probe = ["remote-probe"]
 single-player-host = []
 linux-embed-referrer = ["dep:webkit2gtk"]
 linux-player-host = ["linux-embed-referrer", "dep:gtk"]

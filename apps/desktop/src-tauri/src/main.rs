@@ -28,6 +28,8 @@ mod linux_monitors;
 #[cfg(target_os = "linux")]
 mod linux_power;
 mod linux_video;
+#[cfg(all(target_os = "macos", feature = "macos-native-probe", debug_assertions))]
+mod macos_native_probe;
 mod matcher;
 mod media;
 mod mirror_probe;
@@ -225,6 +227,10 @@ fn main() {
             }
             let _ = media::install(app.handle());
             sleep_timer::install(app.handle().clone());
+            #[cfg(all(target_os = "macos", feature = "macos-native-probe", debug_assertions))]
+            if test_mode {
+                macos_native_probe::install(app.handle())?;
+            }
             Ok(())
         })
         .manage(source::Source::default())
