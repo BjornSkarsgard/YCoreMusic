@@ -11,6 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [macos-15-intel, macos-latest]
+        scenario: [fixture, live]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     steps:
@@ -28,22 +29,20 @@ jobs:
         working-directory: apps/desktop
       - run: npx tauri build --debug --no-bundle --features macos-native-probe
         working-directory: apps/desktop
-      - name: Verify phone Play, Seek and Pause through the macOS player
+      - name: Verify the macOS player
         run: node scripts/native-macos-remote.mjs
         env:
           YCORE_MACOS_TEST_CLIP: '1'
           YCORE_MACOS_EXPECT_LOOPBACK: '1'
-          YCORE_MACOS_TEST_FIXTURE: '1'
-      - run: node scripts/native-macos-remote.mjs
-        env:
-          YCORE_MACOS_TEST_CLIP: '1'
-          YCORE_MACOS_EXPECT_LOOPBACK: '1'
+          YCORE_MACOS_TEST_FIXTURE: ${{ matrix.scenario == 'fixture' && '1' || '0' }}
       - name: Package debug app for the manual media probe
+        if: matrix.scenario == 'fixture'
         working-directory: apps/desktop
         run: |
           npx tauri bundle --debug --config src-tauri/tauri.bundle.conf.json --bundles app
           ditto -c -k --keepParent "src-tauri/target/debug/bundle/macos/YCore Music.app" "${RUNNER_TEMP}/ycore-mac-probe.zip"
       - uses: actions/upload-artifact@v4
+        if: matrix.scenario == 'fixture'
         with:
           name: ycore-mac-probe-${{ matrix.os }}
           path: ${{ runner.temp }}/ycore-mac-probe.zip
