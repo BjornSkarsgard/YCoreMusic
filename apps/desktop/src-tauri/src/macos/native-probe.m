@@ -304,7 +304,9 @@ static void probeNativeIdentity(NSString *directory, NSString *mode) {
         pollIdentity(window, view, directory, mode, 70);
         return;
     }
+    BOOL loopback = [mode isEqual:@"loopback"];
     NSString *origin = [mode isEqual:@"site-base"] ? @"https://ycore-music.ru" : @"https://io.ycore.desktop";
+    if (loopback) origin = NSProcessInfo.processInfo.environment[@"YCORE_MACOS_IDENTITY_LOOPBACK"];
     NSURL *baseURL = [NSURL URLWithString:[origin stringByAppendingString:@"/"]];
     NSString *html =
         @"<!doctype html><html><head><meta name='referrer' content='strict-origin-when-cross-origin'>"
@@ -322,7 +324,14 @@ static void probeNativeIdentity(NSString *directory, NSString *mode) {
         "else window.probeResult={status:'youtube_error',codes:errors};},"
         "onAutoplayBlocked:()=>{window.probeResult={status:'autoplay_blocked'};}"
         "}});};</script><script src='https://www.youtube.com/iframe_api'></script></body></html>";
-    [view loadHTMLString:[html stringByReplacingOccurrencesOfString:@"YCORE_TEST_ORIGIN" withString:origin] baseURL:baseURL];
+    html = [html stringByReplacingOccurrencesOfString:@"YCORE_TEST_ORIGIN" withString:origin];
+    if (loopback) {
+        [html writeToFile:[directory stringByAppendingPathComponent:@"identity.html"]
+               atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        [view loadRequest:[NSURLRequest requestWithURL:baseURL]];
+    } else {
+        [view loadHTMLString:html baseURL:baseURL];
+    }
     pollIdentity(window, view, directory, mode, 70);
 }
 

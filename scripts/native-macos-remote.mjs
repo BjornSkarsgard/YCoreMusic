@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { request } from 'node:https';
+import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -150,12 +151,26 @@ try {
     }
     if (outcome !== 'PASS') console.log('Live YouTube playback was not confirmed: ' + outcome);
     if (outcome === 'YouTube error 153') {
-      for (const mode of ['direct','site-base']) {
+      const fixture = createServer(async (req, res) => {
+        if (req.url !== '/') { res.writeHead(404).end(); return; }
+        try {
+          const html = await readFile(join(directory, 'identity.html'));
+          res.writeHead(200, {'Content-Type':'text/html; charset=utf-8', 'Referrer-Policy':'strict-origin-when-cross-origin'}).end(html);
+        } catch {
+          res.writeHead(404).end();
+        }
+      });
+      await new Promise((resolve, reject) => {
+        fixture.once('error', reject);
+        fixture.listen(0,'127.0.0.1',resolve);
+      });
+      try {
         await stopApp();
-        await rm(join(directory,'identity.json'),{force:true});
-        startApp({YCORE_MACOS_IDENTITY_PROBE:mode});
+        startApp({YCORE_MACOS_IDENTITY_PROBE:'loopback', YCORE_MACOS_IDENTITY_LOOPBACK:'http://127.0.0.1:' + fixture.address().port});
         const identity = await waitFor(() => reportFrom('identity.json'), 45000);
-        console.log('Native WKWebView ' + mode + ' probe: ' + JSON.stringify(identity));
+        console.log('Native WKWebView loopback probe: ' + JSON.stringify(identity));
+      } finally {
+        fixture.close();
       }
     }
   }
