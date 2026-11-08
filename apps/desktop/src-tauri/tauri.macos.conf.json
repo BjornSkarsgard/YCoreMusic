@@ -1,0 +1,7 @@
+{
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; frame-src https://www.youtube.com http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost; img-src 'self' https://i.ytimg.com https://avatars.mds.yandex.net"
+    }
+  }
+}

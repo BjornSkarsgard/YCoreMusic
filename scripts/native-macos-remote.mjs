@@ -121,11 +121,13 @@ try {
   if (process.env.YCORE_MACOS_TEST_CLIP === '1') {
     const clip = async () => (await reportFrom('clip.json')) ?? {};
     let outcome;
+    let prepared;
     try {
       const ready = await waitFor(async () => {
         const value = await clip();
         return value.error || (value.ready && value.players === 1) ? value : null;
       });
+      prepared = ready;
       if (ready.error) outcome = 'YouTube error ' + ready.error;
       else {
         const control = async action => {
@@ -150,6 +152,13 @@ try {
       outcome = error.message;
     }
     if (outcome !== 'PASS') console.log('Live YouTube playback was not confirmed: ' + outcome);
+    if (process.env.YCORE_MACOS_EXPECT_LOOPBACK === '1') {
+      assert.equal(prepared?.loopback, true, 'Packaged macOS must use the isolated loopback page');
+      assert.notEqual(outcome, 'YouTube error 153', 'WebKit lost the YouTube referrer');
+      assert.ok(outcome === 'PASS' || /^YouTube error (100|101|150)$/.test(outcome),
+        'Mac controller did not reach an identifiable YouTube player outcome');
+      console.log('PASS: packaged Mac player uses the local page and no longer returns error 153.');
+    }
     if (outcome === 'YouTube error 153') {
       const fixture = createServer(async (req, res) => {
         if (req.url !== '/') { res.writeHead(404).end(); return; }

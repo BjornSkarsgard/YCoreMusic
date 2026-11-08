@@ -1,8 +1,10 @@
 import {invoke,isTauri} from '@tauri-apps/api/core';
 import {listen} from '@tauri-apps/api/event';
 import type {HostCache,HostCommand,HostPacket} from './host-protocol';
+import {MacPlayerFrame} from './macos-player-frame';
 const emptyCache=():HostCache=>({position:0,duration:0,playback:-1,quality:'default',captionOptions:[],captionTracks:[],iframeCount:0});
 let capability:Promise<boolean>|undefined,available=false,epoch=0,active:HostPlayer|undefined;
+let macPage:Promise<URL>|undefined,macUrl:URL|undefined;
 export function hostAvailable(){
  if(capability)return capability;
  capability=(async()=>{
@@ -15,16 +17,33 @@ export function hostAvailable(){
   available=true;document.body.classList.add('native-player-host');return true;
  })().catch(()=>false);return capability;
 }
+export async function preparePlayer(){
+ if(await hostAvailable())return true;
+ // Development already has an HTTP origin. The packaged WKWebView uses the
+ // Tauri scheme and requires the bundled player page on a browser HTTP origin.
+ if(!isTauri()||location.protocol!=='tauri:'||!/^Mac/.test(navigator.platform))return false;
+ macPage ??= invoke<string>('macos_player_url').then(value=>{
+  const url=new URL(value);
+  if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||!url.port||
+     !/^\/player\/[a-f0-9]{32}\/player-host\.html$/.test(url.pathname))throw Error('Invalid Mac player origin');
+  return macUrl=url;
+ }).catch(error=>{macPage=undefined;throw error;});
+ await macPage;
+ return true;
+}
 class HostPlayer {
  private cache=emptyCache();private sequence=-1;private destroyed=false;
  private commands:Promise<void>=Promise.resolve();
  readonly epoch=++epoch;
- constructor(private options:YT.PlayerOptions){
+ private macFrame:MacPlayerFrame|undefined;
+ constructor(private options:YT.PlayerOptions, mount:string){
   active=this;
   delete document.body.dataset.playerHostFailure;
-  void invoke('player_host_load',{options:{epoch:this.epoch,controls:options.playerVars?.controls===1}}).catch(error=>{document.body.dataset.playerHostFailure='load: '+String(error).slice(0,200);this.emit('onError',5);});
+  const load={epoch:this.epoch,controls:options.playerVars?.controls===1};
+  if(macUrl)this.macFrame=new MacPlayerFrame(mount,macUrl,load,packet=>this.receive(packet));
+  else void invoke('player_host_load',{options:load}).catch(error=>{document.body.dataset.playerHostFailure='load: '+String(error).slice(0,200);this.emit('onError',5);});
  }
- private command(command:HostCommand){if(this.destroyed)return;this.commands=this.commands.then(async()=>{if(this.destroyed&&command.type!=='destroy')return;await invoke('player_host_command',{epoch:this.epoch,command});}).catch(error=>{document.body.dataset.playerHostFailure='command: '+String(error).slice(0,200);this.emit('onError',5);});}
+ private command(command:HostCommand){if(this.destroyed)return;if(this.macFrame){this.macFrame.send({type:'command',epoch:this.epoch,command});return;}this.commands=this.commands.then(async()=>{if(this.destroyed&&command.type!=='destroy')return;await invoke('player_host_command',{epoch:this.epoch,command});}).catch(error=>{document.body.dataset.playerHostFailure='command: '+String(error).slice(0,200);this.emit('onError',5);});}
  private emit(name:keyof YT.Events,data?:unknown){if(this.destroyed)return;const callback=this.options.events?.[name] as ((event:unknown)=>void)|undefined;callback?.({target:this,data});}
  receive(packet:HostPacket){
   if(this.destroyed||packet.epoch!==this.epoch||packet.sequence<=this.sequence)return;
@@ -59,6 +78,7 @@ class HostPlayer {
  }
  loadModule(module:string){if(module==='captions')this.command({type:'load_captions'});}
  unloadModule(module:string){if(module==='captions')this.command({type:'unload_captions'});}
- destroy(){if(this.destroyed)return;this.command({type:'destroy'});this.destroyed=true;if(active===this)active=undefined;}
+ getIframe(){return this.macFrame?.iframe;}
+ destroy(){if(this.destroyed)return;if(this.macFrame)this.macFrame.close();else this.command({type:'destroy'});this.destroyed=true;if(active===this)active=undefined;}
 }
-export function createPlayer(mount:string,options:YT.PlayerOptions):YT.Player{return available?new HostPlayer(options) as unknown as YT.Player:new YT.Player(mount,options);}
+export function createPlayer(mount:string,options:YT.PlayerOptions):YT.Player{return available||macUrl?new HostPlayer(options,mount) as unknown as YT.Player:new YT.Player(mount,options);}

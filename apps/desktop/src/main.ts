@@ -15,7 +15,7 @@ import {mountSupport} from './support-ui';
 import {mountRemote} from './remote-ui';
 import {bindPlaybackRow,setRowPlayback} from './playback-rows';
 import {mountScenes} from './scene-ui';
-import {hostAvailable,createPlayer} from './player-host';
+import {preparePlayer,createPlayer} from './player-host';
 import {mountVideoMirror} from './video-mirror';
 import {ListeningMeter,type EndReason,type PlaybackSource} from './listening';
 import {PlaybackProgress} from './playback-progress';
@@ -180,7 +180,7 @@ function enabled(value: boolean) {
   if(playIntent||historyStarting)element<HTMLButtonElement>('pause').disabled=false;
 }
 async function api(): Promise<void> {
-  if(await hostAvailable())return;
+  if(await preparePlayer())return;
   if (window.YT?.Player) return Promise.resolve();
   if (apiPromise) return apiPromise;
   apiPromise = new Promise<void>((resolve, reject) => {

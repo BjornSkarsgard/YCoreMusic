@@ -16,6 +16,7 @@ static NSString *const PlaybackStateScript =
     "playing: state === 'Воспроизведение',"
     "error: state.match(/Ошибка YouTube ([0-9]+)/)?.[1] ?? '',"
     "position: Number(document.getElementById('seek')?.value ?? 0),"
+    "loopback: document.getElementById('player')?.src?.startsWith('http://127.0.0.1:') ?? false,"
     "players: document.querySelectorAll('iframe').length }; })()";
 
 static void writeReport(NSString *directory, NSString *file, NSDictionary *report) {

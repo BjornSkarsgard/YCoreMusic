@@ -31,6 +31,7 @@ jobs:
       - run: node scripts/native-macos-remote.mjs
         env:
           YCORE_MACOS_TEST_CLIP: '1'
+          YCORE_MACOS_EXPECT_LOOPBACK: '1'
       - name: Package debug app for the manual media probe
         working-directory: apps/desktop
         run: |

@@ -32,6 +32,8 @@ mod linux_video;
 mod macos_monitors;
 #[cfg(all(target_os = "macos", feature = "macos-native-probe", debug_assertions))]
 mod macos_native_probe;
+#[cfg(all(target_os = "macos", feature = "macos-player"))]
+mod macos_player;
 mod matcher;
 mod media;
 mod mirror_probe;
@@ -190,6 +192,8 @@ fn main() {
         .manage(media::MediaState::default())
         .on_window_event(desktop::closing)
         .setup(move |app| {
+            #[cfg(all(target_os = "macos", feature = "macos-player"))]
+            app.manage(macos_player::Page::default());
             #[cfg(feature = "remote-probe")]
             app.manage(remote::Remote::default());
             let test_directory = if cfg!(debug_assertions) {
@@ -255,6 +259,8 @@ fn main() {
             embed_identity::embed_identity_status,
             updates::updates_verify_probe,
             platform::platform_capabilities,
+            #[cfg(all(target_os = "macos", feature = "macos-player"))]
+            macos_player::macos_player_url,
             source_fetch,
             sleep_timer::sleep_timer,
             crash_recovery::crash_recovery,
