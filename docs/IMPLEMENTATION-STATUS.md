@@ -15,11 +15,12 @@ Intel и Apple Silicon: выдача QR из настроек, HTTPS-сопря�
 к сценам остаются открытыми. Методика: [24-MACOS-MEDIA-PROBE.md](24-MACOS-MEDIA-PROBE.md).
 
 Windows: cargo check, Rust 79 PASS/13 ignored, TypeScript 16 PASS и tsc.
-На Apple Silicon в нативном прогоне GitHub Actions монитор обнаружен
-со стабильным UUID. В штатном WKWebView загрузка клипа вернула YouTube 153
-(нет идентификации клиента). Отдельный WKWebView с документированным
-`loadHTMLString:baseURL:` и bundle ID дошёл до 150 на тестовом ролике,
-без подтверждения воспроизведения. Штатный v0.0.5 остаётся экспериментальным.
+На обоих раннерах монитор обнаружен со стабильным UUID, а штатный WKWebView
+получил YouTube 153 (нет идентификации клиента). Отдельный WKWebView с
+`loadHTMLString:baseURL:` и bundle ID на Apple Silicon получил 150 для трёх
+роликов подряд. Play/Pause реального клипа этим не подтверждены. Штатный
+v0.0.5 остаётся экспериментальным. Оба диагностических приложения доступны
+в [артефактах прогона](https://github.com/BjornSkarsgard/YCoreMusic/actions/runs/42479741229#artifacts).
 
 ## 2026-11-07 — v0.0.5 опубликован
 
