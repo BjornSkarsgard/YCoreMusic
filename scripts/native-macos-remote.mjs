@@ -124,9 +124,6 @@ try {
   assert.equal((await send(api('pair'), {body: {code}})).status, 403);
   console.log('PASS: macOS WKWebView QR pairing, HTTPS command, controller volume round trip, no autoplay, replay rejected.');
   if (process.env.YCORE_MACOS_TEST_CLIP === '1') {
-    if (process.env.YCORE_MACOS_TEST_MEDIA_COMPAT === '1') {
-      console.log('Checking live playback with WebKit MediaCapabilities disabled in the YouTube frame.');
-    }
     const clip = async () => (await reportFrom('clip.json')) ?? {};
     let outcome;
     let prepared;
