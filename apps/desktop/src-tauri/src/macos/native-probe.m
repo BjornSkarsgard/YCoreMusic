@@ -256,14 +256,24 @@ static void pollPair(WKWebView *view, NSString *directory, NSUInteger remaining)
     }];
 }
 
-static void pollIdentity(NSWindow *window, WKWebView *view, NSString *directory, NSUInteger remaining) {
-    [view evaluateJavaScript:@"window.probeResult ?? null" completionHandler:^(id value, NSError *error) {
+static void pollIdentity(NSWindow *window, WKWebView *view, NSString *directory,
+                         NSString *mode, NSUInteger remaining) {
+    NSString *script = [mode isEqual:@"direct"]
+        ? @"(() => { const v=document.querySelector('video');"
+          "if(v && !v.paused && v.currentTime>1) return {status:'playing',position:v.currentTime};"
+          "const data=window.ytInitialPlayerResponse?.playabilityStatus;"
+          "if(data && data.status!=='OK') return {status:'youtube_error',reason:data.status};"
+          "const error=document.querySelector('.ytp-error-content-wrap-reason');"
+          "if(error?.textContent && error.getClientRects().length) return {status:'youtube_error',reason:error.textContent.trim()};"
+          "return null; })()"
+        : @"window.probeResult ?? null";
+    [view evaluateJavaScript:script completionHandler:^(id value, NSError *error) {
         if ([value isKindOfClass:NSDictionary.class]) {
             writeReport(directory, @"identity.json", value);
             [window close];
         } else if (remaining > 0) {
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2),
-                dispatch_get_main_queue(), ^{ pollIdentity(window, view, directory, remaining - 1); });
+                dispatch_get_main_queue(), ^{ pollIdentity(window, view, directory, mode, remaining - 1); });
         } else {
             writeReport(directory, @"identity.json", @{@"status": @"timed_out"});
             [window close];
@@ -271,7 +281,7 @@ static void pollIdentity(NSWindow *window, WKWebView *view, NSString *directory,
     }];
 }
 
-static void probeNativeIdentity(NSString *directory) {
+static void probeNativeIdentity(NSString *directory, NSString *mode) {
     // This standalone test has no Tauri IPC. The other WKWebView never loads a
     // clip in this mode. Use the product bundle ID as documented by YouTube.
     WKWebViewConfiguration *config = [WKWebViewConfiguration new];
@@ -286,14 +296,23 @@ static void probeNativeIdentity(NSString *directory) {
     window.contentView = view;
     [window center];
     [window makeKeyAndOrderFront:nil];
-    NSURL *baseURL = [NSURL URLWithString:@"https://io.ycore.desktop/"];
+    if ([mode isEqual:@"direct"]) {
+        NSURL *url = [NSURL URLWithString:@"https://www.youtube.com/embed/M7lc1UVf-VE?autoplay=1&mute=1&playsinline=1"];
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+        [request setValue:@"https://io.ycore.desktop/" forHTTPHeaderField:@"Referer"];
+        [view loadRequest:request];
+        pollIdentity(window, view, directory, mode, 70);
+        return;
+    }
+    NSString *origin = [mode isEqual:@"site-base"] ? @"https://ycore-music.ru" : @"https://io.ycore.desktop";
+    NSURL *baseURL = [NSURL URLWithString:[origin stringByAppendingString:@"/"]];
     NSString *html =
         @"<!doctype html><html><head><meta name='referrer' content='strict-origin-when-cross-origin'>"
         "<style>body{margin:0;background:black}</style></head><body><div id='player'></div>"
         "<script>window.onYouTubeIframeAPIReady=()=>{"
         "const clips=['M7lc1UVf-VE','aqz-KE-bpKQ','jNQXAC9IVRw']; const errors=[];"
         "new YT.Player('player',{width:640,height:360,videoId:clips.shift(),"
-        "playerVars:{origin:'https://io.ycore.desktop',playsinline:1},events:{"
+        "playerVars:{origin:'YCORE_TEST_ORIGIN',playsinline:1},events:{"
         "onReady:({target})=>{target.mute();target.playVideo();"
         "const timer=setInterval(()=>{if(target.getPlayerState()===1 && target.getCurrentTime()>1){"
         "clearInterval(timer);window.probeResult={status:'playing',players:document.querySelectorAll('iframe').length};"
@@ -303,15 +322,16 @@ static void probeNativeIdentity(NSString *directory) {
         "else window.probeResult={status:'youtube_error',codes:errors};},"
         "onAutoplayBlocked:()=>{window.probeResult={status:'autoplay_blocked'};}"
         "}});};</script><script src='https://www.youtube.com/iframe_api'></script></body></html>";
-    [view loadHTMLString:html baseURL:baseURL];
-    pollIdentity(window, view, directory, 90);
+    [view loadHTMLString:[html stringByReplacingOccurrencesOfString:@"YCORE_TEST_ORIGIN" withString:origin] baseURL:baseURL];
+    pollIdentity(window, view, directory, mode, 70);
 }
 
 void ycore_macos_native_probe(void *webview, const char *directory) {
     WKWebView *view = (__bridge WKWebView *)webview;
     NSString *path = [NSString stringWithUTF8String:directory];
-    if ([NSProcessInfo.processInfo.environment[@"YCORE_MACOS_IDENTITY_PROBE"] isEqual:@"1"]) {
-        probeNativeIdentity(path);
+    NSString *identityMode = NSProcessInfo.processInfo.environment[@"YCORE_MACOS_IDENTITY_PROBE"];
+    if (identityMode.length > 0) {
+        probeNativeIdentity(path, identityMode);
     } else if ([NSProcessInfo.processInfo.environment[@"YCORE_MACOS_MEDIA_SPIKE"] isEqual:@"1"]) {
         if (@available(macOS 13.0, *)) {
             // Start a test clip manually in the ordinary main window before capture.

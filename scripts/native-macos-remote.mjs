@@ -150,10 +150,13 @@ try {
     }
     if (outcome !== 'PASS') console.log('Live YouTube playback was not confirmed: ' + outcome);
     if (outcome === 'YouTube error 153') {
-      await stopApp();
-      startApp({YCORE_MACOS_IDENTITY_PROBE:'1'});
-      const identity = await waitFor(() => reportFrom('identity.json'), 55000);
-      console.log('Native WKWebView application identity probe: ' + JSON.stringify(identity));
+      for (const mode of ['direct','site-base']) {
+        await stopApp();
+        await rm(join(directory,'identity.json'),{force:true});
+        startApp({YCORE_MACOS_IDENTITY_PROBE:mode});
+        const identity = await waitFor(() => reportFrom('identity.json'), 45000);
+        console.log('Native WKWebView ' + mode + ' probe: ' + JSON.stringify(identity));
+      }
     }
   }
 } finally {
