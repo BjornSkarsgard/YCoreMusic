@@ -20,6 +20,8 @@ window.YT = {
     pauseVideo() { this.position = this.getCurrentTime(); this.update(2); }
     seekTo(seconds) { this.position = seconds; this.startedAt = performance.now(); }
     setVolume() {}
+    mute() {}
+    unMute() {}
     getCurrentTime() { return this.position + (this.state === 1 ? (performance.now() - this.startedAt) / 1000 : 0); }
     getDuration() { return 180; }
     getPlayerState() { return this.state; }

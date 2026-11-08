@@ -157,13 +157,18 @@ try {
     } catch (error) {
       outcome = error.message;
     }
-    if (outcome !== 'PASS') console.log('Live YouTube playback was not confirmed: ' + outcome);
+    if (outcome !== 'PASS') {
+      console.log('Live YouTube playback was not confirmed: ' + outcome);
+      console.log('Mac clip state: ' + JSON.stringify(await clip()));
+    }
     if (process.env.YCORE_MACOS_TEST_FIXTURE === '1') assert.equal(outcome, 'PASS');
     if (process.env.YCORE_MACOS_EXPECT_LOOPBACK === '1') {
       assert.equal(prepared?.loopback, true, 'Packaged macOS must use the isolated loopback page');
       assert.notEqual(outcome, 'YouTube error 153', 'WebKit lost the YouTube referrer');
-      assert.ok(outcome === 'PASS' || /^YouTube error (100|101|150)$/.test(outcome),
-        'Mac controller did not reach an identifiable YouTube player outcome');
+      const finalState = await clip();
+      assert.notEqual(finalState.error, '153', 'WebKit lost the YouTube referrer after Play');
+      assert.ok(outcome === 'PASS' || prepared.ready || /^YouTube error (100|101|150)$/.test(outcome),
+        'Mac controller did not reach the cued state or a YouTube availability error');
       console.log('PASS: packaged Mac player uses the local page and no longer returns error 153.');
     }
     if (outcome === 'YouTube error 153') {

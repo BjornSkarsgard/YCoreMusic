@@ -13,6 +13,7 @@ static NSString *const PlaybackStateScript =
     @"(() => { const play = document.getElementById('play');"
     "const state = document.getElementById('status')?.textContent ?? '';"
     "return { ready: !!play && !play.disabled,"
+    "status: state.slice(0,200),"
     "playing: state === 'Воспроизведение',"
     "error: state.match(/Ошибка YouTube ([0-9]+)/)?.[1] ?? '',"
     "position: Number(document.getElementById('seek')?.value ?? 0),"

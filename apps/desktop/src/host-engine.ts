@@ -51,7 +51,13 @@ function command(value:{epoch:number;command:HostCommand}){
  switch(action.type){
   case 'cue':hasVideo=true;cueBrand?.update(showBrand,-1);player.cueVideoById({videoId:action.videoId,startSeconds:action.position});break;
   case 'play':player.playVideo();break;case 'pause':player.pauseVideo();break;
-  case 'seek':player.seekTo(action.position,true);break;case 'volume':player.setVolume(action.level);break;
+  case 'seek':player.seekTo(action.position,true);break;
+  case 'volume':
+   // WebKit distinguishes an explicitly muted iframe from a zero-volume one.
+   if(embedded&&action.level===0)player.mute();
+   player.setVolume(action.level);
+   if(embedded&&action.level>0)player.unMute();
+   break;
   case 'load_captions':player.loadModule?.('captions');break;case 'unload_captions':player.unloadModule?.('captions');break;
   case 'caption_track':player.setOption?.('captions','track',{languageCode:action.languageCode,kind:action.kind,name:action.name});break;
   case 'caption_size':player.setOption?.('captions','fontSize',action.size);break;
