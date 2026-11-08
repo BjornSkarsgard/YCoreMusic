@@ -28,6 +28,12 @@ jobs:
         working-directory: apps/desktop
       - run: npx tauri build --debug --no-bundle --features macos-native-probe
         working-directory: apps/desktop
+      - name: Verify phone Play, Seek and Pause through the macOS player
+        run: node scripts/native-macos-remote.mjs
+        env:
+          YCORE_MACOS_TEST_CLIP: '1'
+          YCORE_MACOS_EXPECT_LOOPBACK: '1'
+          YCORE_MACOS_TEST_FIXTURE: '1'
       - run: node scripts/native-macos-remote.mjs
         env:
           YCORE_MACOS_TEST_CLIP: '1'

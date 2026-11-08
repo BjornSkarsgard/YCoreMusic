@@ -143,15 +143,22 @@ try {
         }, 30000);
         outcome = playback.error ? 'YouTube error ' + playback.error : 'PASS';
         if (outcome === 'PASS') {
+          if (process.env.YCORE_MACOS_TEST_FIXTURE === '1') {
+            await control({type:'seek',seconds:31});
+            await waitFor(async () => (await clip()).position >= 31);
+          }
           await control({type:'pause'});
           await waitFor(async () => !(await state()).playing);
-          console.log('PASS: phone plays and pauses the single real YouTube iframe in WKWebView.');
+          console.log(process.env.YCORE_MACOS_TEST_FIXTURE === '1'
+            ? 'PASS: phone plays, seeks and pauses the single simulated YouTube iframe in native WKWebView.'
+            : 'PASS: phone plays and pauses the single real YouTube iframe in WKWebView.');
         }
       }
     } catch (error) {
       outcome = error.message;
     }
     if (outcome !== 'PASS') console.log('Live YouTube playback was not confirmed: ' + outcome);
+    if (process.env.YCORE_MACOS_TEST_FIXTURE === '1') assert.equal(outcome, 'PASS');
     if (process.env.YCORE_MACOS_EXPECT_LOOPBACK === '1') {
       assert.equal(prepared?.loopback, true, 'Packaged macOS must use the isolated loopback page');
       assert.notEqual(outcome, 'YouTube error 153', 'WebKit lost the YouTube referrer');

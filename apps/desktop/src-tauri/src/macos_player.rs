@@ -11,7 +11,7 @@ use std::{
     net::{Ipv4Addr, SocketAddrV4},
     sync::Mutex,
 };
-use tauri::{AppHandle, WebviewWindow};
+use tauri::{AppHandle, Manager, WebviewWindow};
 
 const CSP: &str = "default-src 'none'; script-src 'self' https://www.youtube.com https://s.ytimg.com; frame-src https://www.youtube.com; style-src 'self' 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'";
 
@@ -48,10 +48,24 @@ fn serve(app: &AppHandle, host: &str, prefix: &str, request: Request<Body>) -> R
     {
         return StatusCode::NOT_FOUND.into_response();
     }
-    let Some(path) = asset_path(request.uri().path(), prefix) else {
+    let path = request.uri().path();
+    #[cfg(all(debug_assertions, feature = "macos-native-probe"))]
+    let fixture = app.state::<crate::storage::StorageState>().test_mode
+        && std::env::var("YCORE_MACOS_TEST_FIXTURE").as_deref() == Ok("1");
+    #[cfg(all(debug_assertions, feature = "macos-native-probe"))]
+    if fixture && path.strip_prefix(prefix) == Some("youtube-fixture.js") {
+        return (
+            [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+            include_str!("macos/player-test-fixture.js"),
+        )
+            .into_response();
+    }
+    let Some(path) = asset_path(path, prefix) else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let document = path == "player-host.html";
+    #[cfg(all(debug_assertions, feature = "macos-native-probe"))]
+    let fixture_module = fixture && path.starts_with("assets/playerHost-") && path.ends_with(".js");
     let Some(mut asset) = app.asset_resolver().get(path) else {
         return StatusCode::NOT_FOUND.into_response();
     };
@@ -60,6 +74,12 @@ fn serve(app: &AppHandle, host: &str, prefix: &str, request: Request<Body>) -> R
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         };
         asset.bytes = html.replace("\"/assets/", "\"./assets/").into_bytes();
+    }
+    #[cfg(all(debug_assertions, feature = "macos-native-probe"))]
+    if fixture_module {
+        asset.bytes = String::from_utf8_lossy(&asset.bytes)
+            .replace("https://www.youtube.com/iframe_api", "./youtube-fixture.js")
+            .into_bytes();
     }
     (
         [
