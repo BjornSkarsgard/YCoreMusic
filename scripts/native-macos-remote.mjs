@@ -13,10 +13,43 @@ const root = process.cwd();
 const directory = await mkdtemp(join(tmpdir(), 'ycore-mac-remote-'));
 let relay;
 let app;
+let launchError;
+
+function startApp(extra = {}) {
+  launchError = undefined;
+  app = spawn(process.env.YCORE_NATIVE_APP ?? resolve('apps/desktop/src-tauri/target/debug/YCoreMusic'), {
+    env: {
+      ...process.env,
+      YCORE_TEST_DATA_DIR: directory,
+      YCORE_REMOTE_TEST_ORIGIN: relay.origin,
+      YCORE_MACOS_NATIVE_PROBE: '1',
+      YCORE_MACOS_MEDIA_SPIKE: '0',
+      ...extra,
+    },
+    stdio: 'ignore',
+  });
+  app.once('error', error => { launchError = error; });
+}
+
+async function stopApp() {
+  if (!app?.pid || app.exitCode !== null || app.signalCode !== null) return;
+  const exited = new Promise(done => app.once('exit', done));
+  app.kill();
+  await Promise.race([exited, sleep(1500)]);
+}
+
+async function reportFrom(name) {
+  try {
+    return JSON.parse(await readFile(join(directory, name), 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+}
 
 async function waitFor(callback, timeout = 45000) {
   const deadline = Date.now() + timeout;
   do {
+    if (launchError) throw new Error('Could not launch Mac application', {cause: launchError});
     assert.ok(app.exitCode === null && app.signalCode === null, 'Mac application exited during probe');
     const result = await callback();
     if (result) return result;
@@ -49,26 +82,8 @@ function send(url, {body, cookie} = {}) {
 
 try {
   relay = await launchRelay(root, directory);
-  app = spawn(process.env.YCORE_NATIVE_APP ?? resolve('apps/desktop/src-tauri/target/debug/YCoreMusic'), {
-    env: {
-      ...process.env,
-      YCORE_TEST_DATA_DIR: directory,
-      YCORE_REMOTE_TEST_ORIGIN: relay.origin,
-      YCORE_MACOS_NATIVE_PROBE: '1',
-      YCORE_MACOS_MEDIA_SPIKE: '0',
-    },
-    stdio: 'ignore',
-  });
-  let launchError;
-  app.once('error', error => { launchError = error; });
-  const report = await waitFor(async () => {
-    if (launchError) throw new Error('Could not launch Mac application', {cause: launchError});
-    try {
-      return JSON.parse(await readFile(join(directory, 'pair.json'), 'utf8'));
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-  });
+  startApp();
+  const report = await waitFor(() => reportFrom('pair.json'));
   assert.ok(report.url, 'Mac settings did not produce a QR link');
   if (report.displays) {
     console.log('Mac displays discovered: ' + report.displays.total + ', stable UUID: ' + report.displays.stable);
@@ -103,14 +118,7 @@ try {
   assert.equal((await send(api('pair'), {body: {code}})).status, 403);
   console.log('PASS: macOS WKWebView QR pairing, HTTPS command, controller volume round trip, no autoplay, replay rejected.');
   if (process.env.YCORE_MACOS_TEST_CLIP === '1') {
-    const clip = async () => {
-      try {
-        return JSON.parse(await readFile(join(directory, 'clip.json'), 'utf8'));
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-        return {};
-      }
-    };
+    const clip = async () => (await reportFrom('clip.json')) ?? {};
     let outcome;
     try {
       const ready = await waitFor(async () => {
@@ -141,12 +149,15 @@ try {
       outcome = error.message;
     }
     if (outcome !== 'PASS') console.log('Live YouTube playback was not confirmed: ' + outcome);
+    if (outcome === 'YouTube error 153') {
+      await stopApp();
+      startApp({YCORE_MACOS_IDENTITY_PROBE:'1'});
+      const identity = await waitFor(() => reportFrom('identity.json'), 55000);
+      console.log('Native WKWebView application identity probe: ' + JSON.stringify(identity));
+    }
   }
 } finally {
-  if (app?.pid && app.exitCode === null) {
-    app.kill();
-    await Promise.race([new Promise(done => app.once('exit', done)), sleep(1500)]);
-  }
+  await stopApp();
   relay?.stop();
   await rm(directory, {recursive: true, force: true});
 }

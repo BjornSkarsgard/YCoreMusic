@@ -256,10 +256,60 @@ static void pollPair(WKWebView *view, NSString *directory, NSUInteger remaining)
     }];
 }
 
+static void pollIdentity(NSWindow *window, WKWebView *view, NSString *directory, NSUInteger remaining) {
+    [view evaluateJavaScript:@"window.probeResult ?? null" completionHandler:^(id value, NSError *error) {
+        if ([value isKindOfClass:NSDictionary.class]) {
+            writeReport(directory, @"identity.json", value);
+            [window close];
+        } else if (remaining > 0) {
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, NSEC_PER_SEC / 2),
+                dispatch_get_main_queue(), ^{ pollIdentity(window, view, directory, remaining - 1); });
+        } else {
+            writeReport(directory, @"identity.json", @{@"status": @"timed_out"});
+            [window close];
+        }
+    }];
+}
+
+static void probeNativeIdentity(NSString *directory) {
+    // This standalone test has no Tauri IPC. The other WKWebView never loads a
+    // clip in this mode. Use the product bundle ID as documented by YouTube.
+    WKWebViewConfiguration *config = [WKWebViewConfiguration new];
+    config.websiteDataStore = WKWebsiteDataStore.nonPersistentDataStore;
+    config.mediaTypesRequiringUserActionForPlayback = WKAudiovisualMediaTypeNone;
+    NSRect bounds = NSMakeRect(0, 0, 640, 360);
+    WKWebView *view = [[WKWebView alloc] initWithFrame:bounds configuration:config];
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:bounds
+        styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    window.releasedWhenClosed = NO;
+    window.title = @"YCore macOS · YouTube identity probe";
+    window.contentView = view;
+    [window center];
+    [window makeKeyAndOrderFront:nil];
+    NSURL *baseURL = [NSURL URLWithString:@"https://io.ycore.desktop/"];
+    NSString *html =
+        @"<!doctype html><html><head><meta name='referrer' content='strict-origin-when-cross-origin'>"
+        "<style>body{margin:0;background:black}</style></head><body><div id='player'></div>"
+        "<script>window.onYouTubeIframeAPIReady=()=>{"
+        "new YT.Player('player',{width:640,height:360,videoId:'aqz-KE-bpKQ',"
+        "playerVars:{origin:'https://io.ycore.desktop',playsinline:1},events:{"
+        "onReady:({target})=>{target.mute();target.playVideo();"
+        "const timer=setInterval(()=>{if(target.getPlayerState()===1 && target.getCurrentTime()>1){"
+        "clearInterval(timer);window.probeResult={status:'playing',players:document.querySelectorAll('iframe').length};"
+        "}},250);},"
+        "onError:({data})=>{window.probeResult={status:'youtube_error',code:data};},"
+        "onAutoplayBlocked:()=>{window.probeResult={status:'autoplay_blocked'};}"
+        "}});};</script><script src='https://www.youtube.com/iframe_api'></script></body></html>";
+    [view loadHTMLString:html baseURL:baseURL];
+    pollIdentity(window, view, directory, 90);
+}
+
 void ycore_macos_native_probe(void *webview, const char *directory) {
     WKWebView *view = (__bridge WKWebView *)webview;
     NSString *path = [NSString stringWithUTF8String:directory];
-    if ([NSProcessInfo.processInfo.environment[@"YCORE_MACOS_MEDIA_SPIKE"] isEqual:@"1"]) {
+    if ([NSProcessInfo.processInfo.environment[@"YCORE_MACOS_IDENTITY_PROBE"] isEqual:@"1"]) {
+        probeNativeIdentity(path);
+    } else if ([NSProcessInfo.processInfo.environment[@"YCORE_MACOS_MEDIA_SPIKE"] isEqual:@"1"]) {
         if (@available(macOS 13.0, *)) {
             // Start a test clip manually in the ordinary main window before capture.
             YCoreMediaProbe *probe = [YCoreMediaProbe new];
