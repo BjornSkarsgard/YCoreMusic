@@ -5,13 +5,13 @@ HTTP-страницу единственного плеера. Статичес�
 127.0.0.1 по изолированному пути. Связь с контроллером через MessageChannel.
 Прямой запрос с документированным Referer вместо 153 получил от YouTube
 проверку «подтвердите, что вы не бот». У нового маршрута нативно подтверждено
-отсутствие 153 на Apple Silicon и прохождение Play/Seek/Pause с тестовым
+отсутствие 153 на Intel и Apple Silicon и прохождение Play/Seek/Pause с тестовым
 IFrame API на обеих архитектурах. Реальный клип в том же HTTP-плеере
 запустился и остановился в Chromium. В Apple Silicon CI реальный клип
 подготовился, но после Play таймлайн остался на нуле. Отдельное отключение
 MediaCapabilities в тесте WKWebView не помогло и в рабочую схему не входит.
 Воспроизведение на физическом Mac и совместимость экранов остаются открытыми.
-Нативные проверки и сборки: [GitHub Actions](https://github.com/BjornSkarsgard/YCoreMusic/actions/runs/42482027987).
+Нативные проверки и сборки: [GitHub Actions](https://github.com/BjornSkarsgard/YCoreMusic/actions/runs/42482349876).
 
 Локально: сборка, TypeScript 16 PASS, renderer 160 PASS/1 opt-in skip,
 отдельный реальный YouTube renderer PASS. См. ADR-059.
