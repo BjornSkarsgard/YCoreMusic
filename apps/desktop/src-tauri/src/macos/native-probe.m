@@ -340,6 +340,17 @@ static void probeNativeIdentity(NSString *directory, NSString *mode) {
 void ycore_macos_native_probe(void *webview, const char *directory) {
     WKWebView *view = (__bridge WKWebView *)webview;
     NSString *path = [NSString stringWithUTF8String:directory];
+    if ([NSProcessInfo.processInfo.environment[@"YCORE_MACOS_TEST_MEDIA_COMPAT"] isEqual:@"1"]) {
+        // Compare with the WebKitGTK decoder selection workaround. Install
+        // only in this isolated probe and only in the official embed frame.
+        NSString *source =
+            @"if(location.origin==='https://www.youtube.com'&&location.pathname.startsWith('/embed/')){"
+            "const descriptor=Object.getOwnPropertyDescriptor(Navigator.prototype,'mediaCapabilities');"
+            "if(descriptor?.configurable)delete Navigator.prototype.mediaCapabilities;}";
+        WKUserScript *script = [[WKUserScript alloc] initWithSource:source
+            injectionTime:WKUserScriptInjectionTimeAtDocumentStart forMainFrameOnly:NO];
+        [view.configuration.userContentController addUserScript:script];
+    }
     NSString *identityMode = NSProcessInfo.processInfo.environment[@"YCORE_MACOS_IDENTITY_PROBE"];
     if (identityMode.length > 0) {
         probeNativeIdentity(path, identityMode);
