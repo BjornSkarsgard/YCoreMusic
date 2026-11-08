@@ -291,13 +291,16 @@ static void probeNativeIdentity(NSString *directory) {
         @"<!doctype html><html><head><meta name='referrer' content='strict-origin-when-cross-origin'>"
         "<style>body{margin:0;background:black}</style></head><body><div id='player'></div>"
         "<script>window.onYouTubeIframeAPIReady=()=>{"
-        "new YT.Player('player',{width:640,height:360,videoId:'aqz-KE-bpKQ',"
+        "const clips=['M7lc1UVf-VE','aqz-KE-bpKQ','jNQXAC9IVRw']; const errors=[];"
+        "new YT.Player('player',{width:640,height:360,videoId:clips.shift(),"
         "playerVars:{origin:'https://io.ycore.desktop',playsinline:1},events:{"
         "onReady:({target})=>{target.mute();target.playVideo();"
         "const timer=setInterval(()=>{if(target.getPlayerState()===1 && target.getCurrentTime()>1){"
         "clearInterval(timer);window.probeResult={status:'playing',players:document.querySelectorAll('iframe').length};"
         "}},250);},"
-        "onError:({data})=>{window.probeResult={status:'youtube_error',code:data};},"
+        "onError:({data,target})=>{errors.push(data);"
+        "if([100,101,150].includes(data)&&clips.length){target.mute();target.loadVideoById(clips.shift());}"
+        "else window.probeResult={status:'youtube_error',codes:errors};},"
         "onAutoplayBlocked:()=>{window.probeResult={status:'autoplay_blocked'};}"
         "}});};</script><script src='https://www.youtube.com/iframe_api'></script></body></html>";
     [view loadHTMLString:html baseURL:baseURL];
