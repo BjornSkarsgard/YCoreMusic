@@ -376,7 +376,11 @@ async fn presentation(window: &WebviewWindow, interactive: bool) -> Result<(), S
                     .map_err(|_| "Cannot read video engine window")?;
                 native.set_accept_focus(interactive);
                 native.set_keep_below(!interactive);
-                native.set_opacity(if interactive { 1.0 } else { 0.0 });
+                // GTK's widget opacity can be set before it has an X11 window.
+                // Apply the compositor property directly to the realized surface.
+                native.realize();
+                let surface = native.window().ok_or("Video engine has no native surface")?;
+                surface.set_opacity(if interactive { 1.0 } else { 0.0 });
                 native.show_all();
                 let region = gtk::cairo::Region::create();
                 native.input_shape_combine_region(if interactive { None } else { Some(&region) });
