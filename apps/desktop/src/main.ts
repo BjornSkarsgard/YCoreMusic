@@ -340,12 +340,18 @@ const positionTimer = setInterval(() => {
 }, 500);
 window.addEventListener('beforeunload', () => { finishRecord('shutdown');clearInterval(positionTimer); player?.destroy(); });
 
-function stopPlayer(reason:EndReason='source_change') {
+function stopPlayer(reason:EndReason='source_change',preparingNext=false) {
   playbackProgress.reset();
   preparationProgress.reset();
   finishRecord(reason);
   cancelPlaybackRecovery();
-  element('video-alternatives').hidden=true;
+  // Keep the scroll viewport the same size during clip lookup. Old choices
+  // must disappear immediately because they belong to a different track.
+  if(preparingNext&&!element('video-alternatives').hidden) {
+    element('alternative-list').replaceChildren();
+  } else {
+    element('video-alternatives').hidden=true;
+  }
   activeVideo=undefined;activeRecord=undefined;captionControls.reset();
   refreshVideoFavorites();
   intentUI();loadStarted=0;bufferingSince=0;
@@ -403,6 +409,7 @@ let skipQueued=false;
 function skipUnavailable(message:string,technical=true){
   if(networkOffline){report('Нет сети · очередь сохранена, ждём подключения.');return;}
   if(skipQueued||retryTimer)return;
+  if(!element('alternative-list').childElementCount)element('video-alternatives').hidden=true;
   if(technical&&queue.current){const key=queue.generation+':'+queue.current.ordinal;if(skipReasons.get(key)!==message){skipReasons.set(key,message);renderQueue();}}
   if(!canSkip()) {if(finiteSource)playIntent=false;intentUI();report(message+' · можно выбрать другой клип');element<HTMLButtonElement>('play').disabled=false;return;}
   if(historySource&&queue.current&&!excludedTracks.has(queue.current.id))unavailableHistoryTracks.add(queue.current.id);
@@ -689,7 +696,7 @@ function jumpQueue(ordinal:number,epoch:number){
   if(ordinal===queue.current?.ordinal){cancelQueueAdvance();systemControl('play');return;}
   if(!queue.select(ordinal,epoch))return;
   cancelQueueAdvance();sourceNeedsFresh=false;powerPaused=false;playIntent=true;
-  stopPlayer('skip');renderQueue();element<HTMLInputElement>('url').value='';intentUI();
+  stopPlayer('skip',true);renderQueue();element<HTMLInputElement>('url').value='';intentUI();
   if(queue.current?.videoId)void loadVideo(queue.current.videoId,true,!finiteSource);else prepareAhead();
 }
 async function advance(resume:boolean,explicit=false,reason?:EndReason){
@@ -713,7 +720,7 @@ async function advance(resume:boolean,explicit=false,reason?:EndReason){
       }
     }
     if(!wrapped&&!queue.next()){if(!finiteSource)deferWave('Ждём следующую подборку',()=>void advance(playIntent));else playIntent=false;return;}
-    stopPlayer(reason??(explicit?'skip':'error'));element<HTMLButtonElement>('pause').disabled=!playIntent;element<HTMLInputElement>('url').value='';
+    stopPlayer(reason??(explicit?'skip':'error'),true);element<HTMLButtonElement>('pause').disabled=!playIntent;element<HTMLInputElement>('url').value='';
     if(!finiteSource){queue.trimPast(50);const valid=new Set(queue.snapshot.map(track=>queue.generation+':'+track.ordinal));for(const key of choices.keys())if(!valid.has(key))choices.delete(key);for(const key of searchErrors.keys())if(!valid.has(key))searchErrors.delete(key);for(const key of searchAttempts.keys())if(!valid.has(key))searchAttempts.delete(key);}
     renderQueue();if(queue.current.videoId)void loadVideo(queue.current.videoId,playIntent);
     else prepareAhead();
@@ -771,7 +778,7 @@ mountHistory(playHistoryEntry,enqueueHistory,()=>historyWriter);
 const selectCatalogue:Parameters<typeof mountCatalogue>[0]=selection=>{
   if(!allowPlaybackChange())return;
   if(!selection.tracks.length)return;
-  stopPlayer();++sourceRevision;queue.reset(selection.tracks);choices.clear();bypassSaved.clear();
+  stopPlayer('source_change',true);++sourceRevision;queue.reset(selection.tracks);choices.clear();bypassSaved.clear();
   clearRetry();historyStarting=false;sourceNeedsFresh=false;finiteSource=true;historySource=false;activeCollection=selection.collection;powerPaused=false;playIntent=true;renderQueue();
   element<HTMLButtonElement>('source-more').disabled=true;
   element('source-status').textContent='Яндекс Музыка · '+selection.title;element('source-name').textContent=selection.title;
@@ -789,7 +796,7 @@ element('previous').onclick=()=>{
     return;
   }
   if(!queue.previous())return;
-  stopPlayer();renderQueue();element<HTMLInputElement>('url').value='';
+  stopPlayer('source_change',true);renderQueue();element<HTMLInputElement>('url').value='';
   if(queue.current?.videoId)void loadVideo(queue.current.videoId,playIntent);
   else prepareAhead();
 };

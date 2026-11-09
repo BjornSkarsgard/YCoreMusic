@@ -2,6 +2,8 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 export async function verifyLinuxVideo({execute,nativeInvoke,sleep,request,session,until}){
+  const windowShape=execFileSync('xwininfo',['-name','YCore Music · Video engine','-shape'],{encoding:'utf8'});
+  assert.match(windowShape,/Window shape extents:\s+0x0\+0\+0/,'The mapped video engine must have no visible area even without a compositor');
   const source=[];
   for(let i=0;i<3;i++){source.push(await nativeInvoke('linux_video_probe'));await sleep(700);}
   assert(source.every(s=>s?.nonBlack>100),'Native snapshots must contain real video');

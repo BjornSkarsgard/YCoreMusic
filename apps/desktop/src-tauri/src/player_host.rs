@@ -361,9 +361,14 @@ async fn presentation(window: &WebviewWindow, interactive: bool) -> Result<(), S
                 native.set_accept_focus(interactive);
                 native.set_keep_below(!interactive);
                 native.set_opacity(if interactive { 1.0 } else { 0.0 });
-                native.show_all();
                 let region = gtk::cairo::Region::create();
+                // X11 can ignore opacity when no compositor is running.
+                // Clip the native window without unmapping the WebKit surface.
+                if gtk::prelude::WidgetExt::display(&native).supports_shapes() {
+                    native.shape_combine_region(if interactive { None } else { Some(&region) });
+                }
                 native.input_shape_combine_region(if interactive { None } else { Some(&region) });
+                native.show_all();
                 Ok(())
             })();
             let _ = sender.blocking_send(result);
