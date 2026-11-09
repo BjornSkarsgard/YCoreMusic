@@ -100,7 +100,12 @@ test('Pause cancels an unavailable clip transition and a finite playlist still e
  await expect(page.locator('#track-title')).toHaveText('B');
  expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa']);
  await page.locator('#play').click();await page.clock.runFor(17000);await expect(page.locator('#track-title')).toHaveText('C');
- for(const next of ['D','E']){await page.evaluate(()=>(window as any).activePlayer.emit(0));await expect(page.locator('#track-title')).toHaveText(next);}
+ await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe('Ccccccccccc');
+ for(const [next,video] of [['D','Ddddddddddd'],['E','Eeeeeeeeeee']]){
+  await page.evaluate(()=>(window as any).activePlayer.emit(0));
+  await expect(page.locator('#track-title')).toHaveText(next);
+  await expect.poll(()=>page.evaluate(()=>(window as any).played.at(-1))).toBe(video);
+ }
  await page.evaluate(()=>(window as any).activePlayer.emit(0));await expect(page.locator('#status')).toContainText('Конец выбранного списка');
  await page.clock.runFor(30000);expect(await page.evaluate(()=>(window as any).played)).toEqual(['Aaaaaaaaaaa','Ccccccccccc','Ddddddddddd','Eeeeeeeeeee']);
 });

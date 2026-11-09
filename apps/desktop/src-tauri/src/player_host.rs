@@ -379,7 +379,9 @@ async fn presentation(window: &WebviewWindow, interactive: bool) -> Result<(), S
                 // GTK's widget opacity can be set before it has an X11 window.
                 // Apply the compositor property directly to the realized surface.
                 native.realize();
-                let surface = native.window().ok_or("Video engine has no native surface")?;
+                let surface = native
+                    .window()
+                    .ok_or("Video engine has no native surface")?;
                 surface.set_opacity(if interactive { 1.0 } else { 0.0 });
                 native.show_all();
                 let region = gtk::cairo::Region::create();
