@@ -64,6 +64,26 @@ try {
   assert.equal(storageStatus.testMode,true,'Refuse storage tests against the personal database');
   assert.deepEqual(await nativeInvoke('wave_sync'),{disabled:true,pending:0,sent:0},'Isolated tests must never write recommendation events');
   isolated=true;
+  const inlineLinux=process.env.YCORE_EXPECT_INLINE_LINUX==='1';
+  const compositedLinux=process.env.YCORE_EXPECT_HOST_LINUX==='1';
+  if(inlineLinux||compositedLinux){
+    const host=await nativeInvoke('player_host_status');
+    assert.equal(host?.supported,compositedLinux);
+    if(process.env.YCORE_BASE_PLAYBACK_SMOKE!=='1'){
+      await nativeInvoke('player_host_load',{options:{epoch:host.epoch+1,controls:false}});
+      const windows=execFileSync('xwininfo',['-root','-tree'],{encoding:'utf8'});
+      const source=windows.match(/^[ \t]*(0x[0-9a-f]+)[ \t]+"[^"\r\n]*Video engine"/im);
+      if(compositedLinux){
+        assert(source,'A composited Linux session should create the native video source');
+        const opacity=execFileSync('xprop',['-id',source[1],'_NET_WM_WINDOW_OPACITY'],{encoding:'utf8'});
+        assert.match(opacity,/=\s*0\s*$/,'The compositor must receive zero source opacity');
+        await nativeInvoke('player_host_command',{epoch:host.epoch+1,command:{type:'destroy'}});
+      }else{
+        assert(!source,'Linux without a compositor must not create a separate video source');
+      }
+      console.log('Native Linux player window policy: PASS');
+    }
+  }
   if(remoteSmoke){
     await execute('if(document.getElementById("account-welcome")?.open)document.getElementById("account-welcome-later").click();');
     await remoteSmoke.verifyRemote({root,execute,nativeInvoke,until,sleep,fixture:remoteFixture});

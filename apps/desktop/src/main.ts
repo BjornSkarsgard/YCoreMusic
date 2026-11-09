@@ -1016,7 +1016,7 @@ const streamWatchdog=setInterval(()=>{
  if(preparationProgress.stalled(queue.current?.ordinal??NaN,performance.now(),!activeVideo&&!startingSource&&!sourceNeedsFresh&&!advancing&&canSkip())){
   preparationProgress.reset();clearRetry();skipUnavailable('Подбор клипа не завершился вовремя.');return;
  }
- if(playbackProgress.stalled(player?.getCurrentTime()??NaN,performance.now(),playerReady&&scenePlayback===1)){
+ if(playbackProgress.stalled(playerReady?player?.getCurrentTime()??NaN:NaN,performance.now(),playerReady&&scenePlayback===1)){
   playbackProgress.reset();report('Видео не продвигается · пробуем другой клип.');
   if(canSkip())tryAlternative(queue.generation,queue.current?.ordinal);else recoverPlayback();
   return;

@@ -35,12 +35,14 @@ for attempt in $(seq 1 50); do
 done
 kill -0 "$wm_pid"
 xprop -root _NET_SUPPORTING_WM_CHECK
-if [ "${YCORE_LINUX_FEATURES_SMOKE:-}" = 1 ]; then
+if [ "${YCORE_EXPECT_HOST_LINUX:-}" = 1 ] || [ "${YCORE_LINUX_FEATURES_SMOKE:-}" = 1 ]; then
   test "${YCORE_PRIVATE_X11:-}" = 1
   xcompmgr -n >.tools/xcompmgr.log 2>&1 &
   comp_pid=$!
   sleep 1
   kill -0 "$comp_pid"
+fi
+if [ "${YCORE_LINUX_FEATURES_SMOKE:-}" = 1 ]; then
   cc scripts/linux-display-fixture.c -o .tools/linux-display-fixture -lX11 -lXrandr
   .tools/linux-display-fixture
 fi

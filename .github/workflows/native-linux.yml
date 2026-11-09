@@ -50,15 +50,16 @@ jobs:
           YCORE_PRIVATE_X11: '1'
         run: xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- sh scripts/native-linux.sh
       - name: Native GTK with a compositor and mirrored scenes
-        if: inputs.live_playback
+        if: ${{ !cancelled() }}
         env:
           GDK_BACKEND: x11
           LIBGL_ALWAYS_SOFTWARE: '1'
           WEBKIT_DISABLE_DMABUF_RENDERER: '1'
           YCORE_NATIVE_DRIVER: /usr/bin/WebKitWebDriver
           YCORE_AUTOSTART_SMOKE: '1'
-          YCORE_BASE_PLAYBACK_SMOKE: '1'
-          YCORE_LINUX_FEATURES_SMOKE: '1'
+          YCORE_BASE_PLAYBACK_SMOKE: ${{ inputs.live_playback && '1' || '0' }}
+          YCORE_LINUX_FEATURES_SMOKE: ${{ inputs.live_playback && '1' || '0' }}
+          YCORE_EXPECT_HOST_LINUX: '1'
           YCORE_PRIVATE_X11: '1'
           YCORE_NATIVE_TEST_DATA_DIR: .tools/native-test-composited
         run: xvfb-run -a -s '-screen 0 1600x1000x24' dbus-run-session -- sh scripts/native-linux.sh
