@@ -2,9 +2,25 @@ use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, WebviewWindow};
 pub const LABEL: &str = "player-host";
+#[cfg(all(target_os = "linux", feature = "linux-player-host"))]
+static LINUX_HOST_AVAILABLE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+pub fn detect_linux_host() {
+    #[cfg(all(target_os = "linux", feature = "linux-player-host"))]
+    LINUX_HOST_AVAILABLE.get_or_init(|| {
+        // A mapped X11 source depends on the compositor honoring opacity.
+        // The inline WebKit player is the fallback for other sessions.
+        gtk::gdk::Screen::default()
+            .is_some_and(|screen| screen.display().supports_shapes() && screen.is_composited())
+    });
+}
+
 pub fn supported() -> bool {
+    #[cfg(all(target_os = "linux", feature = "linux-player-host"))]
+    return LINUX_HOST_AVAILABLE.get().copied().unwrap_or(false);
+
+    #[cfg(not(all(target_os = "linux", feature = "linux-player-host")))]
     cfg!(all(target_os = "windows", feature = "single-player-host"))
-        || cfg!(all(target_os = "linux", feature = "linux-player-host"))
 }
 #[derive(Default)]
 pub struct Host {
@@ -361,14 +377,9 @@ async fn presentation(window: &WebviewWindow, interactive: bool) -> Result<(), S
                 native.set_accept_focus(interactive);
                 native.set_keep_below(!interactive);
                 native.set_opacity(if interactive { 1.0 } else { 0.0 });
-                let region = gtk::cairo::Region::create();
-                // X11 can ignore opacity when no compositor is running.
-                // Clip the native window without unmapping the WebKit surface.
-                if gtk::prelude::WidgetExt::display(&native).supports_shapes() {
-                    native.shape_combine_region(if interactive { None } else { Some(&region) });
-                }
-                native.input_shape_combine_region(if interactive { None } else { Some(&region) });
                 native.show_all();
+                let region = gtk::cairo::Region::create();
+                native.input_shape_combine_region(if interactive { None } else { Some(&region) });
                 Ok(())
             })();
             let _ = sender.blocking_send(result);

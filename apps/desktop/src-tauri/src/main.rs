@@ -145,7 +145,7 @@ fn main() {
         std::env::set_var("GDK_BACKEND", "x11");
     }
     let mut context = tauri::generate_context!();
-    if player_host::supported() {
+    if cfg!(target_os = "windows") && player_host::supported() {
         // All WebViews sharing a WebView2 environment must use identical browser
         // arguments. App-level play intent still prevents startup/wake autoplay.
         for window in &mut context.config_mut().app.windows {
@@ -186,6 +186,7 @@ fn main() {
         .manage(media::MediaState::default())
         .on_window_event(desktop::closing)
         .setup(move |app| {
+            player_host::detect_linux_host();
             #[cfg(feature = "remote-probe")]
             app.manage(remote::Remote::default());
             let test_directory = if cfg!(debug_assertions) {

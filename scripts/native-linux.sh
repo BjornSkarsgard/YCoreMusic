@@ -4,7 +4,9 @@ mkdir -p .tools
 openbox >.tools/openbox.log 2>&1 &
 wm_pid=$!
 pulse_pid=''
+comp_pid=''
 cleanup() {
+  if [ -n "$comp_pid" ]; then kill "$comp_pid" 2>/dev/null || true; fi
   kill "$wm_pid" 2>/dev/null || true
   if [ -n "$pulse_pid" ]; then kill "$pulse_pid" 2>/dev/null || true; fi
 }
@@ -35,6 +37,10 @@ kill -0 "$wm_pid"
 xprop -root _NET_SUPPORTING_WM_CHECK
 if [ "${YCORE_LINUX_FEATURES_SMOKE:-}" = 1 ]; then
   test "${YCORE_PRIVATE_X11:-}" = 1
+  xcompmgr -n >.tools/xcompmgr.log 2>&1 &
+  comp_pid=$!
+  sleep 1
+  kill -0 "$comp_pid"
   cc scripts/linux-display-fixture.c -o .tools/linux-display-fixture -lX11 -lXrandr
   .tools/linux-display-fixture
 fi

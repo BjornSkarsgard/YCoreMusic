@@ -206,6 +206,13 @@ try {
     const press=async id=>{const element=await request('/session/'+session+'/element',{using:'css selector',value:'#'+id});await request('/session/'+session+'/element/'+element['element-6066-11e4-a52e-4f735466cecf']+'/click',{});};
     await execute('const layout=document.getElementById("window-layout");layout.value="video";layout.dispatchEvent(new Event("change"));document.getElementById("volume").value="0";document.getElementById("volume").dispatchEvent(new Event("input"));document.getElementById("url").value=arguments[0];document.getElementById("load").requestSubmit();',[smokeVideo]);
     await until('return !document.getElementById("play").disabled',45000);
+    if(process.env.YCORE_EXPECT_INLINE_LINUX==='1'){
+      assert.equal((await nativeInvoke('player_host_status'))?.supported,false);
+      assert.equal(await execute('return document.querySelectorAll(".screen iframe").length'),1);
+      const windows=execFileSync('xwininfo',['-root','-tree'],{encoding:'utf8'});
+      assert(!windows.includes('YCore Music · Video engine'),'Inline playback must not create a separate player window');
+      console.log('Native Linux without a compositor: one inline iframe and no player host window: PASS');
+    }
     if(process.env.YCORE_CUE_BRAND_SMOKE==='1'&&(await nativeInvoke('player_host_status'))?.supported){
       const main=await request('/session/'+session+'/window'),handles=await request('/session/'+session+'/window/handles');
       let source;
@@ -236,6 +243,10 @@ try {
     const target=paused+30;await execute('const input=document.getElementById("seek");input.value=String(arguments[0]);input.dispatchEvent(new Event("input"));input.dispatchEvent(new Event("change"));',[target]);await press('play');
     await until('return document.getElementById("status").textContent==="Воспроизведение"',45000);
     await until(`return Number(document.getElementById("seek").value)>=${target+1}`,30000);
+    if(process.env.YCORE_EXPECT_INLINE_LINUX==='1'){
+      await press('pause');
+      console.log('Native inline YouTube playback, Pause and seek: PASS');
+    }else{
     await execute('const select=document.getElementById("window-layout");select.value="controls";select.dispatchEvent(new Event("change"));');
     const controls=Number(await execute('return document.getElementById("seek").value'));await sleep(2500);assert(Number(await execute('return document.getElementById("seek").value'))>controls,'Controls-only must keep playback advancing');
     await nativeInvoke('desktop_close');const hidden=Number(await execute('return document.getElementById("seek").value'));await sleep(3000);assert(Number(await execute('return document.getElementById("seek").value'))>hidden,'Hidden window must keep playback advancing');
@@ -243,6 +254,7 @@ try {
     writeFileSync(resolve(root,'.tools/native-basic-playback-'+process.platform+'.png'),Buffer.from(await request('/session/'+session+'/screenshot'),'base64'));
     console.log('Native actual YouTube: one player, advancing media position, Pause/seek/resume, controls-only and hidden background playback: PASS');
     if(process.platform==='linux'&&process.env.YCORE_LINUX_FEATURES_SMOKE==='1')await (await import('./native-linux-features.mjs')).verifyLinuxScenes({request,session,execute,nativeInvoke,sleep,until});
+    }
   }
   if(process.env.YCORE_LIVE_YANDEX==='1') {
     await until('return document.querySelectorAll("#queue-list li").length>0');
