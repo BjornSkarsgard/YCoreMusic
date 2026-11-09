@@ -749,6 +749,44 @@ test('personal library browses playlists and paginated likes without replacing p
  await expect(current.locator('.queue-play')).toHaveCSS('justify-content','flex-start');
 });
 
+test('switching tracks near the bottom of a playlist preserves its scroll during video lookup',async({page})=>{
+ await page.addInitScript(()=>{
+  const w=window as any;
+  const tracks=Array.from({length:40},(_,i)=>({id:String(i+1),title:'Track '+(i+1),artist:'Fixture'}));
+  const video=[{id:'M7lc1UVf-VE',title:'Fixture clip',score:100,reason:'fixture'}];
+  w.isTauri=true;
+  w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
+   if(cmd==='library_overview')return {playlists:[{kind:'playlist',id:'7',owner:'8',title:'My playlist',subtitle:''}],liked_count:0};
+   if(cmd==='catalogue_collection')return {title:'My playlist',tracks,page:0,hasMore:false};
+   if(cmd==='search_videos'){
+    if(args.title==='Track 38')return new Promise(resolve=>{w.resolveClip=()=>resolve(video);});
+    return video;
+   }
+  }};
+ });
+ await mockAutomaticPlayer(page);
+ await page.goto('/');
+ await page.locator('[data-panel=library]').click();
+ await page.getByRole('button',{name:'My playlist'}).click();
+ const rows=page.locator('#library-content .catalogue-track');
+ await expect(rows).toHaveCount(40);
+ const pane=page.locator('.panel-scroll');
+ const scroll=()=>pane.evaluate(element=>element.scrollTop);
+ await rows.nth(35).locator('button').click();
+ await expect(page.locator('#video-alternatives .alternative-video')).toHaveCount(1);
+ await pane.evaluate(element=>element.scrollTop=element.scrollHeight);
+ const before=await scroll();
+ expect(before).toBeGreaterThan(0);
+ await rows.nth(37).locator('button').click();
+ await expect(page.locator('#track-title')).toHaveText('Track 38');
+ await expect(page.locator('#video-alternatives .alternative-video')).toHaveCount(0);
+ expect(await scroll()).toBe(before);
+ await page.evaluate(()=>(window as any).resolveClip());
+ await expect(rows.nth(37)).toHaveClass(/track-playing/);
+ await expect(page.locator('#video-alternatives .alternative-video')).toHaveCount(1);
+ expect(await scroll()).toBe(before);
+});
+
 test('likes persist optimistically, dislike advances and Undo restores the old reaction without rewinding',async({page})=>{
  await page.clock.install();
  await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.offline=true;w.feedback={};w.reactions=[];w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
