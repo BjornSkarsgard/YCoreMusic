@@ -345,12 +345,17 @@ function stopPlayer(reason:EndReason='source_change',preparingNext=false) {
   preparationProgress.reset();
   finishRecord(reason);
   cancelPlaybackRecovery();
-  // Keep the scroll viewport the same size during clip lookup. Old choices
-  // must disappear immediately because they belong to a different track.
-  if(preparingNext&&!element('video-alternatives').hidden) {
+  const alternatives=element('video-alternatives');
+  const playlist=document.querySelector('[data-pane="library"]:not([hidden]) .catalogue-track, [data-pane="search"]:not([hidden]) #catalogue-collection:not([hidden]) .catalogue-track');
+  const pane=playlist?.closest<HTMLElement>('.panel-scroll');
+  // Expanding the playlist at its end clamps scrollTop. Keep the alternatives
+  // slot during lookup only when that expansion would move the playlist.
+  if(preparingNext&&!alternatives.hidden&&pane&&pane.scrollTop>0
+      && !document.body.classList.contains('controls-layout')
+      && pane.scrollTop+pane.clientHeight+alternatives.offsetHeight>pane.scrollHeight) {
     element('alternative-list').replaceChildren();
   } else {
-    element('video-alternatives').hidden=true;
+    alternatives.hidden=true;
   }
   activeVideo=undefined;activeRecord=undefined;captionControls.reset();
   refreshVideoFavorites();
