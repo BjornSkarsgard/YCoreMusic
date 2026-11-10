@@ -29,7 +29,9 @@ import {historyBatch,type SmartCandidate} from './smart-history';
 import {mountFeedback} from './feedback-ui';
 import './style.css';
 import './select.css';
+import './lyrics.css';
 import {appShell,mountShellNavigation,showPanel} from './shell';
+import {mountLyrics} from './lyrics-ui';
 import {mountLibrary} from './library-ui';
 import {mountFullscreenControls} from './fullscreen-controls';
 import { videoId } from './video-id';
@@ -49,6 +51,7 @@ const skipReasons=new Map<string,string>();
 let updateQueueScroll=()=>{};
 let refreshFeedback=()=>{};
 let refreshVideoFavorites=()=>{};
+let refreshLyrics=()=>{};
 const lastPlayedVideos=new Map<string,string>();
 let player: YT.Player | undefined;
 let generation = 0;
@@ -371,6 +374,7 @@ function renderQueue() {
   document.dispatchEvent(new Event('track-artwork'));
   refreshFeedback();
   refreshVideoFavorites();
+  refreshLyrics();
   element('track-title').textContent = queue.current?.title ?? 'Выберите музыку';
   element('track-artist').textContent = queue.current?.artist ?? '';
   const epoch=queue.generation,snapshot=queue.snapshot,currentIndex=snapshot.findIndex(track=>track.ordinal===queue.current?.ordinal);
@@ -908,6 +912,7 @@ mountSleepTimer(()=>{powerPause(false);report('Таймер сна заверш�
 function hideYouTubePanel(){if(!youtubeControls)return;youtubeControls=false;element('youtube-settings').setAttribute('aria-pressed','false');element('youtube-settings').textContent='Панель YouTube';element('player-options-status').textContent='';document.querySelector('.screen')!.classList.remove('interactive');if(isTauri())void invoke('player_host_presentation',{interactive:false}).catch(()=>{});intentUI();}
 mountPlaybackGuard(hideYouTubePanel);
 mountShellNavigation();
+refreshLyrics=mountLyrics(()=>queue.current);
 mountSupport(()=>playIntent||historyStarting||updatesInstalling());
 void mountRemote(()=>{
  const entries=queue.snapshot;

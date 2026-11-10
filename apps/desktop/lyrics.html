@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>YCore Music · Текст песни</title>
+</head>
+<body class="lyrics-window">
+  <header class="lyrics-window-toolbar">
+    <label for="lyrics-font-size">Размер текста</label>
+    <input id="lyrics-font-size" type="range" min="18" max="64" step="2" value="32">
+    <output id="lyrics-font-value" for="lyrics-font-size" aria-hidden="true">32 px</output>
+  </header>
+  <main id="detached-lyrics"></main>
+  <script type="module" src="/src/lyrics-window.ts"></script>
+</body>
+</html>

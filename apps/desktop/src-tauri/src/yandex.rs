@@ -54,6 +54,7 @@ fn public_read_path(path: &str) -> bool {
     };
     match path.split('/').collect::<Vec<_>>().as_slice() {
         ["search"] | ["landing3", "chart"] => true,
+        ["tracks", value] => id(value),
         ["artists", value, "tracks"] | ["albums", value, "with-tracks"] => id(value),
         ["users", owner, "playlists", kind] => id(owner) && id(kind),
         _ => false,
@@ -222,6 +223,7 @@ mod tests {
         for path in [
             "search?text=test",
             "landing3/chart",
+            "tracks/123",
             "artists/123/tracks?page=0",
             "albums/123/with-tracks",
             "users/123/playlists/456",
@@ -235,6 +237,8 @@ mod tests {
             "users/123/playlists",
             "users/123/playlists/456/remove",
             "artists/../tracks",
+            "tracks/../",
+            "tracks/123/lyrics",
             "users/not-an-id/playlists/1",
         ] {
             assert!(!public_read_path(path));

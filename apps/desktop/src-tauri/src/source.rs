@@ -118,10 +118,9 @@ fn tracks(value: &Value) -> Result<Vec<Track>, &'static str> {
         .zip(ids)
         .map(|(item, id)| {
             let title = item
-                .pointer("/track/title")
-                .and_then(Value::as_str)
-                .unwrap_or("Без названия")
-                .to_owned();
+                .get("track")
+                .and_then(crate::catalogue::playback_title)
+                .unwrap_or_else(|| "Без названия".into());
             let artist = item
                 .pointer("/track/artists")
                 .and_then(Value::as_array)
@@ -333,13 +332,15 @@ mod tests {
     fn metadata_preserves_order_and_duplicate_tracks() {
         let value = json!({"result":{"sequence":[
             {"track":{"id":"9","title":"<b>track</b>","artists":[{"name":"One"},{"name":"Two"}]}},
-            {"track":{"id":"9"}}
+            {"track":{"id":"9"}},
+            {"track":{"id":"10","title":"Кометы","version":"Skazka Festival Remix","artists":[{"name":"Saint Rider"}]}}
         ]}});
         let result = tracks(&value).unwrap();
-        assert_eq!(result.len(), 2);
+        assert_eq!(result.len(), 3);
         assert_eq!(result[0].artist, "One, Two");
         assert_eq!(result[0].title, "<b>track</b>");
         assert_eq!(result[1].title, "Без названия");
+        assert_eq!(result[2].title, "Кометы (Skazka Festival Remix)");
     }
 }
 

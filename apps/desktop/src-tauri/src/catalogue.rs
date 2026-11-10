@@ -37,7 +37,7 @@ pub struct Collection {
     pub has_more: bool,
     pub page: u32,
 }
-fn id(value: &Value) -> Option<String> {
+pub(crate) fn id(value: &Value) -> Option<String> {
     let text = match value {
         Value::String(text) => text.clone(),
         Value::Number(number) => number.to_string(),
@@ -48,7 +48,7 @@ fn id(value: &Value) -> Option<String> {
 fn valid_id(value: &str) -> bool {
     !value.is_empty() && value.len() <= 64 && value.bytes().all(|c| c.is_ascii_digit())
 }
-fn artists(value: &Value) -> String {
+pub(crate) fn artists(value: &Value) -> String {
     value
         .get("artists")
         .and_then(Value::as_array)
@@ -79,6 +79,23 @@ pub(crate) fn artwork(value: &Value) -> Option<String> {
     let url = format!("https://{}", raw.trim_start_matches("https://")).replace("%%", "400x400");
     valid_artwork_url(&url).then_some(url)
 }
+pub(crate) fn is_remix_version(value: &str) -> bool {
+    value.to_lowercase().split(|c: char| !c.is_alphanumeric())
+        .any(|word| matches!(word, "remix" | "ремикс"))
+}
+
+pub(crate) fn playback_title(value: &Value) -> Option<String> {
+    let title = value.get("title")?.as_str()?;
+    let Some(version) = value.get("version").and_then(Value::as_str).map(str::trim) else {
+        return Some(title.to_owned());
+    };
+    let label = version.to_lowercase();
+    if is_remix_version(version) && !title.to_lowercase().trim_end_matches(')').ends_with(&label) {
+        Some(format!("{title} ({version})"))
+    } else {
+        Some(title.to_owned())
+    }
+}
 pub(crate) fn track(value: &Value) -> Option<Track> {
     let value = value
         .get("track")
@@ -86,7 +103,7 @@ pub(crate) fn track(value: &Value) -> Option<Track> {
         .unwrap_or(value);
     Some(Track {
         id: id(value.get("id")?)?,
-        title: value.get("title")?.as_str()?.to_owned(),
+        title: playback_title(value)?,
         artist: artists(value),
         cover_url: artwork(value),
     })

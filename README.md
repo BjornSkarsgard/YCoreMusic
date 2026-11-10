@@ -3,7 +3,7 @@
 **YCore** · Юкор Мьюзик  
 **Your Music. Your Core, Your World.**
 
-Актуальный выпуск — [YCore Music 0.0.6 для Windows x64, Linux x86_64 и экспериментальный macOS Intel/Apple Silicon](https://github.com/BjornSkarsgard/YCoreMusic/releases/tag/v0.0.6). [Изменения](docs/releases/v0.0.6.md).
+Актуальный выпуск — [YCore Music 0.0.7 для Windows x64, Linux x86_64 и экспериментальный macOS Intel/Apple Silicon](https://github.com/BjornSkarsgard/YCoreMusic/releases/tag/v0.0.7). [Изменения](docs/releases/v0.0.7.md).
 
 Пульт для телефона подключается через «Настройки → Пульт» по QR-коду и может
 устанавливаться как PWA. [Подключение и скриншоты](https://ycore-music.ru/#remote),

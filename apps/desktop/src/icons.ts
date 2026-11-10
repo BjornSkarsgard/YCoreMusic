@@ -1,4 +1,5 @@
 const paths:Record<string,string>={
+ lyrics:'M5 3h10l4 4v14H5zM15 3v5h4M8 11h8M8 15h8M8 18h5',
  lock:'M6 10h12v11H6zM8 10V6a4 4 0 0 1 8 0v4M12 14v3',
  wave:'M2 12h3l3-7 4 14 4-14 3 7h3',search:'M20 20l-4.5-4.5M17.5 10.5a7 7 0 1 1-14 0 7 7 0 0 1 14 0',
  music:'M9 18V5l11-2v13M9 8l11-2M9 18a3 3 0 1 1-3-3c1.7 0 3 1.3 3 3ZM20 16a3 3 0 1 1-3-3c1.7 0 3 1.3 3 3Z',

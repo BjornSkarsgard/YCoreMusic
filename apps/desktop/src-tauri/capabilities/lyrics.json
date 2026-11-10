@@ -1,0 +1,1 @@
+{"identifier":"lyrics-window","description":"The local lyrics window receives text updates.","windows":["lyrics"],"permissions":["core:event:allow-listen","core:event:allow-unlisten"]}

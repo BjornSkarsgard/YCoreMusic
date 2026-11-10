@@ -23,6 +23,7 @@ mod discovery;
 mod embed_identity;
 mod feedback;
 mod library;
+mod lyrics;
 #[cfg(target_os = "linux")]
 mod linux_monitors;
 #[cfg(target_os = "linux")]
@@ -235,6 +236,7 @@ fn main() {
         .manage(matcher::Matcher::default())
         .manage(window_mode::WindowMode::default())
         .manage(scenes::Scenes::default())
+        .manage(lyrics::LyricsWindow::default())
         .manage(mirror_probe::MirrorProbe::default())
         .manage(player_host::Host::default())
         .manage(audio_probe::AudioProbeState::default())
@@ -290,6 +292,11 @@ fn main() {
             catalogue_search,
             catalogue_collection,
             library::library_overview,
+            lyrics::lyrics_search,
+            lyrics::lyrics_translate,
+            lyrics::lyrics_open,
+            lyrics::lyrics_publish,
+            lyrics::lyrics_snapshot,
             discovery::discovery_fetch,
             feedback::feedback_command,
             storage::storage_command,

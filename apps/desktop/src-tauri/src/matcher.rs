@@ -105,6 +105,31 @@ fn collaboration_match(expected: &[Vec<String>], actual: &[Vec<String>]) -> bool
     assign(expected, actual, 0)
 }
 
+fn credits_original_song(candidate: &str, title: &[String], artist: &str) -> bool {
+    let Some((recording, note)) = candidate
+        .trim_end()
+        .strip_suffix(')')
+        .and_then(|candidate| candidate.rsplit_once('('))
+    else {
+        return false;
+    };
+    let note = note.trim().to_lowercase();
+    let Some(original) = note.strip_suffix(" cover").and_then(|name| {
+        name.strip_suffix("'s")
+            .or_else(|| name.strip_suffix("’s"))
+            .or_else(|| name.strip_suffix(['\'', '’']))
+    }) else {
+        return false;
+    };
+    let (original, artist) = (words(original), words(artist));
+    !original.is_empty()
+        && original != artist
+        && [" - ", " — ", " – "]
+            .into_iter()
+            .filter_map(|separator| recording.split_once(separator))
+            .any(|(performer, song)| words(performer) == artist && words(song) == title)
+}
+
 fn score(
     title: &str,
     artist: &str,
@@ -139,10 +164,11 @@ fn score(
         "обучение",
         "минусовка",
     ];
-    if candidate
-        .iter()
-        .any(|word| blocked.contains(&word.as_str()) && !target.contains(word))
-    {
+    if candidate.iter().any(|word| {
+        blocked.contains(&word.as_str())
+            && !target.contains(word)
+            && !(word == "cover" && credits_original_song(candidate_title, &target, artist))
+    }) {
         return None;
     }
     if candidate
@@ -587,6 +613,48 @@ mod tests {
             assert!(score("Wonderwall", "Oasis", title, artist, "MUSIC_VIDEO_TYPE_OMV").is_none());
         }
         assert!(score("Группа крови", "Кино", "Группа крови (live)", "Кино", "").is_some());
+    }
+    #[test]
+    fn accepts_a_recording_that_names_its_performer_and_credits_the_original() {
+        let matched = score(
+            "Go",
+            "Fake Idols",
+            "FAKE IDOLS - Go (The Chemical Brothers' cover)",
+            "",
+            "MUSIC_VIDEO_TYPE_UGC",
+        )
+        .unwrap();
+        assert!(!matched.2);
+        for unrelated in [
+            "Bite the Hand - LIVE - Go - Cover - Original by Fake Idols",
+            "Fake Idols - Go (drum cover)",
+            "Fake Idols - Let Go (The Chemical Brothers' cover)",
+        ] {
+            assert!(score("Go", "Fake Idols", unrelated, "", "MUSIC_VIDEO_TYPE_UGC").is_none());
+        }
+    }
+    #[test]
+    #[ignore = "Opt-in metadata-only regression for two user-reported releases"]
+    fn live_cover_and_remix_regression() {
+        let matcher = Matcher::default();
+        for (title, artist, id) in [
+            ("Go", "Fake Idols", "ioBogr7GEUg"),
+            (
+                "Кометы (Skazka Festival Remix)",
+                "Saint Rider",
+                "FYmA7By9o_o",
+            ),
+        ] {
+            let results = search(&matcher, title, artist).expect("Public metadata request failed");
+            assert_eq!(
+                results
+                    .iter()
+                    .find(|candidate| !candidate.needs_review)
+                    .map(|candidate| candidate.id.as_str()),
+                Some(id),
+                "{title} · {artist}: {results:?}",
+            );
+        }
     }
     #[test]
     fn original_video_beats_live_without_duration_bias() {
