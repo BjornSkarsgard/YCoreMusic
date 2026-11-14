@@ -13,6 +13,8 @@ pub struct Discovery {
     pub title: String,
     pub tracks: Vec<Track>,
     pub playlists: Vec<Entity>,
+    pub personal_playlists: Vec<Entity>,
+    pub new_releases: Vec<Entity>,
     #[serde(rename = "playlistsAvailable")]
     pub playlists_available: bool,
 }
@@ -29,13 +31,57 @@ fn parse(chart: &Value, landing: &Value) -> Result<Discovery, &'static str> {
         .map(|item| catalogue::track(item).ok_or("Invalid chart track"))
         .collect::<Result<Vec<_>, _>>()?;
     let mut playlists = Vec::new();
+    let mut personal_playlists = Vec::new();
+    let mut new_releases = Vec::new();
     if let Some(blocks) = landing.pointer("/result/blocks").and_then(Value::as_array) {
         for block in blocks {
-            if let Some(items) = block.get("entities").and_then(Value::as_array) {
-                for item in items {
+            {
+                let items = block
+                    .get("entities")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten();
+                let generated = block
+                    .pointer("/data/notify")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten();
+                let personal = block
+                    .pointer("/data/playlists")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten();
+                for item in items.chain(generated).chain(personal) {
+                    if block.get("type").and_then(Value::as_str) == Some("new-releases") {
+                        if let Some(album) = catalogue::album_entity(
+                            item.pointer("/data/album")
+                                .or_else(|| item.get("data"))
+                                .unwrap_or(item),
+                        ) {
+                            new_releases.push(album);
+                        }
+                        continue;
+                    }
+                    if item
+                        .pointer("/data/ready")
+                        .or_else(|| item.get("ready"))
+                        .and_then(Value::as_bool)
+                        == Some(false)
+                    {
+                        continue;
+                    }
+                    let target = if matches!(
+                        block.get("type").and_then(Value::as_str),
+                        Some("personalplaylists" | "personal-playlists")
+                    ) {
+                        &mut personal_playlists
+                    } else {
+                        &mut playlists
+                    };
                     let item = item
                         .pointer("/data/playlist")
                         .or_else(|| item.get("data"))
+                        .or_else(|| item.get("playlist"))
                         .unwrap_or(item);
                     let Some(id) = item.get("kind").and_then(number_id) else {
                         continue;
@@ -47,13 +93,13 @@ fn parse(chart: &Value, landing: &Value) -> Result<Discovery, &'static str> {
                     else {
                         continue;
                     };
-                    if playlists
+                    if target
                         .iter()
                         .any(|p: &Entity| p.id == id && p.owner.as_deref() == Some(&owner))
                     {
                         continue;
                     }
-                    playlists.push(Entity {
+                    target.push(Entity {
                         kind: Kind::Playlist,
                         id,
                         owner: Some(owner),
@@ -85,6 +131,8 @@ fn parse(chart: &Value, landing: &Value) -> Result<Discovery, &'static str> {
             .into(),
         tracks,
         playlists,
+        personal_playlists,
+        new_releases,
     })
 }
 fn number_id(value: &Value) -> Option<String> {
@@ -111,7 +159,7 @@ pub fn fetch() -> Result<Discovery, &'static str> {
     let landing = if let Some(auth) = auth.as_ref() {
         yandex::request_limited(
             &client,
-            "landing3?blocks=playlists,new-playlists",
+            "landing3?blocks=playlists,new-playlists,personalplaylists,new-releases",
             auth,
             None,
             16_000_000,
@@ -120,7 +168,41 @@ pub fn fetch() -> Result<Discovery, &'static str> {
     } else {
         Value::Null
     };
-    parse(&chart, &landing)
+    let mut discovery = parse(&chart, &landing)?;
+    if discovery.new_releases.is_empty() {
+        if let Ok(releases) =
+            yandex::public_request(&client, "landing3/new-releases", auth.as_ref(), 2_000_000)
+        {
+            if let Some(albums) = releases
+                .pointer("/result/newReleases")
+                .and_then(Value::as_array)
+            {
+                let ids: Vec<_> = albums.iter().filter_map(catalogue::id).take(30).collect();
+                discovery.new_releases = albums
+                    .iter()
+                    .filter_map(catalogue::album_entity)
+                    .take(30)
+                    .collect();
+                if discovery.new_releases.is_empty() && !ids.is_empty() {
+                    let path = format!("albums?album-ids={}", ids.join(","));
+                    if let Ok(metadata) =
+                        yandex::public_request(&client, &path, auth.as_ref(), 2_000_000)
+                    {
+                        if let Some(albums) = metadata.get("result").and_then(Value::as_array) {
+                            let items: std::collections::HashMap<_, _> = albums
+                                .iter()
+                                .filter_map(catalogue::album_entity)
+                                .map(|album| (album.id.clone(), album))
+                                .collect();
+                            discovery.new_releases =
+                                ids.iter().filter_map(|id| items.get(id).cloned()).collect();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(discovery)
 }
 #[tauri::command]
 pub async fn discovery_fetch(window: tauri::WebviewWindow) -> Result<Discovery, String> {

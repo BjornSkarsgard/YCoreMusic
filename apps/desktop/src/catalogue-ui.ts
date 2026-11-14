@@ -3,12 +3,25 @@ import {bindPlaybackRow} from './playback-rows';
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { Track } from './queue';
 export interface CatalogueEntity {kind:'artist'|'album'|'playlist'|'likes';id:string;owner?:string;title:string;subtitle:string}
-export interface CatalogueCollection {title:string;tracks:Track[];hasMore:boolean;page:number}
+export interface CatalogueCollection {title:string;tracks:Track[];hasMore:boolean;page:number;revision?:number|null}
 interface Results {corrected?:string;artists:CatalogueEntity[];tracks:Track[];albums:CatalogueEntity[];playlists:CatalogueEntity[];page:number}
 export interface CollectionContext {entity:CatalogueEntity;page:number;hasMore:boolean}
 export interface CatalogueSelection {tracks:Track[];title:string;collection?:CollectionContext}
+export type StartRelatedWave = (seed:string,label:string)=>void;
+export function collectionWaveButton(entity:CatalogueEntity,start:StartRelatedWave){
+ const numericId=/^[0-9]{1,64}$/;
+ if(!numericId.test(entity.id))return null;
+ const seed=entity.kind==='artist'?'artist:'+entity.id:
+   entity.kind==='playlist'&&entity.owner&&numericId.test(entity.owner)?'playlist:'+entity.owner+':'+entity.id:null;
+ if(!seed)return null;
+ const button=document.createElement('button');
+ button.type='button';
+ setIconLabel(button,'wave',entity.kind==='artist'?'Запустить волну по исполнителю':'Запустить волну по плейлисту');
+ button.onclick=()=>start(seed,entity.title);
+ return button;
+}
 export function collectionPage(entity:CatalogueEntity,page:number):Promise<CatalogueCollection>{return invoke('catalogue_collection',{kind:entity.kind,id:entity.id,owner:entity.owner??null,page});}
-export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
+export function mountCatalogue(select:(selection:CatalogueSelection)=>void,startWave:StartRelatedWave){
  const root=document.getElementById('catalogue')!;
  root.innerHTML=`<h2>Поиск в Яндекс Музыке</h2><form id="catalogue-search"><label for="catalogue-query">Исполнитель, песня, альбом или плейлист</label><div class="input-row"><input id="catalogue-query" placeholder="Например, рамштайн" autocomplete="off"><button id="catalogue-clear" type="button" aria-label="Очистить поиск" hidden>×</button><button>Найти</button></div></form><p id="catalogue-status" role="status"></p><div id="catalogue-filters" class="catalogue-filters" aria-label="Тип результатов"></div><div id="catalogue-results"></div><button id="catalogue-more" hidden>Ещё результаты</button><section id="catalogue-collection" hidden></section>`;
  const get=<T extends HTMLElement>(id:string)=>document.getElementById(id) as T;
@@ -79,7 +92,38 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    const heading=document.createElement('h3');heading.textContent=value.entity.title;
    const playAll=document.createElement('button');playAll.id='catalogue-play-all';setIconLabel(playAll,'play',"Воспроизвести список",false);playAll.disabled=!value.tracks.length;playAll.onclick=()=>play([...value.tracks],value.entity.title,{entity:value.entity,page:value.page,hasMore:value.hasMore});
    const more=document.createElement('button');more.textContent='Ещё песни';more.hidden=!value.hasMore;more.onclick=()=>void open(value.entity,true);
-   container.append(backButton(),heading,playAll,...trackRows(value.tracks,index=>play(value.tracks.slice(index),value.entity.title,{entity:value.entity,page:value.page,hasMore:value.hasMore})),more);
+   const actions=document.createElement('div');actions.className='source-actions';actions.append(playAll);
+   const wave=collectionWaveButton(value.entity,startWave);if(wave)actions.append(wave);
+   if(value.entity.kind==='album'){
+     const save=document.createElement('button');save.type='button';save.textContent='Сохранить альбом';
+     save.onclick=async()=>{
+       save.disabled=true;
+       try{await invoke('library_edit',{action:{type:'save_album',id:value.entity.id,save:true}});save.textContent='Альбом сохранён';window.dispatchEvent(new Event('library-changed'));}
+       catch{save.disabled=false;if(opened===value)get('catalogue-status').textContent='Не удалось сохранить альбом. Проверьте вход в Яндекс Музыку.';}
+     };
+     actions.append(save);
+   }
+   const related=document.createElement('section');
+   if(value.entity.kind==='artist'){
+     const button=document.createElement('button');button.type='button';button.textContent='Похожие исполнители';
+     button.onclick=()=>void renderSimilar('artist',value.entity.id,related,()=>opened===value);
+     actions.append(button);
+   }
+   container.append(backButton(),heading,actions,related,...trackRows(value.tracks,index=>play(value.tracks.slice(index),value.entity.title,{entity:value.entity,page:value.page,hasMore:value.hasMore})),more);
+ }
+ async function renderSimilar(kind:'track'|'artist',id:string,container:HTMLElement,isCurrent:()=>boolean){
+   const status=document.createElement('p');status.setAttribute('role','status');status.textContent='Ищем похожее…';
+   container.replaceChildren(status);
+   try{
+     const response=await invoke<Results>('catalogue_similar',{kind,id});
+     if(!isCurrent()||status.parentElement!==container)return;
+     status.textContent=response.tracks.length||response.artists.length?'':'Яндекс Музыка не нашла похожих.';
+     container.append(...trackRows(response.tracks,index=>play(response.tracks.slice(index),'Похожие треки')));
+     for(const artist of response.artists){
+       const button=document.createElement('button');button.type='button';button.className='catalogue-card';button.textContent=artist.title;
+       button.onclick=()=>void open(artist,false);container.append(button);
+     }
+   }catch{if(isCurrent()&&status.parentElement===container)status.textContent='Не удалось загрузить похожее. Повторите попытку.';}
  }
  async function open(entity:CatalogueEntity,append:boolean){
    const revision=++collectionRevision;
@@ -131,5 +175,15 @@ export function mountCatalogue(select:(selection:CatalogueSelection)=>void){
    }
    timer=setTimeout(()=>void search(false),400);
  };
- return (entity:CatalogueEntity,back?:()=>void)=>{collectionReturn=back;void open(entity,false);};
+ return {
+   browse:(entity:CatalogueEntity,back?:()=>void)=>{collectionReturn=back;void open(entity,false);},
+   similar:(track:Pick<Track,'id'|'title'>)=>{
+     const revision=++collectionRevision;opened=undefined;collectionReturn=undefined;collectionView(true);
+     const container=get('catalogue-collection'),heading=document.createElement('h3'),rows=document.createElement('section');
+     heading.textContent='Похожие на '+track.title;container.replaceChildren(backButton(),heading,rows);
+     get('catalogue-status').textContent='';
+     const pane=scrollPane();if(pane)pane.scrollTop=0;
+     void renderSimilar('track',track.id,rows,()=>revision===collectionRevision);
+   },
+ };
 }

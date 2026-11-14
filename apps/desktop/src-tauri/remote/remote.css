@@ -94,6 +94,9 @@ body.connected #connection { position: absolute; width: 1px; height: 1px; overfl
 .alternative-video small { color: var(--muted); font-size: 10px; line-height: 1.5; }
 .alternative-video[aria-pressed=true] { color: inherit; border-color: var(--accent); background: color-mix(in srgb, var(--surface) 78%, #6d28ff); }
 .browse-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.song-lyrics { color: inherit; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.lyrics-credit { display: block; color: var(--muted); }
+#lyrics[aria-expanded=true] { color: #e2b9ff; background: #39225b; }
 .deck {
   border-top: 1px solid var(--border);
   background: var(--panel);

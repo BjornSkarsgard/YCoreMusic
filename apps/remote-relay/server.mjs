@@ -17,7 +17,7 @@ const assets = new Map([
   ['icon-192.png', ['192x192.png', 'image/png']],
   ['icon-512.png', ['../../src/assets/ycore-mark-512.png', 'image/png']],
 ].map(([path,[file,type]]) => [path, {type,body:readFileSync(new URL(file, assetDir))}]));
-const methods = new Map([['pair','POST'], ['session','POST'], ['state','GET'], ['search','POST'], ['music','POST'], ['history','GET'], ['command','POST']]);
+const methods = new Map([['pair','POST'], ['session','POST'], ['state','GET'], ['search','POST'], ['music','POST'], ['history','GET'], ['command','POST'], ['lyrics','POST']]);
 const sessions = new Map();
 const cookieName = '__Secure-ycore-remote';
 const secret = /^[a-f0-9]{64}$/;
@@ -135,7 +135,7 @@ async function browser(req, res, id, action) {
   if (session.jobs.size >= jobsLimit) return send(res, 429);
   const request = {id:randomUUID(),action,token,body};
   session.jobs.set(request.id, {request,response:res,sent:false});
-  const timer = setTimeout(() => send(res, 504), 22_000);
+  const timer = setTimeout(() => send(res, 504), action === 'lyrics' ? 29_000 : 22_000);
   res.once('close', () => {
     clearTimeout(timer);
     session.jobs.delete(request.id);

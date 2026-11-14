@@ -129,7 +129,11 @@ pub async fn lyrics_translate(window: WebviewWindow, text: String) -> Result<Str
     .map_err(|_| "Не удалось перевести текст.".to_owned())?
 }
 
-fn search(track_id: Option<&str>, title: &str, artist: &str) -> Result<Option<Lyrics>, String> {
+pub(crate) fn search(
+    track_id: Option<&str>,
+    title: &str,
+    artist: &str,
+) -> Result<Option<Lyrics>, String> {
     let client = Client::builder()
         .connect_timeout(Duration::from_secs(3))
         .timeout(Duration::from_secs(5))
@@ -163,7 +167,10 @@ fn search_exact(
     title: &str,
     artist: &str,
 ) -> Result<Option<Lyrics>, String> {
-    if let Some(text) = track_id.and_then(|id| extra::yandex_music(client, id)) {
+    if let Some(text) = track_id
+        .and_then(|id| extra::yandex_music(client, id))
+        .filter(|text| !is_only_backing_vocals(text))
+    {
         return Ok(Some(Lyrics::exact(text, Source::YandexMusic)));
     }
     let mut searched = false;
@@ -276,6 +283,75 @@ fn plain_text(text: &str) -> Option<String> {
     let text = text.trim();
     (!text.is_empty() && text.len() <= MAX_TEXT && !is_tablature(text))
         .then(|| text.replace("\r\n", "\n"))
+}
+
+fn is_only_backing_vocals(text: &str) -> bool {
+    let mut has_vocals = false;
+    for line in text.lines() {
+        let line = line.trim();
+        if !line.chars().any(char::is_alphabetic) {
+            continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            continue;
+        }
+        has_vocals = true;
+        let unmarked = normalized(line);
+        let parenthetical = line.starts_with('(')
+            && line.ends_with(')')
+            && line
+                .split(')')
+                .all(|part| part.trim().is_empty() || part.trim_start().starts_with('('));
+        let ad_libs = unmarked.split_whitespace().all(|word| {
+            matches!(
+                word,
+                "ah" | "oh"
+                    | "ooh"
+                    | "uh"
+                    | "eh"
+                    | "huh"
+                    | "ahh"
+                    | "ohh"
+                    | "woah"
+                    | "whoa"
+                    | "woo"
+                    | "mmm"
+                    | "mm"
+                    | "hmm"
+                    | "yeah"
+                    | "hey"
+                    | "na"
+                    | "la"
+                    | "da"
+                    | "ha"
+                    | "uhuh"
+                    | "ага"
+                    | "угу"
+                    | "эй"
+                    | "ой"
+                    | "оу"
+                    | "ау"
+                    | "ах"
+                    | "ох"
+                    | "мм"
+                    | "ммм"
+                    | "м"
+                    | "а"
+                    | "о"
+                    | "у"
+                    | "э"
+                    | "е"
+                    | "да"
+                    | "на"
+                    | "ла"
+                    | "ха"
+            )
+        });
+        if !parenthetical && !ad_libs {
+            return false;
+        }
+    }
+    has_vocals
 }
 
 fn is_tablature(text: &str) -> bool {
@@ -541,4 +617,14 @@ mod tests {
         );
         assert_eq!(lrclib_text(body, "Missing", "Artist").unwrap(), None);
     }
+}
+#[test]
+fn backing_vocals_do_not_override_full_lyrics() {
+    assert!(is_only_backing_vocals(
+        "[Chorus]\n(Oh, yeah) (ah)\nУгу, ага\nNa-na-na"
+    ));
+    assert!(is_only_backing_vocals("(Don't go)\n(Stay with me)"));
+    assert!(!is_only_backing_vocals("(Oh, yeah)\nI walk alone at night"));
+    assert!(!is_only_backing_vocals("(Oh) I walk alone (oh)"));
+    assert!(!is_only_backing_vocals("Да, я помню этот день"));
 }

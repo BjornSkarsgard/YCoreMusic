@@ -1,4 +1,6 @@
 import {setIconLabel} from './icons';
+let openActions:(track:{id:string;title:string})=>void=()=>{};
+export function setTrackActions(open:typeof openActions){openActions=open;}
 interface State {trackId:string|null;playing:boolean;queueKey?:string}
 let current:State={trackId:null,playing:false},toggle=()=>{};
 const bindings=new WeakMap<HTMLElement,{button:HTMLButtonElement;title:string;iconOnly:boolean;key?:string;painted?:string}>();
@@ -19,4 +21,13 @@ export function bindPlaybackRow(row:HTMLElement,button:HTMLButtonElement,track:{
  row.dataset.playbackTrack=track.id;bindings.set(row,{button,title:track.title,iconOnly:options.iconOnly??true,key:options.queueKey});
  button.onclick=()=>{const selected=row.dataset.playbackTrack===current.trackId&&(!options.queueKey||options.queueKey===current.queueKey);if(selected)toggle();else start();};
  paint(row);
+ if(/^[0-9]{1,64}$/.test(track.id)){
+  const more=document.createElement('button');more.type='button';more.className='track-more';
+  setIconLabel(more,'more','Действия с треком '+track.title,true);
+  more.setAttribute('aria-haspopup','dialog');
+  more.onclick=()=>openActions(track);
+  row.classList.add('has-track-actions');
+  // Rows add the playback button synchronously after binding.
+  queueMicrotask(()=>row.append(more));
+ }
 }

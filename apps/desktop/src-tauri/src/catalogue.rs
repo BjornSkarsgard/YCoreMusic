@@ -36,6 +36,7 @@ pub struct Collection {
     pub tracks: Vec<Track>,
     pub has_more: bool,
     pub page: u32,
+    pub revision: Option<u64>,
 }
 pub(crate) fn id(value: &Value) -> Option<String> {
     let text = match value {
@@ -80,7 +81,9 @@ pub(crate) fn artwork(value: &Value) -> Option<String> {
     valid_artwork_url(&url).then_some(url)
 }
 pub(crate) fn is_remix_version(value: &str) -> bool {
-    value.to_lowercase().split(|c: char| !c.is_alphanumeric())
+    value
+        .to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
         .any(|word| matches!(word, "remix" | "ремикс"))
 }
 
@@ -217,6 +220,47 @@ fn request(path: &str, params: &[(&str, String)]) -> Result<Value, &'static str>
         .ok_or("Invalid catalogue origin")?;
     yandex::public_request(&client, relative, auth.as_ref(), 2_000_000)
 }
+pub(crate) fn album_entity(value: &Value) -> Option<Entity> {
+    Some(Entity {
+        kind: Kind::Album,
+        id: value.get("id").and_then(id)?,
+        owner: None,
+        title: value.get("title")?.as_str()?.into(),
+        subtitle: artists(value),
+    })
+}
+
+#[tauri::command]
+pub async fn catalogue_similar(
+    window: tauri::WebviewWindow,
+    kind: String,
+    id: String,
+) -> Result<Results, String> {
+    if window.label() != "main" || !valid_id(&id) || !matches!(kind.as_str(), "track" | "artist") {
+        return Err("Invalid related catalogue request".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let value = request(&format!("{kind}s/{id}/similar"), &[])?;
+        let (key, field) = if kind == "track" {
+            ("tracks", "similarTracks")
+        } else {
+            ("artists", "similarArtists")
+        };
+        let items = value
+            .get("result")
+            .ok_or("Invalid related catalogue schema")?
+            .get(field)
+            .and_then(Value::as_array)
+            .ok_or("Related catalogue unavailable")?;
+        let mut response = serde_json::json!({"result":{}});
+        response["result"][key] = serde_json::json!({"results":items});
+        parse_results(&response, 0)
+    })
+    .await
+    .map_err(|_| "Related catalogue worker failed".to_owned())?
+    .map_err(str::to_owned)
+}
+
 pub fn search(query: &str, page: u32) -> Result<Results, &'static str> {
     if query.trim().chars().count() < 2 || query.len() > 512 || page > 1000 {
         return Err("Invalid catalogue query");
@@ -257,6 +301,7 @@ fn parse_collection(value: &Value, kind: Kind, page: u32) -> Result<Collection, 
                 .map(|total| (page as u64 + 1) * 50 < total)
                 .unwrap_or(items.len() == 50),
             page,
+            revision: None,
         });
     }
     let items: Vec<&Value> = if matches!(kind, Kind::Album) {
@@ -289,6 +334,11 @@ fn parse_collection(value: &Value, kind: Kind, page: u32) -> Result<Collection, 
         tracks,
         has_more,
         page,
+        revision: if matches!(kind, Kind::Playlist) {
+            result.get("revision").and_then(Value::as_u64)
+        } else {
+            None
+        },
     })
 }
 pub fn collection(

@@ -146,7 +146,19 @@ pub fn fetch(
     fresh: bool,
     seed: &str,
 ) -> Result<Vec<Recommendation>, &'static str> {
-    validate_seed(seed)?;
+    let (base, settings) = seed.split_once(',').unwrap_or((seed, ""));
+    validate_seed(base)?;
+    let mut seeds = vec![base];
+    let mut setting_types = std::collections::HashSet::new();
+    if !settings.is_empty() {
+        for setting in settings.split(',') {
+            let (kind, _) = setting.split_once(':').ok_or("Invalid wave setting")?;
+            if !valid_wave_setting(setting) || !setting_types.insert(kind) {
+                return Err("Invalid wave setting");
+            }
+            seeds.push(setting);
+        }
+    }
     let mut state = source.0.lock().map_err(|_| "Source state unavailable")?;
     let token = credentials::load()?;
     let auth = yandex::authorization(&token)?;
@@ -163,7 +175,7 @@ pub fn fetch(
             &client,
             "rotor/session/new",
             &auth,
-            Some(&json!({"seeds":[seed],"includeTracksInResponse":true})),
+            Some(&json!({"seeds":seeds,"includeTracksInResponse":true})),
         )?;
         let id = yandex::session_id(&value)?.to_owned();
         let tracks = tracks(&value)?;
@@ -200,7 +212,7 @@ pub fn fetch(
                 "rotor/session/new",
                 &auth,
                 Some(
-                    &json!({"seeds":[seed],"queue":session.received,"includeTracksInResponse":true}),
+                    &json!({"seeds":seeds,"queue":session.received,"includeTracksInResponse":true}),
                 ),
             )?;
             let id = yandex::session_id(&replacement)?.to_owned();
@@ -350,7 +362,17 @@ pub struct Station {
     pub title: String,
 }
 fn validate_seed(seed: &str) -> Result<(), &'static str> {
+    let numeric_id =
+        |id: &str| !id.is_empty() && id.len() <= 64 && id.bytes().all(|byte| byte.is_ascii_digit());
     if seed == "user:onyourwave"
+        || seed
+            .strip_prefix("track:")
+            .or_else(|| seed.strip_prefix("artist:"))
+            .is_some_and(numeric_id)
+        || seed
+            .strip_prefix("playlist:")
+            .and_then(|tag| tag.split_once(':'))
+            .is_some_and(|(owner, kind)| numeric_id(owner) && numeric_id(kind))
         || seed.strip_prefix("genre:").is_some_and(|tag| {
             !tag.is_empty()
                 && tag.len() <= 100
@@ -363,6 +385,89 @@ fn validate_seed(seed: &str) -> Result<(), &'static str> {
     } else {
         Err("Invalid station")
     }
+}
+
+fn valid_wave_setting(seed: &str) -> bool {
+    seed.split_once(':').is_some_and(|(kind, tag)| {
+        matches!(
+            kind,
+            "settingDiversity"
+                | "settingMood"
+                | "settingEnergy"
+                | "settingMoodEnergy"
+                | "activity"
+                | "context"
+                | "mood"
+        ) && !tag.is_empty()
+            && tag.len() <= 100
+            && tag
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"-_".contains(&byte))
+    })
+}
+
+#[tauri::command]
+pub async fn wave_settings(window: tauri::WebviewWindow) -> Result<Vec<Station>, String> {
+    if window.label() != "main" {
+        return Err("Untrusted window".into());
+    }
+    tauri::async_runtime::spawn_blocking(|| {
+        let (client, auth, _) = crate::library::context()?;
+        let value = yandex::request(
+            &client,
+            "rotor/wave/settings?seeds=user%3Aonyourwave",
+            &auth,
+            None,
+        )?;
+        let mut options = Vec::new();
+        let mut add = |seed: &str, title: &str| {
+            if valid_wave_setting(seed) && !options.iter().any(|option: &Station| option.id == seed)
+            {
+                options.push(Station {
+                    id: seed.into(),
+                    title: title.chars().take(100).collect(),
+                });
+            }
+        };
+        for field in ["diversity", "mood", "energy", "moodEnergy"] {
+            if let Some(setting) = value.pointer(&format!("/result/settingRestrictions/{field}")) {
+                let entries = setting
+                    .get("possibleValues")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .chain(setting.get("min"))
+                    .chain(setting.get("max"));
+                for entry in entries {
+                    if let (Some(seed), Some(title)) =
+                        (entry["serializedSeed"].as_str(), entry["name"].as_str())
+                    {
+                        add(seed, title);
+                    }
+                }
+            }
+        }
+        if let Some(blocks) = value.pointer("/result/blocks").and_then(Value::as_array) {
+            for entry in blocks
+                .iter()
+                .filter_map(|block| block["items"].as_array())
+                .flatten()
+            {
+                let station = entry.get("station").unwrap_or(entry);
+                if let (Some(kind), Some(tag), Some(title)) = (
+                    station.pointer("/id/type").and_then(Value::as_str),
+                    station.pointer("/id/tag").and_then(Value::as_str),
+                    station["name"].as_str(),
+                ) {
+                    add(&format!("{kind}:{tag}"), title);
+                }
+            }
+        }
+        Ok::<_, &'static str>(options)
+    })
+    .await
+    .map_err(|_| "Wave settings worker failed".to_owned())?
+    .map_err(str::to_owned)
 }
 fn parse_stations(value: &Value) -> Result<Vec<Station>, &'static str> {
     let items = value

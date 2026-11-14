@@ -21,6 +21,7 @@ export type RemoteControl =
 interface Playback {
  title:string;artist:string;playing:boolean;position:number;duration:number;volume:number;
  queue_generation:number;
+ lyrics_track_id:string|null;
  queue:{ordinal:number;title:string;artist:string;current:boolean}[];
  repeat:'off'|'one'|'queue';
  clips:{id:string;title:string;current:boolean;views?:number|null;durationSeconds?:number|null;needsReview?:boolean}[];

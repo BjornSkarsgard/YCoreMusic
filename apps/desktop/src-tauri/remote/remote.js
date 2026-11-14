@@ -23,6 +23,7 @@ let connecting = false;
 let needsSession = true;
 let queueKey = '';
 let clipsKey = '';
+let lyricsKey = '';
 let stationsKey = '';
 let previousStation;
 let online = false;
@@ -55,6 +56,7 @@ const paths = {
   "menu": "M4 6h16M4 12h16M4 18h16",
   "search": "M20 20l-4.5-4.5M17.5 10.5a7 7 0 1 1-14 0 7 7 0 0 1 14 0",
   "close": "M6 6l12 12M18 6L6 18",
+  "lyrics": "M6 3h8l4 4v14H6zM14 3v5h4M9 12h6m-6 4h6",
   "play": "M7 4l14 8-14 8z",
   "pause": "M8 5v14M16 5v14",
   "previous": "M5 5v14M19 5l-11 7 11 7z",
@@ -110,6 +112,7 @@ function paint(value) {
   get('more-queue').hidden = !value.music?.more;
   get('undo-dislike').hidden = !value.music?.undo_key;
   setOnline(true);
+  if (panel==='lyrics') paintLyrics();
   offerInstall();
 }
 
@@ -185,6 +188,8 @@ function setOnline(connected) {
   get('chart').disabled = get('library').disabled = !connected || !music;
   get('history').disabled = !connected;
   get('clips').disabled = !connected;
+  get('lyrics').hidden = playback?.lyrics_supported !== true;
+  get('lyrics').disabled = !connected;
   for (const card of get('results').querySelectorAll('.alternative-video')) card.disabled = !connected;
   get('more-queue').disabled = !connected;
   get('undo-dislike').disabled = !connected;
@@ -199,6 +204,8 @@ function setPanel(next) {
   ++lookupRevision;
   clearTimeout(searchTimer);
   panel = next;
+  lyricsKey = '';
+  get('lyrics').setAttribute('aria-expanded',String(panel==='lyrics'));
   get('menu').hidden = panel !== 'menu';
   get('browse').hidden = !panel || panel === 'menu';
   get('queue-panel').inert = !!panel;
@@ -270,6 +277,7 @@ function showPair(message) {
 function disconnected(message='Связь потеряна. Проверьте интернет на телефоне и ПК. Переподключаемся…') {
   setOnline(false);
   ++lookupRevision;
+  lyricsKey = '';
   if (get('player').hidden) {
     showPair(message);
     return;
@@ -519,6 +527,63 @@ function search() {
   if (query.length>=2) void loadMusic({type:'search',query,page:0});
 }
 
+async function paintLyrics(force=false) {
+  const generation = playback?.queue_generation;
+  const track = playback?.queue.find(entry=>entry.current);
+  const key = JSON.stringify([generation,track?.ordinal,track?.title,track?.artist]);
+  if (!force && key===lyricsKey) return;
+  lyricsKey = key;
+  const revision = ++lookupRevision;
+  const results = get('results');
+  const status = get('results-status');
+  results.replaceChildren();
+  get('browse').scrollTop = 0;
+  get('browse-title').textContent = 'Текст песни';
+  if (!track) {
+    status.textContent = 'Выберите трек.';
+    return;
+  }
+  const title = document.createElement('h2');
+  title.textContent = track.title;
+  const artist = document.createElement('small');
+  artist.className = 'lyrics-credit';
+  artist.textContent = track.artist;
+  results.append(title,artist);
+  status.textContent = 'Ищем текст…';
+  try {
+    const response = await post('./api/lyrics',{generation,ordinal:track.ordinal},30_000);
+    if (revision!==lookupRevision) return;
+    if (response.status===409) {
+      status.textContent = 'Текущий трек изменился. Повторите запрос.';
+      results.append(makeButton('Повторить',()=>void paintLyrics(true)));
+      return;
+    }
+    if (!response.ok) throw Error('lyrics');
+    const lyrics = await response.json();
+    if (revision!==lookupRevision) return;
+    status.textContent = lyrics ? '' : 'Текст песни не найден.';
+    if (!lyrics) return;
+    const credit = document.createElement('small');
+    credit.className = 'lyrics-credit';
+    credit.textContent = `Источник: ${lyrics.source}`;
+    results.append(credit);
+    if (lyrics.originalArtist) {
+      const badge = document.createElement('small');
+      badge.className = 'lyrics-credit';
+      badge.textContent = `Текст ремикса не найден. Показан текст оригинала (${lyrics.originalArtist}).`;
+      results.append(badge);
+    }
+    const body = document.createElement('p');
+    body.className = 'song-lyrics';
+    body.textContent = lyrics.text;
+    results.append(body);
+  } catch {
+    if (revision!==lookupRevision) return;
+    status.textContent = 'Не удалось загрузить текст.';
+    results.append(makeButton('Повторить',()=>void paintLyrics(true)));
+  }
+}
+
 get('menu-toggle').onclick = () => { get('query').blur(); setPanel(panel==='menu'?'':'menu'); };
 get('close-panel').onclick = () => { setPanel(''); get('query').blur(); };
 get('query').onfocus = () => {
@@ -540,6 +605,11 @@ get('chart').onclick = () => void loadMusic({type:'chart'});
 get('library').onclick = () => void loadMusic({type:'library'});
 get('history').onclick = () => void showHistory();
 get('clips').onclick = showClips;
+get('lyrics').onclick = () => {
+  get('query').blur();
+  setPanel(panel==='lyrics'?'':'lyrics');
+  if (panel==='lyrics') void paintLyrics();
+};
 get('undo-dislike').onclick = () => void send({type:'undo_dislike',key:playback.music.undo_key});
 get('wave').onclick = async () => {
   get('wave').disabled = true;

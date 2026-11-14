@@ -111,7 +111,10 @@ impl Relay {
                 continue;
             };
             let request = self.post("reply").timeout(Duration::from_secs(5));
-            if matches!(job.action.as_str(), "search" | "history" | "music") {
+            if matches!(
+                job.action.as_str(),
+                "search" | "history" | "music" | "lyrics"
+            ) {
                 if lookups.len() < 4 {
                     lookups.spawn(respond(router.clone(), job, request));
                 } else {
@@ -162,7 +165,7 @@ fn relay_request(
     body: Option<Value>,
 ) -> Option<Request<Body>> {
     let method = match action {
-        "pair" | "session" | "search" | "command" | "music" => "POST",
+        "pair" | "session" | "search" | "command" | "music" | "lyrics" => "POST",
         "state" | "history" => "GET",
         _ => return None,
     };

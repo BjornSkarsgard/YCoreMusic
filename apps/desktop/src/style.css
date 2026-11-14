@@ -123,6 +123,14 @@ dialog{border-color:var(--color-border-strong);background:var(--color-panel);box
 #account-disconnect-dialog form>:is(h3,p,button){margin:0}
 .dialog-actions{flex-wrap:wrap}
 #discovery-play-all,#library-play-all,#catalogue-play-all{margin-bottom:var(--space-content)}
+.catalogue-track:has(.playlist-edit-actions){flex-wrap:wrap}
+.playlist-edit-actions{display:flex;flex-wrap:wrap;gap:var(--space-actions,8px);flex-basis:100%}
+.playlist-edit-actions button{font-size:12px}
+#queue-list li.has-track-actions{display:flex;align-items:center;gap:8px}
+#queue-list li.has-track-actions .queue-play{flex:1;min-width:0;width:auto;overflow-wrap:anywhere}
+.track-more{flex:none}
+[data-picker] select,[data-picker] input{display:block;width:100%;margin-top:6px}
+#wave-settings-options select{display:block;width:100%;margin-top:6px}
 #library-content>.library-more{margin-top:var(--space-content)}
 
 #remote-settings{display:flex;flex-direction:column;gap:var(--space-content);margin:var(--space-section) 0}

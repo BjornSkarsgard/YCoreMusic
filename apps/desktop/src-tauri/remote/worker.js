@@ -1,5 +1,5 @@
 const prefix='ycore-remote-shell:'+self.registration.scope+':';
-const cacheName=prefix+'5';
+const cacheName=prefix+'6';
 const shell=['./','remote.css','remote.js','scanner.js','jsqr-1.4.0.js','manifest.webmanifest','icon-192.png','icon-512.png']
   .map(path=>new URL(path,self.registration.scope).href);
 

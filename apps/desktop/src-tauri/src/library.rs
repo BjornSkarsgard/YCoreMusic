@@ -6,7 +6,7 @@ use crate::{
 };
 use reqwest::{blocking::Client, header::HeaderValue, redirect::Policy};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{collections::HashMap, time::Duration};
 
 pub fn valid_id(id: &str) -> bool {
@@ -70,6 +70,8 @@ pub fn reaction_ids(
 pub struct Overview {
     pub playlists: Vec<Entity>,
     pub liked_count: usize,
+    pub owned_playlists: Vec<Entity>,
+    pub albums: Option<Vec<Entity>>,
 }
 fn playlist_items(value: &Value, uid: &str) -> Result<Vec<Entity>, &'static str> {
     let items = value
@@ -113,6 +115,7 @@ pub fn overview() -> Result<Overview, &'static str> {
         16_000_000,
     )?;
     let mut playlists = playlist_items(&value, &uid)?;
+    let owned_playlists = playlists.clone();
     let saved = yandex::request_limited(
         &client,
         &format!("users/{uid}/likes/playlists"),
@@ -129,10 +132,207 @@ pub fn overview() -> Result<Overview, &'static str> {
         }
     }
     let liked_count = reaction_ids(&client, &auth, &uid, "likes")?.len();
+    let albums = yandex::request_limited(
+        &client,
+        &format!("users/{uid}/likes/albums?rich=true"),
+        &auth,
+        None,
+        16_000_000,
+    )
+    .ok()
+    .and_then(|value| {
+        Some(
+            value["result"]
+                .as_array()?
+                .iter()
+                .filter_map(|item| catalogue::album_entity(item.get("album").unwrap_or(item)))
+                .collect(),
+        )
+    });
     Ok(Overview {
         playlists,
         liked_count,
+        owned_playlists,
+        albums,
     })
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum Edit {
+    Create {
+        title: String,
+    },
+    SaveAlbum {
+        id: String,
+        save: bool,
+    },
+    Insert {
+        kind: String,
+        track: String,
+    },
+    ChangeRow {
+        kind: String,
+        revision: u64,
+        index: usize,
+        direction: i8,
+    },
+}
+
+fn edit(action: Edit) -> Result<Option<String>, &'static str> {
+    let (client, auth, uid) = context()?;
+    let (kind, expected, edit_row, insert_track) = match action {
+        Edit::Create { title } => {
+            let title = title.trim();
+            if title.is_empty() || title.chars().count() > 100 {
+                return Err("Invalid playlist title");
+            }
+            let result = yandex::request_form(
+                &client,
+                &format!("users/{uid}/playlists/create"),
+                &auth,
+                &[("title", title.into()), ("visibility", "private".into())],
+            )?;
+            return result
+                .pointer("/result/kind")
+                .and_then(id)
+                .map(Some)
+                .ok_or("Playlist creation unconfirmed");
+        }
+        Edit::SaveAlbum { id: album, save } if valid_id(&album) => {
+            let method = if save { "add-multiple" } else { "remove" };
+            let result = yandex::request_form(
+                &client,
+                &format!("users/{uid}/likes/albums/{method}"),
+                &auth,
+                &[("album-ids", album)],
+            )?;
+            return (result["result"].as_str() == Some("ok"))
+                .then_some(None)
+                .ok_or("Album change unconfirmed");
+        }
+        Edit::Insert { kind, track } if valid_id(&track) => (kind, None, None, Some(track)),
+        Edit::ChangeRow {
+            kind,
+            revision,
+            index,
+            direction,
+        } if (-1..=1).contains(&direction) => {
+            (kind, Some(revision), Some((index, direction)), None)
+        }
+        _ => return Err("Invalid library edit"),
+    };
+    if !valid_id(&kind) {
+        return Err("Invalid playlist");
+    }
+    let owned = yandex::request(&client, &format!("users/{uid}/playlists/list"), &auth, None)?;
+    if !playlist_items(&owned, &uid)?
+        .iter()
+        .any(|entry| entry.id == kind && entry.owner.as_deref() == Some(uid.as_str()))
+    {
+        return Err("Playlist is not editable");
+    }
+    let path = format!("users/{uid}/playlists/{kind}");
+    let value = yandex::request_limited(&client, &path, &auth, None, 16_000_000)?;
+    let revision = value
+        .pointer("/result/revision")
+        .and_then(Value::as_u64)
+        .ok_or("Playlist revision unavailable")?;
+    if expected.is_some_and(|expected| expected != revision) {
+        return Err("Playlist changed");
+    }
+    let rows = value
+        .pointer("/result/tracks")
+        .and_then(Value::as_array)
+        .ok_or("Playlist tracks unavailable")?;
+    let diff = if let Some(track) = insert_track {
+        let metadata = yandex::request(&client, &format!("tracks/{track}"), &auth, None)?;
+        let album = metadata
+            .pointer("/result/0/albums/0/id")
+            .and_then(id)
+            .ok_or("Track album unavailable")?;
+        json!([{"op":"insert","at":0,"tracks":[{"id":track,"albumId":album}]}])
+    } else if let Some((index, direction)) = edit_row {
+        let row = rows.get(index).ok_or("Playlist row unavailable")?;
+        let remove = json!({"op":"delete","from":index,"to":index + 1});
+        if direction == 0 {
+            json!([remove])
+        } else {
+            let target = index
+                .checked_add_signed(direction.into())
+                .filter(|target| *target < rows.len())
+                .ok_or("Invalid playlist position")?;
+            let track = row
+                .get("id")
+                .or_else(|| row.pointer("/track/id"))
+                .and_then(id)
+                .ok_or("Track unavailable")?;
+            let album = row
+                .get("albumId")
+                .or_else(|| row.pointer("/track/albums/0/id"))
+                .and_then(id)
+                .ok_or("Track album unavailable")?;
+            json!([remove, {"op":"insert","at":target,"tracks":[{"id":track,"albumId":album}]}])
+        }
+    } else {
+        return Err("Invalid library edit");
+    };
+    let result = yandex::request_form(
+        &client,
+        &format!("{path}/change"),
+        &auth,
+        &[
+            ("kind", kind),
+            ("revision", revision.to_string()),
+            ("diff", diff.to_string()),
+        ],
+    )?;
+    result
+        .pointer("/result/revision")
+        .and_then(Value::as_u64)
+        .filter(|next| *next > revision)
+        .map(|_| None)
+        .ok_or("Playlist change unconfirmed")
+}
+
+#[tauri::command]
+pub async fn library_edit(
+    window: tauri::WebviewWindow,
+    action: Edit,
+) -> Result<Option<String>, String> {
+    if window.label() != "main" {
+        return Err("Untrusted window".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || edit(action))
+        .await
+        .map_err(|_| "Library edit worker failed".to_owned())?
+        .map_err(str::to_owned)
+}
+
+#[tauri::command]
+pub async fn library_owned_playlists(window: tauri::WebviewWindow) -> Result<Vec<Entity>, String> {
+    if window.label() != "main" {
+        return Err("Untrusted window".into());
+    }
+    tauri::async_runtime::spawn_blocking(|| {
+        let (client, auth, uid) = context()?;
+        let result = yandex::request_limited(
+            &client,
+            &format!("users/{uid}/playlists/list"),
+            &auth,
+            None,
+            16_000_000,
+        )?;
+        Ok::<_, &'static str>(
+            playlist_items(&result, &uid)?
+                .into_iter()
+                .filter(|playlist| playlist.owner.as_deref() == Some(uid.as_str()))
+                .collect(),
+        )
+    })
+    .await
+    .map_err(|_| "Library worker failed".to_owned())?
+    .map_err(str::to_owned)
 }
 fn ordered_metadata(ids: &[String], value: &Value) -> Result<Vec<Track>, &'static str> {
     let items = value
@@ -183,6 +383,7 @@ pub fn liked_collection(page: u32) -> Result<Collection, &'static str> {
         title: "Мне нравится".into(),
         tracks,
         page,
+        revision: None,
         has_more: (page as usize + 1) * 100 < ids.len(),
     })
 }

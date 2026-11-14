@@ -39,6 +39,8 @@ pub struct Playback {
     clips: Vec<Clip>,
     #[serde(default)]
     music: Option<MusicState>,
+    #[serde(default, skip_serializing)]
+    lyrics_track_id: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Serialize, PartialEq)]
@@ -88,6 +90,7 @@ struct QueueItem {
 #[derive(Clone, Default, Serialize)]
 struct Frame {
     revision: u64,
+    lyrics_supported: bool,
     #[serde(flatten)]
     playback: Playback,
 }
@@ -325,7 +328,7 @@ struct Service {
     origin: String,
     gate: Mutex<Gate>,
     playback: watch::Sender<Frame>,
-    lookup_slots: Semaphore,
+    lookup_slots: Arc<Semaphore>,
     history: Option<crate::storage::Store>,
     command: Box<dyn Fn(Dispatch) -> bool + Send + Sync>,
 }
@@ -413,6 +416,53 @@ async fn snapshot(State(service): State<Arc<Service>>, headers: HeaderMap) -> Re
         return error(StatusCode::UNAUTHORIZED, "pair_required");
     }
     Json(service.playback.borrow().clone()).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LyricsRequest {
+    generation: u64,
+    ordinal: u64,
+}
+
+async fn current_lyrics(
+    State(service): State<Arc<Service>>,
+    headers: HeaderMap,
+    Json(request): Json<LyricsRequest>,
+) -> Response {
+    let Some(token) = token(&headers).filter(|token| authorized(&service, token)) else {
+        return error(StatusCode::UNAUTHORIZED, "pair_required");
+    };
+    let current = || {
+        let frame = service.playback.borrow();
+        let playback = &frame.playback;
+        let id = playback.lyrics_track_id.as_ref()?;
+        let track = playback.queue.iter().find(|item| item.current)?;
+        (playback.queue_generation == request.generation && track.ordinal == request.ordinal)
+            .then(|| (id.clone(), track.title.clone(), track.artist.clone()))
+    };
+    let Some(track) = current() else {
+        return error(StatusCode::CONFLICT, "track_changed");
+    };
+    let Ok(slot) = service.lookup_slots.clone().try_acquire_owned() else {
+        return error(StatusCode::TOO_MANY_REQUESTS, "try_later");
+    };
+    let (id, title, artist) = track.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let _slot = slot;
+        crate::lyrics::search(Some(&id), &title, &artist)
+    })
+    .await;
+    if !authorized(&service, token) {
+        return error(StatusCode::UNAUTHORIZED, "pair_required");
+    }
+    if current().as_ref() != Some(&track) {
+        return error(StatusCode::CONFLICT, "track_changed");
+    }
+    match result {
+        Ok(Ok(lyrics)) => Json(lyrics).into_response(),
+        _ => error(StatusCode::SERVICE_UNAVAILABLE, "lyrics_unavailable"),
+    }
 }
 
 #[derive(Deserialize)]
@@ -788,6 +838,7 @@ fn routes(service: Arc<Service>) -> Router {
         .route("/api/pair", post(pair))
         .route("/api/session", post(session))
         .route("/api/state", get(snapshot))
+        .route("/api/lyrics", post(current_lyrics))
         .route("/api/search", post(search))
         .route("/api/music", post(music))
         .route("/api/history", get(history))
@@ -814,9 +865,8 @@ async fn renew_after_use(
     next: Next,
 ) -> Response {
     let token = match request.uri().path() {
-        "/api/session" | "/api/command" | "/api/history" | "/api/search" | "/api/music" => {
-            token(request.headers()).map(str::to_owned)
-        }
+        "/api/session" | "/api/command" | "/api/history" | "/api/search" | "/api/music"
+        | "/api/lyrics" => token(request.headers()).map(str::to_owned),
         _ => None,
     };
     let mut response = next.run(request).await;
@@ -881,7 +931,7 @@ pub async fn remote_command(window: WebviewWindow, action: Action) -> Result<Vie
                 next_offer: Instant::now(),
             }),
             playback: watch::channel(Frame::default()).0,
-            lookup_slots: Semaphore::new(2),
+            lookup_slots: Arc::new(Semaphore::new(2)),
             history: app
                 .state::<crate::storage::StorageState>()
                 .store
@@ -955,6 +1005,10 @@ pub fn remote_publish(window: WebviewWindow, playback: Playback) -> Result<(), S
         || playback.volume > 100
         || playback.queue.len() > 120
         || playback
+            .lyrics_track_id
+            .as_ref()
+            .is_some_and(|id| id.len() > 128)
+        || playback
             .music
             .as_ref()
             .is_some_and(|music| music.stations.len() > 256 || music.wave_status.len() > 2048)
@@ -988,6 +1042,7 @@ pub fn remote_publish(window: WebviewWindow, playback: Playback) -> Result<(), S
             }
             frame.playback = playback;
             frame.revision += 1;
+            frame.lyrics_supported = true;
             true
         });
     }

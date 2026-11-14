@@ -14,6 +14,7 @@ import {mountUpdates,updatesInstalling} from './updates';
 import {mountSupport} from './support-ui';
 import {mountRemote} from './remote-ui';
 import {bindPlaybackRow,setRowPlayback} from './playback-rows';
+import {mountTrackActions} from './track-actions';
 import {mountScenes} from './scene-ui';
 import {hostAvailable,createPlayer} from './player-host';
 import {mountVideoMirror} from './video-mirror';
@@ -377,6 +378,8 @@ function renderQueue() {
   refreshLyrics();
   element('track-title').textContent = queue.current?.title ?? 'Выберите музыку';
   element('track-artist').textContent = queue.current?.artist ?? '';
+  element('wave-from-current').hidden = !queue.current || !/^[0-9]{1,64}$/.test(queue.current.id);
+  element('similar-from-current').hidden = element('wave-from-current').hidden;
   const epoch=queue.generation,snapshot=queue.snapshot,currentIndex=snapshot.findIndex(track=>track.ordinal===queue.current?.ordinal);
   const validKeys=new Set(snapshot.map(track=>epoch+':'+track.ordinal));for(const key of skipReasons.keys())if(!validKeys.has(key))skipReasons.delete(key);
   for(const key of recheckedMatches)if(!validKeys.has(key))recheckedMatches.delete(key);
@@ -430,28 +433,35 @@ function skipUnavailable(message:string,technical=true){
   skipQueued=true;
   queueMicrotask(()=>{skipQueued=false;next();});
 }
-function sourceFetch(fresh:boolean,autoplay=false):Promise<boolean>{
+function sourceFetch(fresh:boolean,autoplay=false,context?:{seed:string;label:string}):Promise<boolean>{
   if(!fresh&&historySource)return historyFetch(false);
   if(sourceWork)return sourceWork;
+  const readingRelatedWave=context!==undefined;
+  const pausedAtRequest=powerPaused, wasPlaying=playIntent;
   if(!isTauri()){element('source-status').textContent='Подключите аккаунт в YCore Music для компьютера.';return Promise.resolve(false);}
-  if(fresh){
+  function resetWave(){
     clearRetry();historyStarting=false;startingSource=true;sourceNeedsFresh=true;
     stopPlayer();queue.reset([...queue.snapshot]);choices.clear();bypassSaved.clear();
     finiteSource=false;historySource=false;activeCollection=undefined;playIntent=autoplay&&!powerPaused;
     element('source-more').textContent='Ещё рекомендации';
     ++sourceRevision;intentUI();
-    currentStation=element<HTMLSelectElement>('station-select').value||'user:onyourwave';
-    currentStationLabel=element<HTMLSelectElement>('station-select').selectedOptions[0]?.textContent??'Все жанры';
     if(repeatMode==='queue'){repeatMode='off';renderRepeat();}
   }
+  if(fresh&&!context)resetWave();
   const revision=sourceRevision,epoch=queue.generation;
   element<HTMLButtonElement>('source-start').disabled=true;element<HTMLButtonElement>('source-more').disabled=true;
   element('source-status').textContent='Получение рекомендаций…';
   sourceWork=(async()=>{
     try{
-      const tracks=await boundedRequest(invoke<Track[]>('source_fetch',{fresh,station:currentStation}),30000);
+      const tracks=await boundedRequest(invoke<Track[]>('source_fetch',{fresh,station:context?.seed??currentStation}),30000);
       if(revision!==sourceRevision||epoch!==queue.generation)return false;
       if(!Array.isArray(tracks)||!tracks.length)throw new Error('Empty recommendations');
+      if(context){
+        if(playbackLocked()||(powerPaused&&!pausedAtRequest)||(wasPlaying&&!playIntent))return false;
+        currentStation=context.seed;currentStationLabel=context.label;
+        powerPaused=false;
+        resetWave();
+      }
       if(fresh){queue.reset(tracks);sourceNeedsFresh=false;choices.clear();bypassSaved.clear();element<HTMLInputElement>('url').value='';}
       else queue.append(tracks);
       renderQueue();
@@ -464,6 +474,10 @@ function sourceFetch(fresh:boolean,autoplay=false):Promise<boolean>{
       const text=String(error);
       const auth=/Authorization|token|credential|Credential/.test(text);
       element('source-status').textContent=auth?'Для «Моей волны» войдите в аккаунт: Настройки → Яндекс Музыка.':'Источник временно недоступен. Текущая очередь сохранена.';
+      if(context){
+        report(auth?'Для запуска волны подключите Яндекс Музыку в настройках.':'Яндекс Музыка не вернула волну по этому источнику. Текущая очередь сохранена.');
+        return false;
+      }
       if(auth&&fresh){queue.reset([]);choices.clear();bypassSaved.clear();renderQueue();element('source-name').textContent='Моя волна · нужен вход';}
       if(!auth&&(fresh||(advancing&&!queue.hasNext))&&await historyFetch(true,playIntent,true))return true;
       if(revision!==sourceRevision||epoch!==queue.generation)return false;
@@ -474,12 +488,60 @@ function sourceFetch(fresh:boolean,autoplay=false):Promise<boolean>{
     }finally{
       sourceWork=undefined;startingSource=false;
       element<HTMLButtonElement>('source-start').disabled=false;element<HTMLButtonElement>('source-more').disabled=!queue.current||finiteSource;
-      if(!sourceNeedsFresh)prepareAhead();
+      if(!sourceNeedsFresh&&(!readingRelatedWave||!finiteSource))prepareAhead();
     }
   })();
   return sourceWork;
 }
-element('source-start').onclick=()=>{if(!allowPlaybackChange())return;retryAttempt=0;powerPaused=false;void sourceFetch(true,true);};
+element('source-start').onclick=()=>{
+  if(!allowPlaybackChange()||sourceWork)return;
+  const station=element<HTMLSelectElement>('station-select');
+  const settings=Array.from(document.querySelectorAll<HTMLSelectElement>('#wave-settings-options select')).filter(select=>select.value);
+  currentStation=[station.value||'user:onyourwave',...settings.map(select=>select.value)].join(',');
+  currentStationLabel=[station.selectedOptions[0]?.textContent??'Все жанры',...settings.map(select=>select.selectedOptions[0]?.textContent)].join(' · ');
+  retryAttempt=0;powerPaused=false;void sourceFetch(true,true);
+};
+element('wave-settings-load').onclick=async()=>{
+  const button=element<HTMLButtonElement>('wave-settings-load');
+  const options=element('wave-settings-options'),status=element('wave-settings-status');
+  button.disabled=true;status.textContent='Загружаем настройки…';
+  try{
+    const values=await invoke<{id:string;title:string}[]>('wave_settings');
+    const labels:Record<string,string>={settingDiversity:'Знакомая или новая музыка',settingMood:'Настроение',settingEnergy:'Энергия',settingMoodEnergy:'Настроение и энергия',activity:'Занятие',context:'Ситуация',mood:'Настроение волны'};
+    const groups=new Map<string,HTMLSelectElement>();
+    const previous=new Set(Array.from(options.querySelectorAll('select'),select=>select.value));
+    options.replaceChildren();
+    for(const value of values){
+      const kind=value.id.split(':')[0];
+      let select=groups.get(kind);
+      if(!select){
+        const label=document.createElement('label');label.className='field-label';label.textContent=labels[kind]??kind;
+        select=document.createElement('select');select.add(new Option('По умолчанию',''));groups.set(kind,select);
+        label.append(select);options.append(label);
+      }
+      select.add(new Option(value.title,value.id,false,previous.has(value.id)));
+    }
+    status.textContent=groups.size?'Настройки применятся при следующем запуске волны.':'Яндекс Музыка не вернула доступных настроек.';
+  }catch{status.textContent='Не удалось загрузить настройки. Проверьте вход в Яндекс Музыку.';}
+  finally{button.disabled=false;}
+};
+const waveAfterList=element<HTMLInputElement>('wave-after-list');
+try{waveAfterList.checked=localStorage.getItem('ycore.wave.afterList')==='1';}catch{}
+waveAfterList.onchange=()=>{
+  try{localStorage.setItem('ycore.wave.afterList',waveAfterList.checked?'1':'0');}catch{}
+};
+function startRelatedWave(seed:string,label:string){
+  if(!allowPlaybackChange())return;
+  if(sourceWork){report('Дождитесь загрузки рекомендаций и повторите.');return;}
+  retryAttempt=0;
+  void sourceFetch(true,true,{seed,label});
+}
+element('wave-from-current').onclick=()=>{
+  const track=queue.current;
+  if(!track||!/^[0-9]{1,64}$/.test(track.id))return;
+  element<HTMLDialogElement>('video-dialog').close();
+  startRelatedWave('track:'+track.id,track.title);
+};
 element('source-more').onclick=()=>void sourceFetch(false);
 function historyFetch(fresh:boolean,autoplay=playIntent,quiet=false):Promise<boolean>{
   if(historyWork)return historyWork;
@@ -719,7 +781,15 @@ async function advance(resume:boolean,explicit=false,reason?:EndReason){
     if(!queue.hasNext&&finiteSource&&repeatMode==='queue'&&!activeCollection?.hasMore){queue.rewind();wrapped=true;}
     else if(!queue.hasNext){
       if(finiteSource){
-        if(!activeCollection?.hasMore){finishRecord(reason??(explicit?'skip':'error'));playIntent=false;player?.pauseVideo();report('Конец выбранного списка.');return;}
+        if(!activeCollection?.hasMore){
+          const track=queue.current;
+          if(!explicit&&playIntent&&!sourceWork&&isTauri()&&waveAfterList.checked&&track&&/^[0-9]{1,64}$/.test(track.id)){
+            finishRecord(reason??'error');
+            if(await sourceFetch(true,true,{seed:'track:'+track.id,label:track.title}))return;
+            if(epoch!==queue.generation||navigation!==queueNavigation)return;
+          }
+          finishRecord(reason??(explicit?'skip':'error'));playIntent=false;player?.pauseVideo();report('Конец выбранного списка.');return;
+        }
         try{const context=activeCollection,page=await boundedRequest(collectionPage(context.entity,context.page+1),30000);if(epoch!==queue.generation)return;queue.append(page.tracks);activeCollection={...context,page:page.page,hasMore:page.hasMore};if(navigation!==queueNavigation)return;if(!page.tracks.length){if(repeatMode==='queue'){queue.rewind();wrapped=true;}else{playIntent=false;player?.pauseVideo();report('Больше треков в списке нет.');return;}}}
         catch{if(navigation!==queueNavigation||epoch!==queue.generation)return;deferWave('Не удалось загрузить следующую часть списка',()=>void advance(playIntent));return;}
       }else{
@@ -793,9 +863,16 @@ const selectCatalogue:Parameters<typeof mountCatalogue>[0]=selection=>{
   element('source-status').textContent='Яндекс Музыка · '+selection.title;element('source-name').textContent=selection.title;
   element<HTMLInputElement>('url').value='';prepareAhead();
 };
-const browseCatalogue=mountCatalogue(selectCatalogue);
-mountDiscovery(selectCatalogue,entity=>{showPanel('search');browseCatalogue(entity,()=>showPanel('discovery'));});
-mountLibrary(selectCatalogue);
+const browseCatalogue=mountCatalogue(selectCatalogue,startRelatedWave);
+mountTrackActions(startRelatedWave,track=>{showPanel('search');browseCatalogue.similar(track);});
+mountDiscovery(selectCatalogue,entity=>{showPanel('search');browseCatalogue.browse(entity,()=>showPanel('discovery'));});
+element('similar-from-current').onclick=()=>{
+  const track=queue.current;
+  if(!track||!/^[0-9]{1,64}$/.test(track.id))return;
+  element<HTMLDialogElement>('video-dialog').close();
+  showPanel('search');browseCatalogue.similar(track);
+};
+mountLibrary(selectCatalogue,startRelatedWave,()=>queue.current);
 
 element('previous').onclick=()=>{
   if(!allowPlaybackChange())return;
@@ -932,6 +1009,7 @@ void mountRemote(()=>{
   duration:playerReady?player?.getDuration()??0:0,
   volume:volume.level,
   queue_generation:queue.generation,
+  lyrics_track_id:queue.current?.id??null,
   queue:entries.slice(start,start+120).map(({ordinal,title,artist})=>({ordinal,title,artist,current:ordinal===queue.current?.ordinal})),
   repeat:repeatMode,
   clips:(choices.get(queue.generation+':'+queue.current?.ordinal)?.items??[]).slice(0,6).map(({id,title,views,durationSeconds,needsReview})=>({

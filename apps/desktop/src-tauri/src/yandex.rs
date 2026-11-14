@@ -53,8 +53,9 @@ fn public_read_path(path: &str) -> bool {
         !text.is_empty() && text.len() <= 64 && text.bytes().all(|byte| byte.is_ascii_digit())
     };
     match path.split('/').collect::<Vec<_>>().as_slice() {
-        ["search"] | ["landing3", "chart"] => true,
+        ["search"] | ["albums"] | ["landing3", "chart" | "new-releases"] => true,
         ["tracks", value] => id(value),
+        ["tracks" | "artists", value, "similar"] => id(value),
         ["artists", value, "tracks"] | ["albums", value, "with-tracks"] => id(value),
         ["users", owner, "playlists", kind] => id(owner) && id(kind),
         _ => false,
