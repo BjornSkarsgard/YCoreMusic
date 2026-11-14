@@ -18,12 +18,13 @@ export function setRowPlayback(state:State,onToggle:()=>void){
  current=state;document.querySelectorAll<HTMLElement>('[data-playback-track]').forEach(paint);
 }
 export function bindPlaybackRow(row:HTMLElement,button:HTMLButtonElement,track:{id:string;title:string},start:()=>void,options:{iconOnly?:boolean;queueKey?:string}={}){
+ button.classList.add("track-play-action");
  row.dataset.playbackTrack=track.id;bindings.set(row,{button,title:track.title,iconOnly:options.iconOnly??true,key:options.queueKey});
  button.onclick=()=>{const selected=row.dataset.playbackTrack===current.trackId&&(!options.queueKey||options.queueKey===current.queueKey);if(selected)toggle();else start();};
  paint(row);
  if(/^[0-9]{1,64}$/.test(track.id)){
   const more=document.createElement('button');more.type='button';more.className='track-more';
-  setIconLabel(more,'more','Действия с треком '+track.title,true);
+  setIconLabel(more,'more');more.setAttribute('aria-label','Действия с треком '+track.title);more.title='Действия с треком';
   more.setAttribute('aria-haspopup','dialog');
   more.onclick=()=>openActions(track);
   row.classList.add('has-track-actions');

@@ -33,13 +33,13 @@ test('right panel fills the released alternatives space and shrinks again when v
  await page.locator('[data-panel=discovery]').click();await expect(page.locator('.discovery-track')).toHaveCount(200);
  await expect(page.locator('[data-panel=discovery]')).toHaveText('Чарт');await expect(page.locator('#panel-title')).toHaveText('Чарт');
  await expect(page.locator('#discovery h2')).toHaveCount(0);await expect(page.locator('#discovery-refresh')).toBeVisible();
- await expect(page.locator('#discovery-content h3')).toHaveCount(0);
+ await expect(page.locator('#discovery-content h3')).toHaveText(['Для вас','Новые релизы','Подборки Яндекс Музыки']);
  expect(await page.locator('#discovery-content').evaluate(element=>element.querySelector('.discovery-track')!.getBoundingClientRect().top-element.querySelector('#discovery-play-all')!.getBoundingClientRect().bottom)).toBeGreaterThanOrEqual(12);
  const pane=page.locator('.panel-scroll');await pane.evaluate(el=>el.scrollTop=el.scrollHeight);
  const scrollbar=await pane.evaluate(el=>getComputedStyle(el).scrollbarColor);
  await expect(page.locator('#video-alternatives')).toHaveCSS('scrollbar-color',scrollbar);
  const height=(await pane.boundingBox())!.height,scroll=await pane.evaluate(el=>el.scrollTop),slot=(await page.locator('#video-alternatives').boundingBox())!.height;
- await page.locator('.discovery-track button').last().click();await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseLayoutMatch)).toBe('function');
+ await page.locator('.discovery-track .track-play-action').last().click();await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseLayoutMatch)).toBe('function');
  await expect(page.locator('#video-alternatives')).toHaveAttribute('hidden','');
  expect((await pane.boundingBox())!.height).toBeCloseTo(height+slot,0);await expect(page.locator('#video-alternatives')).toBeHidden();
  expect(await pane.evaluate(el=>el.scrollTop)).toBeLessThanOrEqual(scroll);

@@ -243,7 +243,7 @@ test('system media Play/Pause, Next and Previous control the sole engine and pre
 
 test('old engine generations and reordered packets cannot finish or pause a newer selected track',async({page})=>{
  const old=await page.evaluate(()=>(window as any).loads[0].epoch);
- await page.locator('#play').click();await page.locator('[data-panel=queue]').click();await page.locator('#queue-list li[data-ordinal="1"] button').click();
+ await page.locator('#play').click();await page.locator('[data-panel=queue]').click();await page.locator('#queue-list li[data-ordinal="1"] .queue-play').click();
  await expect(page.locator('#track-title')).toHaveText('Second');await expect(page.locator('#status')).toHaveText('Воспроизведение');
  await page.evaluate(epoch=>{const w=window as any;w.packet('state',{epoch,sequence:999,cache:{position:120,duration:120,playback:0,quality:'default',captionOptions:[],captionTracks:[],iframeCount:1}});w.packet('state',{sequence:0,cache:{position:5,duration:120,playback:2,quality:'default',captionOptions:[],captionTracks:[],iframeCount:1}});},old);
  await expect(page.locator('#track-title')).toHaveText('Second');await expect(page.locator('#status')).toHaveText('Воспроизведение');await expect(page.locator('iframe')).toHaveCount(0);

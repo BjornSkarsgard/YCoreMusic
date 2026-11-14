@@ -97,7 +97,7 @@ test('sleep cancels a pending recovery and wake remains paused until Play',async
 
 test('an unrecoverable final clip ends a finite collection instead of retrying forever',async({page})=>{
  await setup(page);await page.locator('#catalogue-query').fill('selected');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
- await page.locator('#catalogue-results .catalogue-track button').click();await expect(page.locator('#track-title')).toHaveText('Selected');await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await page.locator('#catalogue-results .catalogue-track .track-play-action').click();await expect(page.locator('#track-title')).toHaveText('Selected');await expect(page.locator('#status')).toHaveText('Воспроизведение');
  const records=await page.evaluate(()=>(window as any).records.length);
  await page.evaluate(()=>{const w=window as any;w.activePlayer.position=43;w.holdCues=true;w.activePlayer.emit(3);});
  await page.clock.fastForward(16000);await page.clock.fastForward(2001);

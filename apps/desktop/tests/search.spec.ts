@@ -19,7 +19,7 @@ test('new search blocks stale playback; clearing discards pending results and fi
  await input.fill('pending');
  expect(await results.evaluate(el=>el.inert)).toBe(true);
  await expect(results).toHaveAttribute('inert','');
- const oldPlay=await results.locator('button').boundingBox();
+ const oldPlay=await results.locator('.track-play-action').boundingBox();
  await page.mouse.click(oldPlay!.x+oldPlay!.width/2,oldPlay!.y+oldPlay!.height/2);
  await expect(page.locator('#track-title')).toHaveText(initialTitle!);
  await expect.poll(()=>page.evaluate(()=>typeof (window as any).releaseSearch)).toBe('function');

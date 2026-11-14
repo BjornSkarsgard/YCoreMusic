@@ -713,7 +713,7 @@ test('catalogue detail has back navigation and ignores a late collection after r
 
 test('personal library browses playlists and paginated likes without replacing playback',async({page})=>{
  const balanced=async(row:ReturnType<typeof page.locator>,first='.track-text')=>{
-  const gap=await row.evaluate((element,selector)=>{const rect=element.getBoundingClientRect(),start=element.querySelector(selector)!.getBoundingClientRect(),end=element.querySelector('button .ui-icon')!.getBoundingClientRect();return Math.abs((start.left-rect.left)-(rect.right-end.right));},first);
+  const gap=await row.evaluate((element,selector)=>{const rect=element.getBoundingClientRect(),start=element.querySelector(selector)!.getBoundingClientRect(),end=element.querySelector('.track-more .ui-icon, .track-play-action:last-child .ui-icon')!.getBoundingClientRect();return Math.abs((start.left-rect.left)-(rect.right-end.right));},first);
   expect(gap).toBeLessThan(1);
  };
  await page.addInitScript(()=>{const w=window as any;w.isTauri=true;w.libraryCalls=[];w.__TAURI_INTERNALS__={invoke:async(cmd:string,args:any)=>{
@@ -735,13 +735,13 @@ test('personal library browses playlists and paginated likes without replacing p
  const libraryRow=page.locator('#library-content .catalogue-track').first();await expect(libraryRow).toHaveClass(/track-playing/);await expect(libraryRow.locator('.icon-pause')).toBeVisible();
  await balanced(libraryRow);
  await page.evaluate(()=>(window as any).listPlayer=(window as any).activePlayer);
- await libraryRow.locator('button').click();await expect(page.locator('#status')).toHaveText('Пауза');await expect(libraryRow.locator('.icon-play')).toBeVisible();
- await libraryRow.locator('button').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
- await page.locator('[data-panel=discovery]').click();const chart=page.locator('.discovery-track').first();await expect(chart).toHaveClass(/track-playing/);await chart.locator('button').click();await expect(page.locator('#status')).toHaveText('Пауза');
+ await libraryRow.locator('.track-play-action').click();await expect(page.locator('#status')).toHaveText('Пауза');await expect(libraryRow.locator('.icon-play')).toBeVisible();
+ await libraryRow.locator('.track-play-action').click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
+ await page.locator('[data-panel=discovery]').click();const chart=page.locator('.discovery-track').first();await expect(chart).toHaveClass(/track-playing/);await chart.locator('.track-play-action').click();await expect(page.locator('#status')).toHaveText('Пауза');
  await balanced(chart,'.chart-position');
  await page.locator('#play').click();await expect(chart.locator('.icon-pause')).toBeVisible();
  await page.locator('[data-panel=search]').click();await page.locator('#catalogue-query').fill('Liked');await page.locator('#catalogue-search').evaluate((form:HTMLFormElement)=>form.requestSubmit());
- const search=page.locator('#catalogue-results .catalogue-track').first();await expect(search).toHaveClass(/track-playing/);await search.locator('button').click();await expect(page.locator('#status')).toHaveText('Пауза');
+ const search=page.locator('#catalogue-results .catalogue-track').first();await expect(search).toHaveClass(/track-playing/);await search.locator('.track-play-action').click();await expect(page.locator('#status')).toHaveText('Пауза');
  await balanced(search);
  await page.locator('[data-panel=history]').click();const history=page.locator('#history-list li').first();await expect(history).toHaveClass(/track-current/);await history.getByRole('button',{name:'Воспроизвести',exact:true}).click();await expect(page.locator('#status')).toHaveText('Воспроизведение');
  await page.locator('[data-panel=queue]').click();const current=page.locator('#queue-list li[aria-current=true]');await expect(current.locator('.icon-pause')).toBeVisible();await current.locator('.queue-play').click();await expect(page.locator('#status')).toHaveText('Пауза');
@@ -772,12 +772,12 @@ test('switching tracks near the bottom of a playlist preserves its scroll during
  await expect(rows).toHaveCount(40);
  const pane=page.locator('.panel-scroll');
  const scroll=()=>pane.evaluate(element=>element.scrollTop);
- await rows.nth(35).locator('button').click();
+ await rows.nth(35).locator('.track-play-action').click();
  await expect(page.locator('#video-alternatives .alternative-video')).toHaveCount(1);
  await pane.evaluate(element=>element.scrollTop=element.scrollHeight);
  const before=await scroll();
  expect(before).toBeGreaterThan(0);
- await rows.nth(37).locator('button').click();
+ await rows.nth(37).locator('.track-play-action').click();
  await expect(page.locator('#track-title')).toHaveText('Track 38');
  await expect(page.locator('#video-alternatives .alternative-video')).toHaveCount(0);
  expect(await scroll()).toBe(before);
