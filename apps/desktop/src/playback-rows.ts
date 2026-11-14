@@ -1,4 +1,4 @@
-import {setIconLabel} from './icons';
+import {icon,setIconLabel} from './icons';
 let openActions:(track:{id:string;title:string})=>void=()=>{};
 export function setTrackActions(open:typeof openActions){openActions=open;}
 interface State {trackId:string|null;playing:boolean;queueKey?:string}
@@ -24,7 +24,7 @@ export function bindPlaybackRow(row:HTMLElement,button:HTMLButtonElement,track:{
  paint(row);
  if(/^[0-9]{1,64}$/.test(track.id)){
   const more=document.createElement('button');more.type='button';more.className='track-more';
-  setIconLabel(more,'more');more.setAttribute('aria-label','Действия с треком '+track.title);more.title='Действия с треком';
+  more.innerHTML=icon('more');more.setAttribute('aria-label','Действия с треком '+track.title);more.title='Действия с треком';
   more.setAttribute('aria-haspopup','dialog');
   more.onclick=()=>openActions(track);
   row.classList.add('has-track-actions');
